@@ -309,6 +309,8 @@ open class GameActivity : AppCompatActivity() {
         if (!isDolphin) runCatching {
             android.system.Os.setenv("LIBRETRODROID_VULKAN", if (config.graphics == "vulkan" && console == Console.PS2) "1" else "0", true)
             android.system.Os.unsetenv("TIRSO_GL_OFF")
+            // ARMSX2 draws with Vulkan's top-left origin: turn its picture the right way up.
+            android.system.Os.setenv("LIBRETRODROID_VK_FLIP", if (console == Console.PS2) "1" else "0", true)
             prepareGpuDriver(console == Console.PS2)
         }
         if (isDolphin) {
@@ -324,6 +326,7 @@ open class GameActivity : AppCompatActivity() {
             }
             val fix = PICTURE_FIXES.getOrElse(pictureFix) { PICTURE_FIXES[0] }
             runCatching { android.system.Os.setenv("TIRSO_GL_OFF", fix.glOff, true) }
+            runCatching { android.system.Os.setenv("LIBRETRODROID_VK_FLIP", "0", true) }
             // Vulkan: Dolphin draws with Vulkan and the player shows its pictures (LibretroDroid Vulkan bridge).
             runCatching { android.system.Os.setenv("LIBRETRODROID_VULKAN", if (fix.vulkan) "1" else "0", true) }
             prepareGpuDriver(fix.vulkan && fix.customDriver)
