@@ -62,32 +62,39 @@ final class Artwork {
         return null;
     }
     void load(Game game, ImageView view) { load(game, view, "Named_Boxarts"); }
-    void load(Game game, ImageView view, String kind) {
-        final String tag = game.id + "|" + game.coverName + "|" + kind; view.setTag(tag);
+    void load(Game game, ImageView view, String kind) { loadFirst(game, view, kind); }
+    /** Tries the picture kinds in order (e.g. logo, then title screen, then box art) and shows the first one libretro has. */
+    void loadFirst(Game game, ImageView view, String... kinds) {
+        final String tag = game.id + "|" + game.coverName + "|" + String.join(",", kinds); view.setTag(tag);
         Bitmap cached = memory.get(tag); if (cached != null) { view.setImageBitmap(cached); reveal(view); return; }
         pool.execute(() -> {
             try {
                 byte[] bytes = null;
-                for (String name : GameMeta.coverNames(appContext, game)) {
-                    String url = urlFor(game.console, name, kind);
-                    String hash = hashOf(url);
-                    File file = new File(directory, hash + ".png"), miss = new File(directory, hash + ".miss");
-                    if (file.isFile()) { try (InputStream in = new java.io.FileInputStream(file)) { bytes = Library.readLimited(in, 4_000_000); } break; }
-                    if (miss.exists()) continue;
-                    HttpURLConnection connection = null;
-                    try {
-                        connection = (HttpURLConnection) new java.net.URL(url).openConnection();
-                        connection.setConnectTimeout(8000); connection.setReadTimeout(8000);
-                        connection.setInstanceFollowRedirects(false);
-                        int code = connection.getResponseCode();
-                        if (code == 404) { miss.createNewFile(); continue; }
-                        if (code != 200) return;
-                        try (InputStream in = connection.getInputStream()) { bytes = Library.readLimited(in, 4_000_000); }
-                    } finally { if (connection != null) connection.disconnect(); }
-                    long size = 0; File[] files = directory.listFiles();
-                    if (files != null) for (File f : files) size += f.length();
-                    if (size < 64L * 1024 * 1024) try (FileOutputStream out = new FileOutputStream(file)) { out.write(bytes); }
-                    break;
+                search:
+                for (String kind : kinds) {
+                    // libretro has no Named_Logos folder for these systems.
+                    if (kind.equals("Named_Logos") && (game.console == Console.GBC || game.console == Console.NDS)) continue;
+                    for (String name : GameMeta.coverNames(appContext, game)) {
+                        String url = urlFor(game.console, name, kind);
+                        String hash = hashOf(url);
+                        File file = new File(directory, hash + ".png"), miss = new File(directory, hash + ".miss");
+                        if (file.isFile()) { try (InputStream in = new java.io.FileInputStream(file)) { bytes = Library.readLimited(in, 4_000_000); } break search; }
+                        if (miss.exists()) continue;
+                        HttpURLConnection connection = null;
+                        try {
+                            connection = (HttpURLConnection) new java.net.URL(url).openConnection();
+                            connection.setConnectTimeout(8000); connection.setReadTimeout(8000);
+                            connection.setInstanceFollowRedirects(false);
+                            int code = connection.getResponseCode();
+                            if (code == 404) { miss.createNewFile(); continue; }
+                            if (code != 200) return;
+                            try (InputStream in = connection.getInputStream()) { bytes = Library.readLimited(in, 4_000_000); }
+                        } finally { if (connection != null) connection.disconnect(); }
+                        long size = 0; File[] files = directory.listFiles();
+                        if (files != null) for (File f : files) size += f.length();
+                        if (size < 64L * 1024 * 1024) try (FileOutputStream out = new FileOutputStream(file)) { out.write(bytes); }
+                        break search;
+                    }
                 }
                 if (bytes == null) return;
                 BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inJustDecodeBounds = true;

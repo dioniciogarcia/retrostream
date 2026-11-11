@@ -25,6 +25,8 @@ final class TEn {
         m.put("Juego", "Games");
         m.put("Leyendo tu canal de Telegram…", "Reading your Telegram channel…");
         m.put("Logos originales", "Original logos");
+        m.put("Logos a color", "Color logos");
+        m.put("Logos monocromo", "Mono logos");
         m.put("Motores, fuentes y bases de datos", "Engines, fonts and databases");
         m.put("NO", "NO");
         m.put("No hay copias que restaurar.", "There are no backups to restore.");

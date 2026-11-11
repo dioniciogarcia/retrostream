@@ -19,6 +19,8 @@ public final class Library {
     public boolean demo;
     public Library(Context context) {
         prefs = context.getSharedPreferences("tirsolador", Context.MODE_PRIVATE);
+        // Big Console in dark mode is the default look (applied once to existing installs too).
+        if (!prefs.getBoolean("default_console_dark", false)) prefs.edit().putString("theme", "Consola completa").putBoolean("dark_console", true).putBoolean("default_console_dark", true).apply();
         String catalog = prefs.getString("catalog", null);
         demo = catalog == null;
         try {
@@ -63,10 +65,10 @@ public final class Library {
         games.clear(); games.addAll(valid); demo = false;
     }
     public boolean dark() { return prefs.getBoolean("dark", true); }
-    public boolean dark(String themeKey) { return prefs.getBoolean("dark_" + themeKey, themeKey.equals("midnight") || themeKey.equals("tiles")); }
+    public boolean dark(String themeKey) { return prefs.getBoolean("dark_" + themeKey, !themeKey.equals("gba")); }
     public void dark(String themeKey, boolean value) { prefs.edit().putBoolean("dark_" + themeKey, value).apply(); }
     public void dark(boolean value) { prefs.edit().putBoolean("dark", value).apply(); }
-    public String theme() { return prefs.getString("theme", "Moderno"); }
+    public String theme() { return prefs.getString("theme", "Consola completa"); }
     public void theme(String value) { prefs.edit().putString("theme", value).apply(); }
     public boolean descending() { return prefs.getBoolean("descending", false); }
     public void descending(boolean value) { prefs.edit().putBoolean("descending", value).apply(); }

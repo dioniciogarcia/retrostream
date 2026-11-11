@@ -203,7 +203,17 @@ public class MainActivity extends Activity {
             default: return T.english() ? "ARCADE" : "ARCADE";
         }
     }
-    private boolean logoMode() { return getSharedPreferences("ui", MODE_PRIVATE).getBoolean("logos", true); }
+    /** "color" (original colored logos), "mono" (white/black with outline) or "text". */
+    private String logoStyle() { android.content.SharedPreferences p = getSharedPreferences("ui", MODE_PRIVATE); String v = p.getString("logo_style", null); if (v != null) return v; return p.getBoolean("logos", true) ? "color" : "text"; }
+    private boolean logoMode() { return !logoStyle().equals("text"); }
+    /** Puts the console logo in the view: original colors, or a monochrome one (white with a black outline, or tinted). */
+    private void setLogo(ImageView iv, Console c, int tint) {
+        String pkg = getPackageName(); int id;
+        if (logoStyle().equals("color") && (id = getResources().getIdentifier("logoc_" + c.logo, "drawable", pkg)) != 0) { iv.setImageResource(id); iv.clearColorFilter(); return; }
+        if (tint == Color.WHITE && (id = getResources().getIdentifier("logom_" + c.logo, "drawable", pkg)) != 0) { iv.setImageResource(id); iv.clearColorFilter(); return; }
+        id = getResources().getIdentifier("logo_" + c.logo, "drawable", pkg); if (id != 0) iv.setImageResource(id);
+        iv.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN);
+    }
 
     private TextView pill(String s, int size, int color, int bg) {
         TextView t = tv(s, size, color, fBody); t.setPadding(px(22), px(9), px(22), px(9)); t.setBackground(round(bg, 40)); return t;
@@ -281,8 +291,8 @@ public class MainActivity extends Activity {
         }
     }
     private void cancelPending(){if(!pendingPlay.isEmpty()&&selected!=null&&pendingPlay.equals(selected.id)){org.drinkless.tdlib.TdApi.File f=drive.file(selected);if(f!=null&&f.local.isDownloadingActive)drive.cancelDownload(selected);}pendingPlay="";}
-    private void route(String target) { cancelPending();rememberLibrary();page = target; lastFocus = ""; render(); }
-    private void backToLibrary() {cancelPending();page="library";lastFocus=libraryFocus;render();}
+    private void route(String target) { cancelPending();rememberLibrary();page = target; lastFocus = ""; heroEntry = true; render(); }
+    private void backToLibrary() {cancelPending();page="library";lastFocus=libraryFocus;heroEntry=true;render();}
     private void render() {
         u = getResources().getDisplayMetrics().widthPixels / 1920f;
         applyTheme();
@@ -474,7 +484,7 @@ public class MainActivity extends Activity {
         boolean gba = th.equals("gba");
         View mark;
         if (logoMode()) {
-            ImageView logo = logo(c); logo.setColorFilter(logoTint(), android.graphics.PorterDuff.Mode.SRC_IN);
+            ImageView logo = logo(c); setLogo(logo, c, logoTint());
             mark = logo; tile.addView(mark, new LinearLayout.LayoutParams(-1, 0, 1));
         } else {
             TextView wm = tv(wordmark(c), th.equals("midnight") ? 90 : th.equals("tiles") ? 124 : 92, gba ? ink : th.equals("midnight") ? text : Color.WHITE, fWord);
@@ -537,21 +547,60 @@ public class MainActivity extends Activity {
         java.util.ArrayList<Console> consoles = new java.util.ArrayList<>(); for (Console c : Console.values()) if (library.visible(c)) consoles.add(c);
         if (consoles.isEmpty()) return;
         int index = consoles.indexOf(heroConsole(consoles));
-        library.homeConsole(consoles.get((index + delta + consoles.size()) % consoles.size())); lastFocus = "hero_console"; render();
+        heroDir = delta > 0 ? 1 : -1; library.homeConsole(consoles.get((index + delta + consoles.size()) % consoles.size())); lastFocus = "hero_console"; render();
     }
+    // ---- Big Console: ambient + transition animations (no scale-on-focus)
+    private ImageView heroLogo; private TextView heroWord; private int heroDir; private boolean heroEntry = true; private float heroPhase;
+    private Drawable heroBg(Console c, boolean focused) {
+        float p = heroPhase;
+        GradientDrawable g = gradient(blend(0xFFFFFFFF, brand(c), .10f + .12f * p), shade(brand(c), .72f + .12f * (1f - p)), 58, GradientDrawable.Orientation.TL_BR);
+        if (focused) g.setStroke(px(7), ink); return g;
+    }
+    private void bindCancel(View v, android.animation.Animator... anims) {
+        v.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            public void onViewAttachedToWindow(View x) { }
+            public void onViewDetachedFromWindow(View x) { for (android.animation.Animator a : anims) a.cancel(); }
+        });
+    }
+    private void animateHero(LinearLayout hero, View logoOrWord, View sub, View info, View chipOn) {
+        android.view.animation.Interpolator soft = new android.view.animation.AccelerateDecelerateInterpolator();
+        // slow shifting gradient behind the logo
+        android.animation.ValueAnimator bg = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        bg.setDuration(4600); bg.setRepeatCount(android.animation.ValueAnimator.INFINITE); bg.setRepeatMode(android.animation.ValueAnimator.REVERSE); bg.setInterpolator(soft);
+        final Console shown = heroConsole(visibleConsoles());
+        bg.addUpdateListener(a -> { heroPhase = (float) a.getAnimatedValue(); hero.setBackground(heroBg(shown, hero.isFocused())); });
+        bg.start();
+        // the logo floats and breathes
+        android.animation.ObjectAnimator floatY = android.animation.ObjectAnimator.ofFloat(logoOrWord, View.TRANSLATION_Y, -px(11), px(11));
+        floatY.setDuration(3200); floatY.setRepeatCount(android.animation.ValueAnimator.INFINITE); floatY.setRepeatMode(android.animation.ValueAnimator.REVERSE); floatY.setInterpolator(soft);
+        android.animation.ObjectAnimator breatheX = android.animation.ObjectAnimator.ofFloat(logoOrWord, View.SCALE_X, 1f, 1.035f), breatheY = android.animation.ObjectAnimator.ofFloat(logoOrWord, View.SCALE_Y, 1f, 1.035f);
+        for (android.animation.ObjectAnimator a : new android.animation.ObjectAnimator[]{breatheX, breatheY}) { a.setDuration(3200); a.setRepeatCount(android.animation.ValueAnimator.INFINITE); a.setRepeatMode(android.animation.ValueAnimator.REVERSE); a.setInterpolator(soft); }
+        floatY.start(); breatheX.start(); breatheY.start();
+        bindCancel(hero, bg, floatY, breatheX, breatheY);
+        // entrance: slide in from the side we moved towards, label and count rise in after it
+        if (heroEntry || heroDir != 0) {
+            hero.setAlpha(0f); hero.setTranslationX(heroDir != 0 ? heroDir * px(150) : 0); hero.setTranslationY(heroDir != 0 ? 0 : px(50));
+            hero.animate().alpha(1f).translationX(0).translationY(0).setDuration(380).setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+            View[] rise = {sub, info}; long delay = 140;
+            for (View v : rise) { v.setAlpha(0f); v.setTranslationY(px(26)); v.animate().alpha(1f).translationY(0).setStartDelay(delay).setDuration(340).setInterpolator(new android.view.animation.DecelerateInterpolator()).start(); delay += 90; }
+            if (chipOn != null) { chipOn.setScaleX(.8f); chipOn.setScaleY(.8f); chipOn.animate().scaleX(1f).scaleY(1f).setDuration(380).setInterpolator(new android.view.animation.OvershootInterpolator(2.2f)).start(); }
+        }
+        heroEntry = false; heroDir = 0;
+    }
+    private java.util.List<Console> visibleConsoles() { java.util.ArrayList<Console> v = new java.util.ArrayList<>(); for (Console c : Console.values()) if (library.visible(c)) v.add(c); return v; }
     private void heroHome(java.util.List<Console> consoles) {
-        Console current = heroConsole(consoles);
+        Console current = heroConsole(consoles); heroLogo = null; heroWord = null;
         if (lastFocus.isEmpty()) lastFocus = "hero_console";
         content = vertical(); body.addView(content, new LinearLayout.LayoutParams(-1, -1));
         LinearLayout hero = vertical(); hero.setGravity(Gravity.CENTER); hero.setPadding(px(40), px(30), px(40), px(30));
-        if (logoMode()) { ImageView hl = logo(current); hl.setColorFilter(Color.WHITE, android.graphics.PorterDuff.Mode.SRC_IN); hero.addView(hl, new LinearLayout.LayoutParams(px(900), px(360))); }
-        else { TextView wm = tv(wordmark(current), 330, Color.WHITE, fWord); wm.setGravity(Gravity.CENTER); wm.setSingleLine(true); wm.setShadowLayer(px(2), 0, px(8), 0x33000000); hero.addView(wm, new LinearLayout.LayoutParams(-2, -2)); }
+        if (logoMode()) { ImageView hl = logo(current); setLogo(hl, current, Color.WHITE); heroLogo = hl; hero.addView(hl, new LinearLayout.LayoutParams(px(900), px(360))); }
+        else { TextView wm = tv(wordmark(current), 330, Color.WHITE, fWord); wm.setGravity(Gravity.CENTER); wm.setSingleLine(true); wm.setShadowLayer(px(2), 0, px(8), 0x33000000); hero.addView(wm, new LinearLayout.LayoutParams(-2, -2)); heroLogo = null; heroWord = wm; }
         TextView sub = tv(heroSubtitle(current), 46, brand(current), fMono); sub.setLetterSpacing(.06f); sub.setPadding(px(34), px(10), px(34), px(10)); sub.setBackgroundColor(Color.WHITE);
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-2, -2); sp.topMargin = px(10); hero.addView(sub, sp);
         TextView info = tv(gameCount(library.count(current)) + " · " + (drive.sources.get(current) != null && drive.sources.get(current).chatId != 0 ? drive.sources.get(current).title : TelegramCatalog.expectedTitle(current)), 32, 0xE6FFFFFF, fBody);
         info.setPadding(0, px(30), 0, 0); hero.addView(info);
         hero.setContentDescription(current.title + ", " + library.count(current) + T.t(" juegos. Abrir biblioteca"));
-        focusableWith(hero, "hero_console", f -> { GradientDrawable g = gradient(blend(0xFFFFFFFF, brand(current), .12f), shade(brand(current), .78f), 58, GradientDrawable.Orientation.TL_BR); if (f) g.setStroke(px(7), ink); return g; }, () -> openConsole(current));
+        focusableWith(hero, "hero_console", f -> heroBg(current, f), () -> openConsole(current));
         View.OnFocusChangeListener heroBase = hero.getOnFocusChangeListener();
         hero.setOnFocusChangeListener((v, has) -> { heroBase.onFocusChange(v, has); v.setScaleX(1f); v.setScaleY(1f); v.setElevation(0); });
         hero.setOnKeyListener((v, key, e) -> {
@@ -561,14 +610,15 @@ public class MainActivity extends Activity {
             return false;
         });
         LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(-1, 0, 1); hp.bottomMargin = px(24); content.addView(hero, hp);
-        LinearLayout strip = horizontal(); strip.setGravity(Gravity.CENTER);
+        LinearLayout strip = horizontal(); strip.setGravity(Gravity.CENTER); View chipOn = null;
         for (Console c : consoles) {
             boolean on = c == current;
             TextView chip = tv(c.name(), 27, on ? Color.WHITE : muted, fMono); chip.setLetterSpacing(.1f); chip.setGravity(Gravity.CENTER);
-            focusableWith(chip, "chip_" + c.name(), f -> { GradientDrawable g = round(on ? brand(c) : surface, 20); if (f) g.setStroke(px(5), ink); return g; }, () -> { library.homeConsole(c); lastFocus = "hero_console"; render(); });
-            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(px(120), px(78)); cp.setMargins(px(8), 0, px(8), 0); strip.addView(chip, cp);
+            focusableWith(chip, "chip_" + c.name(), f -> { GradientDrawable g = round(on ? brand(c) : surface, 20); if (f) g.setStroke(px(5), ink); return g; }, () -> { heroDir = consoles.indexOf(c) >= consoles.indexOf(current) ? 1 : -1; library.homeConsole(c); lastFocus = "hero_console"; render(); });
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(px(120), px(78)); cp.setMargins(px(8), 0, px(8), 0); strip.addView(chip, cp); if (on) chipOn = chip;
         }
         content.addView(strip, new LinearLayout.LayoutParams(-1, -2));
+        animateHero(hero, heroLogo != null ? heroLogo : heroWord, sub, info, chipOn);
     }
     private String catalogMessage(){
         if(drive.stage!=TirsoDrive.Stage.READY)return T.t("Conecta TirsoDrive para actualizar tu colección");
@@ -630,7 +680,7 @@ public class MainActivity extends Activity {
             TextView ph = tv(game.title, 26, 0xFF1A1A2E, fHead); ph.setGravity(Gravity.CENTER); ph.setPadding(px(16), px(12), px(16), px(12)); ph.setMaxLines(3); ph.setEllipsize(android.text.TextUtils.TruncateAt.END);
             art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
             ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER); image.setContentDescription(game.title); image.setPadding(px(14), px(12), px(14), px(12));
-            art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.load(game, image, "Named_Logos");
+            art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(game, image, "Named_Logos", "Named_Titles", "Named_Boxarts");
             if (library.favorite(game)) { TextView fav = tv("★", 30, 0xFFFFB400, fHead); fav.setPadding(px(10), px(4), px(12), 0); art.addView(fav, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END)); }
             cell.addView(art, new LinearLayout.LayoutParams(cardW, cardH));
             cell.setPadding(px(7), px(7), px(7), px(7));
@@ -842,7 +892,7 @@ public class MainActivity extends Activity {
             new AlertDialog.Builder(this).setTitle("Idioma / Language").setSingleChoiceItems(names, T.english() ? 1 : 0, (d, w) -> { T.set(this, codes[w]); d.dismiss(); recreate(); }).show();
         });
         LinearLayout a2 = sRow(); sFiller(a2, 0);
-        sCard(a2, T.t("Logotipos"), logoMode() ? T.t("Logos originales") : T.t("Texto"), "LOG", 0xFFFF9A2E, "logo_mode", () -> { getSharedPreferences("ui", MODE_PRIVATE).edit().putBoolean("logos", !logoMode()).apply(); lastFocus = "logo_mode"; render(); });
+        sCard(a2, T.t("Logotipos"), logoStyle().equals("color") ? T.t("Logos a color") : logoStyle().equals("mono") ? T.t("Logos monocromo") : T.t("Texto"), "LOG", 0xFFFF9A2E, "logo_mode", () -> { String n = logoStyle().equals("color") ? "mono" : logoStyle().equals("mono") ? "text" : "color"; getSharedPreferences("ui", MODE_PRIVATE).edit().putString("logo_style", n).apply(); lastFocus = "logo_mode"; render(); });
         sFiller(a2, 2);
         sSection(T.t("Tu biblioteca")); LinearLayout b = sRow();
         sCard(b, "TirsoDrive", drive.stage == TirsoDrive.Stage.READY ? T.t("Conectado · gestionar grupos") : T.t("Vincular colección"), "TD", 0xFF14C9AA, "telegram", this::connectScreen);
