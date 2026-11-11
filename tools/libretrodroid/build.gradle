@@ -1,0 +1,35 @@
+// LibretroDroid 0.14.0 (https://github.com/Swordfish90/LibretroDroid, GPL v3), built from source with
+// one Tirso Compiler patch in src/main/cpp/video.cpp (CoreGLStateGuard, for Dolphin). Same code otherwise.
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace = "com.swordfish.libretrodroid"
+    compileSdk 35
+    ndkVersion "29.0.14206865"
+
+    defaultConfig {
+        minSdk 26
+        consumerProguardFiles 'consumer-rules.pro'
+        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
+        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+    }
+    buildTypes { release { minifyEnabled false } }
+    externalNativeBuild {
+        cmake {
+            version '3.31.6'
+            path 'src/main/cpp/CMakeLists.txt'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+
+dependencies {
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+}
