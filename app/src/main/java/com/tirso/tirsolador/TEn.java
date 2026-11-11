@@ -117,7 +117,9 @@ final class TEn {
         m.put(" juegos", " games");
         m.put("No hay consolas visibles", "No visible consoles");
         m.put("Elegir consolas", "Choose consoles");
-        m.put("Consola completa", "Full console");
+        m.put("Consola completa", "Big Console");
+        m.put("Mosaico", "Color Tiles");
+        m.put("Abrir", "Open");
         m.put("Consola anterior", "Previous console");
         m.put(" juegos. Abrir biblioteca", " games. Open library");
         m.put("Consola siguiente", "Next console");

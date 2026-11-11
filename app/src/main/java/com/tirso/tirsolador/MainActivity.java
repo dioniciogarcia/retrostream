@@ -45,7 +45,9 @@ public class MainActivity extends Activity {
     private android.graphics.Bitmap qrBitmap;
     private String renderedQr="";
     private String lastDriveError="";
-    private int text, muted, surface, background, accent;
+    private int text, muted, surface, background, accent, strokeColor;
+    private Typeface fontRegular, fontBold;
+    private boolean pixel;
     private String page = "home", query = "";
     private Console console;
     private Game selected;
@@ -99,13 +101,13 @@ public class MainActivity extends Activity {
     private LinearLayout vertical() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
     private LinearLayout horizontal() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER_VERTICAL); return l; }
     private TextView label(String s, int size, int color, boolean bold) {
-        TextView t = new TextView(this); t.setText(s); t.setTextSize(size); t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        TextView t = new TextView(this); t.setText(s); t.setTextSize(pixel ? size * 1.12f : size); t.setTextColor(color);
+        Typeface face = bold ? fontBold : fontRegular; if (face != null) t.setTypeface(face);
         t.setPadding(0, dp(3), 0, dp(3)); return t;
     }
     private GradientDrawable panel(int color, boolean focused) {
-        GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{color,color}); g.setCornerRadius(dp(20));
-        g.setStroke(dp(focused ? 3 : 1), focused ? accent : library.dark() ? 0xFF293751 : 0xFFD6DEE7); return g;
+        GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{color,color}); g.setCornerRadius(dp(pixel ? 14 : 22));
+        g.setStroke(dp(focused ? 3 : pixel ? 2 : 1), focused ? accent : strokeColor); return g;
     }
     private void focusable(View v, String key, int color, Runnable click) {
         v.setTag(key); v.setFocusable(true); v.setClickable(true); v.setBackground(panel(color, false));
@@ -138,19 +140,29 @@ public class MainActivity extends Activity {
     private void backToLibrary() {cancelPending();page="library";lastFocus=libraryFocus;render();}
     private void render() {
         boolean dark = library.dark();
-        background = dark ? 0xFF090F1B : 0xFFF3F6FC; surface = dark ? 0xFF162133 : Color.WHITE;
-        text = dark ? 0xFFF4F7FC : 0xFF142238; muted = dark ? 0xFFABBCD1 : 0xFF52657A;
-        accent = dark ? 0xFF14DADE : 0xFF007E89;
-        if (library.theme().equals("Nintendo rojo")) accent = dark ? 0xFFFF6574 : 0xFFBF243B;
-        if (library.theme().equals("Retro naranja")) accent = dark ? 0xFFFFAD57 : 0xFFAA5700;
-        if (library.theme().equals("GBA clásico")) accent = dark ? 0xFFBFA1FF : 0xFF7042A3;
-        root = vertical(); root.setPadding(dp(24), dp(12), dp(24), dp(16)); root.setBackgroundColor(background);
+        String th = themeName(); pixel = th.equals("GBA clásico");
+        if (th.equals("GBA clásico")) { background = 0xFFF1EFE9; surface = Color.WHITE; text = 0xFF1A1A2E; muted = 0xFF5A5A70; accent = 0xFF7A4DFF; strokeColor = 0xFF1A1A2E; }
+        else if (th.equals("Mosaico")) { background = 0xFF1C2447; surface = 0xFF2A3560; text = Color.WHITE; muted = 0xFFC8D1F5; accent = 0xFFFFC857; strokeColor = 0x33FFFFFF; }
+        else {
+            background = dark ? 0xFF07101F : 0xFFF3F6FC; surface = dark ? 0xFF132036 : Color.WHITE;
+            text = dark ? 0xFFF4F7FC : 0xFF142238; muted = dark ? 0xFFABBCD1 : 0xFF52657A;
+            accent = dark ? 0xFF2DE2C8 : 0xFF007E89; strokeColor = dark ? 0xFF293751 : 0xFFD6DEE7;
+            if (th.equals("Consola completa") && !dark) background = 0xFFF4F1EC;
+        }
+        try { fontRegular = getResources().getFont(pixel ? R.font.silkscreen_bold : R.font.poppins_regular); fontBold = getResources().getFont(pixel ? R.font.silkscreen_bold : R.font.poppins_medium); } catch (Exception e) { fontRegular = fontBold = null; }
+        root = vertical(); root.setPadding(dp(28), dp(14), dp(28), dp(16));
+        if (th.equals("Moderno") && dark) root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFF0C2442, 0xFF07101F, 0xFF0A2A33}));
+        else root.setBackgroundColor(background);
         setContentView(root);
         content=null;activeScroll=null;
         LinearLayout header = horizontal();
         if(!page.equals("home")) header.addView(icon("back",T.t("Volver"),"nav_back",this::onBackPressed));
         TextView title=label(page.equals("welcome")?"TirsoDrive":page.equals("library")?(favorites?T.t("Favoritos"):console==null?T.t("Biblioteca"):console.title):"",18,text,true);
         header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        if(!page.equals("welcome")){
+            android.widget.TextClock clock=new android.widget.TextClock(this);clock.setFormat24Hour("HH:mm");clock.setFormat12Hour("h:mm a");
+            clock.setTextColor(muted);clock.setTextSize(pixel?16:17);if(fontBold!=null)clock.setTypeface(fontBold);clock.setPadding(dp(8),0,dp(16),0);header.addView(clock);
+        }
         if(page.equals("library")) {
             header.addView(icon("search",T.t("Buscar juegos"),"search",this::search));
             header.addView(icon("refresh",T.t("Refrescar catálogo"),"refresh",this::refreshCatalog));
@@ -168,6 +180,10 @@ public class MainActivity extends Activity {
         else if (page.equals("detail") && selected != null) detail();
         else if (page.equals("library")) libraryScreen();
         else home();
+        if((page.equals("home")||page.equals("library"))&&hasGamepad()){
+            TextView hints=label((page.equals("library")?"A "+T.t("Abrir")+"    B "+T.t("Volver")+"    Y "+T.t("Buscar")+"    X "+T.t("Favoritos"):"A "+T.t("Abrir")+"    X "+T.t("Favoritos"))+"    Start "+T.t("Ajustes"),12,muted,true);
+            hints.setPadding(dp(4),dp(6),0,0);root.addView(hints);
+        }
         root.post(() -> {
             View target = lastFocus.isEmpty() ? null : root.findViewWithTag(lastFocus);
             if (target == null) target = firstContentFocusable(content == null ? body : content);
@@ -267,6 +283,56 @@ public class MainActivity extends Activity {
         image.setPadding(dp(14), dp(9), dp(14), dp(9)); return image;
     }
     private String gameCount(int count) { return count+ (count==1?T.t(" juego"):T.t(" juegos")); }
+    private String themeName(){String t=library.theme();return t.equals("GBA clásico")||t.equals("Mosaico")||t.equals("Consola completa")?t:"Moderno";}
+    private boolean hasGamepad(){
+        for(int id:InputDevice.getDeviceIds()){InputDevice d=InputDevice.getDevice(id);if(d!=null&&((d.getSources()&InputDevice.SOURCE_GAMEPAD)==InputDevice.SOURCE_GAMEPAD||(d.getSources()&InputDevice.SOURCE_JOYSTICK)==InputDevice.SOURCE_JOYSTICK))return true;}
+        return false;
+    }
+    private int brand(Console c){
+        switch(c){
+            case N64:return 0xFF2F6DF6;case GBA:return 0xFF7A4DFF;case GBC:return 0xFFFF9A2E;case GB:return 0xFF4DB36B;case NDS:return 0xFFFF4D73;
+            case SNES:return 0xFFA06BFF;case NES:return 0xFFFF4040;case MD:return 0xFF2AA8FF;default:return 0xFF14C9AA;
+        }
+    }
+    private int shade(int color,float f){return 0xFF000000|((int)(((color>>16)&255)*f)<<16)|((int)(((color>>8)&255)*f)<<8)|(int)((color&255)*f);}
+    private int blend(int a,int b,float t){
+        int r=(int)(((a>>16)&255)*t+((b>>16)&255)*(1-t)),g=(int)(((a>>8)&255)*t+((b>>8)&255)*(1-t)),bl=(int)((a&255)*t+(b&255)*(1-t));
+        return 0xFF000000|(r<<16)|(g<<8)|bl;
+    }
+    private int onAccent(){String th=themeName();boolean dark=library.dark();return (th.equals("GBA clásico")||(!th.equals("Mosaico")&&!dark))?Color.WHITE:0xFF04121F;}
+    private void focusableWith(View v,String key,java.util.function.Function<Boolean,android.graphics.drawable.Drawable> bg,Runnable click){
+        v.setTag(key);v.setFocusable(true);v.setClickable(true);v.setBackground(bg.apply(false));v.setOnClickListener(x->click.run());
+        v.setOnFocusChangeListener((x,has)->{x.setBackground(bg.apply(has));if(has)lastFocus=key;x.setElevation(dp(has?12:0));x.animate().scaleX(has?1.05f:1f).scaleY(has?1.05f:1f).setDuration(140).start();});
+    }
+    private android.graphics.drawable.Drawable tileBg(Console c,boolean focused){
+        String th=themeName();boolean dark=library.dark();int brand=brand(c);GradientDrawable g;
+        if(th.equals("GBA clásico")){g=new GradientDrawable();g.setColor(focused?brand:Color.WHITE);g.setCornerRadius(dp(22));g.setStroke(dp(focused?5:3),0xFF1A1A2E);}
+        else if(th.equals("Mosaico")){g=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{brand,shade(brand,0.78f)});g.setCornerRadius(dp(26));if(focused)g.setStroke(dp(5),Color.WHITE);}
+        else{int base=dark?0xFF0F1B2E:Color.WHITE;g=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{blend(brand,base,focused?0.45f:0.2f),base});g.setCornerRadius(dp(28));g.setStroke(dp(focused?3:1),focused?accent:strokeColor);}
+        return g;
+    }
+    private View consoleTile(Console c){
+        String th=themeName();boolean dark=library.dark();
+        LinearLayout tile=vertical();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(22),dp(14),dp(22),dp(12));
+        ImageView logo=logo(c);logo.setPadding(dp(8),0,dp(8),0);
+        if(th.equals("Mosaico")||(th.equals("Moderno")&&dark))logo.setColorFilter(Color.WHITE,android.graphics.PorterDuff.Mode.SRC_IN);
+        tile.addView(logo,new LinearLayout.LayoutParams(-1,0,1));
+        TextView count=label(gameCount(library.count(c)),12,th.equals("Mosaico")?0xE6FFFFFF:muted,true);count.setGravity(Gravity.CENTER);count.setPadding(dp(16),dp(4),dp(16),dp(4));
+        if(th.equals("Moderno")){GradientDrawable pill=new GradientDrawable();pill.setColor(dark?0x59000000:0x12000000);pill.setCornerRadius(dp(20));count.setBackground(pill);}
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-2,-2);cp.gravity=Gravity.CENTER_HORIZONTAL;cp.topMargin=dp(6);tile.addView(count,cp);
+        tile.setContentDescription(c.title+", "+library.count(c)+T.t(" juegos"));
+        focusableWith(tile,"console_"+c.name(),focused->tileBg(c,focused),()->openConsole(c));
+        if(th.equals("GBA clásico")){
+            View.OnFocusChangeListener base=tile.getOnFocusChangeListener();
+            tile.setOnFocusChangeListener((v,has)->{base.onFocusChange(v,has);if(has)logo.setColorFilter(Color.WHITE,android.graphics.PorterDuff.Mode.SRC_IN);else logo.clearColorFilter();count.setTextColor(has?Color.WHITE:muted);});
+        }
+        return tile;
+    }
+    private TextView primary(String title,String key,Runnable click){
+        TextView t=label(title,15,onAccent(),true);t.setGravity(Gravity.CENTER);t.setPadding(dp(26),dp(10),dp(26),dp(10));
+        focusableWith(t,key,focused->{GradientDrawable g=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{accent,focused?accent:shade(accent,0.85f)});g.setCornerRadius(dp(pixel?14:22));if(focused)g.setStroke(dp(3),text);return g;},click);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(50));p.setMargins(dp(4),dp(6),dp(4),dp(6));t.setLayoutParams(p);return t;
+    }
     private void home() {
         java.util.ArrayList<Console> visible=new java.util.ArrayList<>();
         for(Console c:Console.values())if(library.visible(c))visible.add(c);
@@ -274,22 +340,13 @@ public class MainActivity extends Activity {
             content=scrollContent();content.addView(label(T.t("No hay consolas visibles"),20,text,true));
             content.addView(button(T.t("Elegir consolas"),"empty_settings",()->route("settings")));return;
         }
-        if(library.theme().equals("Consola completa")){heroHome(visible);return;}
+        if(themeName().equals("Consola completa")){heroHome(visible);return;}
         content=vertical();content.setPadding(0,dp(10),0,0);body.addView(content,new LinearLayout.LayoutParams(-1,-1));
         LinearLayout row = null; int index = 0;
         for (Console c : visible) {
             if (index % 3 == 0) { row = horizontal();content.addView(row,new LinearLayout.LayoutParams(-1,0,1)); }
-            LinearLayout tile = vertical(); tile.setGravity(Gravity.CENTER);
-            tile.setPadding(dp(20),dp(10),dp(20),dp(8));
-            ImageView logo = logo(c);logo.setPadding(dp(8),0,dp(8),0);
-            tile.addView(logo, new LinearLayout.LayoutParams(-1,0,1));
-            TextView name = label(gameCount(library.count(c)), 11, 0xFF526177, true);
-            name.setPadding(0,dp(1),0,0);
-            name.setGravity(Gravity.CENTER); tile.addView(name);
-            tile.setContentDescription(c.title+", "+library.count(c)+T.t(" juegos"));
-            focusable(tile, "console_" + c.name(), library.dark()?0xFFDCE2ED:Color.WHITE, () -> openConsole(c));
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,-1,1); p.setMargins(dp(6),dp(6),dp(6),dp(6));
-            row.addView(tile, p); index++;
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,-1,1); p.setMargins(dp(8),dp(8),dp(8),dp(8));
+            row.addView(consoleTile(c), p); index++;
         }
         while(index++%3!=0)row.addView(new View(this),new LinearLayout.LayoutParams(0,-1,1));
     }
@@ -306,24 +363,39 @@ public class MainActivity extends Activity {
         int index=consoles.indexOf(heroConsole(consoles));
         library.homeConsole(consoles.get((index+delta+consoles.size())%consoles.size()));lastFocus="hero_console";render();
     }
+    private android.graphics.drawable.Drawable heroBg(Console c,boolean focused){
+        GradientDrawable g=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{brand(c),shade(brand(c),0.7f)});g.setCornerRadius(dp(40));
+        if(focused)g.setStroke(dp(4),text);return g;
+    }
+    private android.graphics.drawable.Drawable chipBg(Console c,boolean focused){
+        GradientDrawable g=new GradientDrawable();g.setColor(brand(c));g.setCornerRadius(dp(16));if(focused)g.setStroke(dp(3),text);return g;
+    }
     private void heroHome(java.util.List<Console> consoles) {
         Console current=heroConsole(consoles);
         if(lastFocus.isEmpty())lastFocus="hero_console";
         content=vertical();body.addView(content,new LinearLayout.LayoutParams(-1,-1));
         LinearLayout row=horizontal();content.addView(row,new LinearLayout.LayoutParams(-1,0,1));
         row.addView(icon("back",T.t("Consola anterior"),"hero_prev",()->moveHero(-1)));
-        LinearLayout hero=vertical();hero.setGravity(Gravity.CENTER);hero.setPadding(dp(34),dp(34),dp(34),dp(20));
-        hero.addView(logo(current),new LinearLayout.LayoutParams(-1,0,1));
-        TextView count=label(gameCount(library.count(current)),13,0xFF526177,false);count.setGravity(Gravity.CENTER);hero.addView(count);
+        LinearLayout hero=vertical();hero.setGravity(Gravity.CENTER);hero.setPadding(dp(40),dp(34),dp(40),dp(26));
+        ImageView heroLogo=logo(current);heroLogo.setColorFilter(Color.WHITE,android.graphics.PorterDuff.Mode.SRC_IN);
+        hero.addView(heroLogo,new LinearLayout.LayoutParams(-1,0,1));
+        TextView count=label(current.title+"  ·  "+gameCount(library.count(current)),16,0xE6FFFFFF,true);count.setGravity(Gravity.CENTER);hero.addView(count);
         hero.setContentDescription(current.title+", "+library.count(current)+T.t(" juegos. Abrir biblioteca"));
-        focusable(hero,"hero_console",library.dark()?0xFFDCE2ED:Color.WHITE,()->openConsole(current));
+        focusableWith(hero,"hero_console",f->heroBg(current,f),()->openConsole(current));
         hero.setOnKeyListener((v,key,e)->{
             if(e.getAction()!=KeyEvent.ACTION_DOWN)return false;
             if(key==KeyEvent.KEYCODE_DPAD_LEFT){moveHero(-1);return true;}
             if(key==KeyEvent.KEYCODE_DPAD_RIGHT){moveHero(1);return true;}return false;
         });
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-1,1);p.setMargins(dp(16),dp(14),dp(16),dp(8));row.addView(hero,p);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-1,1);p.setMargins(dp(14),dp(10),dp(14),dp(10));row.addView(hero,p);
         row.addView(icon("next",T.t("Consola siguiente"),"hero_next",()->moveHero(1)));
+        LinearLayout strip=horizontal();strip.setGravity(Gravity.CENTER);strip.setPadding(0,dp(4),0,dp(4));
+        for(Console c:consoles){
+            ImageView mini=logo(c);mini.setPadding(dp(10),dp(6),dp(10),dp(6));mini.setColorFilter(Color.WHITE,android.graphics.PorterDuff.Mode.SRC_IN);mini.setAlpha(c==current?1f:0.6f);
+            focusableWith(mini,"chip_"+c.name(),f->chipBg(c,f),()->{library.homeConsole(c);lastFocus="hero_console";render();});
+            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(88),dp(46));cp.setMargins(dp(5),0,dp(5),0);strip.addView(mini,cp);
+        }
+        content.addView(strip,new LinearLayout.LayoutParams(-1,-2));
     }
     private String catalogMessage(){
         if(drive.stage!=TirsoDrive.Stage.READY)return T.t("Conecta TirsoDrive para actualizar tu colección");
@@ -351,15 +423,15 @@ public class MainActivity extends Activity {
             image.setBackgroundColor(surface); art.addView(image, new FrameLayout.LayoutParams(-1, -1));
             // Transparent fallback keeps the title placeholder visible if artwork is unavailable.
             image.setBackgroundColor(Color.TRANSPARENT);
-            tile.addView(art, new LinearLayout.LayoutParams(-1,dp(90))); artwork.load(game, image);
+            tile.addView(art, new LinearLayout.LayoutParams(-1,dp(104))); artwork.load(game, image);
             TextView name = label((library.favorite(game) ? "★ " : "") + game.title,11,text,true);
             name.setMaxLines(2); name.setEllipsize(android.text.TextUtils.TruncateAt.END); tile.addView(name);
             focusable(tile, "game_" + game.id, surface, () -> { selected = game;drive.inspectFile(game);route("detail"); });
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(135),1); p.setMargins(dp(5),dp(5),dp(5),dp(5));
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(152),1); p.setMargins(dp(5),dp(5),dp(5),dp(5));
             row.addView(tile, p); index++;
         }
         if (index == 0) grid.addView(label(favorites ? T.t("Guarda juegos desde su ficha para verlos aquí.") : T.t("No hay juegos que coincidan."), 18, muted, false));
-        else while (index++ % columns != 0) row.addView(new View(this),new LinearLayout.LayoutParams(0,dp(135),1));
+        else while (index++ % columns != 0) row.addView(new View(this),new LinearLayout.LayoutParams(0,dp(152),1));
         if(games.size()>visibleGames)grid.addView(button(T.t("Mostrar más juegos"),"load_more",()->{
             int next=visibleGames;visibleGames+=60;lastFocus="game_"+games.get(next).id;render();
         }));
@@ -389,7 +461,7 @@ public class MainActivity extends Activity {
         if(selected.telegramAccount!=0){
             downloadLabel=label("",13,muted,false);info.addView(downloadLabel);
             playProgress=new android.widget.ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);playProgress.setMax(100);playProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(accent));info.addView(playProgress,new LinearLayout.LayoutParams(-1,dp(5)));
-            downloadButton=button(T.t("Jugar"),"download_game",this::playSelected);info.addView(downloadButton);updateDownload();
+            downloadButton=primary(T.t("Jugar"),"download_game",this::playSelected);info.addView(downloadButton);updateDownload();
         }
         info.addView(button(library.favorite(selected) ? T.t("★ Quitar de favoritos") : T.t("☆ Guardar en favoritos"), "favorite_toggle", () -> { library.toggleFavorite(selected); render(); }));
         info.addView(button(T.t("Volver a la biblioteca"), "back_library", this::backToLibrary));
@@ -440,10 +512,10 @@ public class MainActivity extends Activity {
         heading(T.t("Ajustes"), T.t("A tu manera")); content = scrollContent();content.setClipChildren(false);
         settingsSection(T.t("Apariencia"));LinearLayout appearance=horizontal();content.addView(appearance);
         settingTile(appearance,T.t("Color"),library.dark()?T.t("Oscuro"):T.t("Claro"),"color_mode",()->{library.dark(!library.dark());render();});
-        settingTile(appearance,T.t("Diseño"),T.t(library.theme()),"visual_theme",()->{
-            String[] themes = {"Moderno", "GBA clásico", "Nintendo rojo", "Retro naranja", "Consola completa"};
+        settingTile(appearance,T.t("Diseño"),T.t(themeName()),"visual_theme",()->{
+            String[] themes = {"Moderno", "GBA clásico", "Mosaico", "Consola completa"};
             String[] shown = new String[themes.length];for(int i=0;i<themes.length;i++)shown[i]=T.t(themes[i]);
-            int current=java.util.Arrays.asList(themes).indexOf(library.theme());
+            int current=java.util.Arrays.asList(themes).indexOf(themeName());
             new AlertDialog.Builder(this).setTitle(T.t("Tema visual")).setSingleChoiceItems(shown,current,(d,w)->{library.theme(themes[w]);d.dismiss();render();}).show();
         });
         settingTile(appearance,"Idioma / Language",T.english()?"English":"Español","language",()->{
@@ -566,11 +638,13 @@ public class MainActivity extends Activity {
             View focus = getCurrentFocus(); if (focus != null && event.getRepeatCount() == 0) focus.performClick(); return true;
         }
         if (keyCode == KeyEvent.KEYCODE_BUTTON_START) { route("settings"); return true; }
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_Y && page.equals("library")) { search(); return true; }
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_X && !page.equals("welcome")) { console = null; favorites = true; query = ""; libraryFocus = ""; libraryScroll = 0; route("library"); return true; }
         return super.onKeyDown(keyCode, event);
     }
     @Override public boolean onKeyUp(int keyCode,KeyEvent event) {
         controllers.key(event,false);
-        if(keyCode==KeyEvent.KEYCODE_BUTTON_A||keyCode==KeyEvent.KEYCODE_BUTTON_B||keyCode==KeyEvent.KEYCODE_BUTTON_START)return true;
+        if(keyCode==KeyEvent.KEYCODE_BUTTON_A||keyCode==KeyEvent.KEYCODE_BUTTON_B||keyCode==KeyEvent.KEYCODE_BUTTON_START||keyCode==KeyEvent.KEYCODE_BUTTON_X||(keyCode==KeyEvent.KEYCODE_BUTTON_Y&&page.equals("library")))return true;
         return super.onKeyUp(keyCode,event);
     }
     @Override public boolean onGenericMotionEvent(MotionEvent event) {
