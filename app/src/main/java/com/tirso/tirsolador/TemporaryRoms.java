@@ -13,7 +13,16 @@ final class TemporaryRoms {
     static boolean removeSource(Context c,File file){
         if(file==null)return true;try{String p=file.getCanonicalPath();boolean owned=p.startsWith(new File(c.getFilesDir(),"telegram/files").getCanonicalPath()+File.separator)||p.startsWith(c.getCacheDir().getCanonicalPath()+File.separator);return !owned||!file.exists()||file.delete();}catch(Exception e){return false;}
     }
+    /** The game ended: the download stays for quick replays; it is removed when the app closes (see purge) or at the next start. */
+    static void release(){sessions.decrementAndGet();}
+    private static boolean swept;
+    /** Removes every downloaded game that was left over from an earlier run of the app. */
     static void sweep(Context c){
+        if(swept)return; swept=true;
+        purge(c);
+    }
+    /** Removes the kept game files (the app is closing, or a previous run left them behind). */
+    static void purge(Context c){
         if(busy())return;
         android.content.SharedPreferences p=c.getSharedPreferences("rom_leases",0);
         for(java.util.Map.Entry<String,?>e:p.getAll().entrySet())if(e.getValue() instanceof String&&removeSource(c,new File((String)e.getValue())))p.edit().remove(e.getKey()).commit();

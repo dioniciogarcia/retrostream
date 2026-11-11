@@ -314,6 +314,7 @@ public class MainActivity extends Activity {
             case "backups": monoTitle = T.t("COPIAS"); monoRight = ""; break;
             case "history": monoTitle = T.t("HISTORIAL"); monoRight = ""; break;
             case "artwork": monoTitle = T.t("IMÁGENES"); monoRight = ""; break;
+            case "resolution": monoTitle = T.t("RESOLUCIÓN"); monoRight = ""; break;
             case "welcome": monoTitle = "TIRSODRIVE"; monoRight = ""; break;
             case "loading": monoTitle = T.t("CARGANDO"); monoRight = ""; break;
             default:
@@ -327,11 +328,12 @@ public class MainActivity extends Activity {
         else if (page.equals("backups")) backupsScreen();
         else if (page.equals("history")) historyScreen();
         else if (page.equals("artwork")) artworkScreen();
+        else if (page.equals("resolution")) resolutionScreen();
         else if (page.equals("loading") && selected != null) loadingScreen();
         else if (page.equals("library")) libraryScreen();
         else home();
         if (page.equals("library")) footer(new String[][]{{"A", T.t("Jugar")}, {"B", T.t("Volver")}, {"Y", T.t("Buscar")}, {"X", T.t("Favorito")}}, T.t("Carátulas de libretro · guardadas en la TV"));
-        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
+        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork") || page.equals("resolution")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
         root.post(() -> {
             View target = lastFocus.isEmpty() ? null : root.findViewWithTag(lastFocus);
             if (target == null) target = firstContentFocusable(content == null ? body : content);
@@ -907,9 +909,10 @@ public class MainActivity extends Activity {
         sCard(b, T.t("Copias de partidas"), T.t("Guardadas en tu canal de Telegram"), "BAK", 0xFF2DE2C8, "backups", () -> openBackups());
         sCard(b, T.t("Archivos del sistema"), T.t("BIOS y archivos compartidos"), "SYS", 0xFF4DB36B, "system_files", this::importSystemFile);
         sSection(T.t("Juego")); LinearLayout c = sRow();
-        String res = Presets.resolution(this);
-        sCard(c, T.t("Resolución"), T.t("high".equals(res) ? "Alta" : "low".equals(res) ? "Baja" : "Media") + " · " + T.t("Todas las consolas"), "RES", 0xFF2F6DF6, "resolution", () -> {
-            String cur = Presets.resolution(this); Presets.setResolution(this, "low".equals(cur) ? "medium" : "medium".equals(cur) ? "high" : "low"); lastFocus = "resolution"; render(); });
+        String resSummary = null; boolean resMixed = false;
+        for (Console cn : Console.values()) { if (!library.visible(cn) || cn == Console.MAME) continue; String v = Presets.resolution(this, cn); if (resSummary == null) resSummary = v; else if (!resSummary.equals(v)) resMixed = true; }
+        String resShown = resMixed ? T.t("Personalizada") : T.t("high".equals(resSummary) ? "Alta" : "low".equals(resSummary) ? "Baja" : "Media");
+        sCard(c, T.t("Resolución"), resShown + " · " + T.t("Por consola"), "RES", 0xFF2F6DF6, "resolution", () -> route("resolution"));
         sCard(c, T.t("Mandos"), T.t("Perfiles independientes"), "PAD", 0xFFFF4D73, "controllers", this::controllers);
         sCard(c, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "IMG", 0xFFFF9A2E, "artwork_dl", () -> route("artwork"));
         sSection(T.t("Consolas visibles"));
@@ -1046,6 +1049,39 @@ public class MainActivity extends Activity {
             focusableWith(row, "hist_" + i, f -> { GradientDrawable g = round(th.equals("midnight") ? ov(0x14FFFFFF) : surface, 22); if (f) g.setStroke(px(5), ringColor); else if (!th.equals("midnight")) g.setStroke(px(2), strokeColor); return g; }, () -> startPlay(game));
             LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2); rp.setMargins(0, px(5), 0, px(5)); content.addView(row, rp);
         }
+    }
+
+
+    // ---------------------------------------------------------------- resolution per console
+    private void resolutionScreen() {
+        LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));
+        if (!mono) { TextView h = tv(T.t("Resolución"), 62, text, fHead); h.setPadding(px(10), px(10), 0, 0); col.addView(h); }
+        TextView sub = tv(T.t("Elige la resolución de cada consola. En N64 cambia el tamaño del dibujo; en las consolas 2D cambia cómo se escala la imagen."), 26, muted, fBody); sub.setPadding(px(10), px(8), px(10), px(16)); col.addView(sub);
+        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
+        content = vertical(); content.setClipChildren(false); content.setPadding(0, px(4), 0, px(20)); scroll.addView(content); col.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        resolutionRow(null);
+        for (Console c : Console.values()) if (library.visible(c) && c != Console.MAME) resolutionRow(c);
+    }
+    private void resolutionRow(Console c) {
+        LinearLayout row = horizontal(); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(px(26), px(14), px(18), px(14));
+        GradientDrawable bg = round(th.equals("midnight") ? ov(0x10FFFFFF) : surface, 22); if (!th.equals("midnight")) bg.setStroke(px(2), strokeColor); row.setBackground(bg);
+        LinearLayout names = vertical();
+        names.addView(tv(c == null ? T.t("Todas las consolas") : c.title, 32, text, fHead));
+        String note = c == null ? T.t("Cambia todas a la vez") : c == Console.N64 ? T.t("Tamaño del dibujo") : c == Console.NDS ? T.t("Solo con el motor DeSmuME") : T.t("Escalado de la imagen");
+        TextView n = tv(note, 22, muted, fBody); n.setPadding(0, px(4), 0, 0); names.addView(n);
+        row.addView(names, new LinearLayout.LayoutParams(0, -2, 1));
+        String[] ids = {"low", "medium", "high"}, labels = {T.t("Baja"), T.t("Media"), T.t("Alta")};
+        String current = c == null ? null : Presets.resolution(this, c);
+        if (c == null) { boolean same = true; String first = null; for (Console x : Console.values()) { if (!library.visible(x) || x == Console.MAME) continue; String v = Presets.resolution(this, x); if (first == null) first = v; else if (!first.equals(v)) same = false; } current = same ? first : null; }
+        for (int i = 0; i < 3; i++) {
+            final String id = ids[i]; boolean on = id.equals(current); final String tag = "res_" + (c == null ? "ALL" : c.name()) + "_" + id;
+            TextView chip = tv(labels[i], 26, on ? onAccent() : text, fHead); chip.setGravity(Gravity.CENTER); chip.setPadding(px(30), px(14), px(30), px(14));
+            final int ringColor = focusRing();
+            focusableWith(chip, tag, f -> { GradientDrawable g = round(on ? (th.equals("midnight") ? accent : th.equals("tiles") ? 0xFFFFC857 : ink) : (th.equals("midnight") ? ov(0x18FFFFFF) : ov(0x14FFFFFF)), 18); if (f) g.setStroke(px(5), ringColor); return g; },
+                () -> { if (c == null) { for (Console x : Console.values()) Presets.setResolution(this, x, id); } else Presets.setResolution(this, c, id); lastFocus = tag; render(); });
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(px(150), px(72)); cp.setMargins(px(6), 0, px(6), 0); row.addView(chip, cp);
+        }
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2); rp.setMargins(px(8), px(7), px(8), px(7)); content.addView(row, rp);
     }
 
     // ---------------------------------------------------------------- download all artwork
@@ -1263,12 +1299,12 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if(page.equals("welcome")){drive.skip();route("home");return;}
         if (page.equals("loading")) backToLibrary();
-        else if (page.equals("backups") || page.equals("artwork")) route("settings");
+        else if (page.equals("backups") || page.equals("artwork") || page.equals("resolution")) route("settings");
         else if (!page.equals("home")) route("home");
         else new AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
                     .setPositiveButton(T.t("Salir"), (d,w) -> finish()).setNegativeButton(T.t("Cancelar"), null).show();
     }
-    @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artCancel.set(true); artwork.close(); super.onDestroy(); }
+    @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artCancel.set(true); artwork.close(); if (isFinishing()) { drive.releaseAll(); TemporaryRoms.purge(getApplicationContext()); } super.onDestroy(); }
     @Override protected void onPause(){cancelPending();super.onPause();}
     @Override protected void onResume(){
         super.onResume();

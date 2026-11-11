@@ -197,7 +197,7 @@ open class GameActivity : AppCompatActivity() {
         val ws = workspace; val lease = romLease; val source = sourceRom; val app = applicationContext
         val kill = isolated
         Thread {
-            ws?.let { ArchiveContent.removeTree(it) }; TemporaryRoms.finish(app, lease, source)
+            ws?.let { ArchiveContent.removeTree(it) }; if (lease != null) TemporaryRoms.release()
             if (kill) android.os.Process.killProcess(android.os.Process.myPid())
         }.start()
     }

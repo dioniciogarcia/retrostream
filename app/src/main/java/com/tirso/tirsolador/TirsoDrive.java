@@ -319,6 +319,11 @@ final class TirsoDrive {
         if(file.local.isDownloadingCompleted){requestedDownloads.remove(file.id);status=T.t("Listo para jugar");publish(false);}
         else if(percent!=lastDownloadPercent){lastDownloadPercent=percent;publish(false);}
     }
+    /** The app is closing: remove every downloaded game from Telegram's file store too, so nothing stale is left. */
+    void releaseAll(){main.post(()->{
+        if(client==null)return;
+        for(Integer id:new java.util.ArrayList<>(files.keySet())){TdApi.File f=files.get(id);if(f!=null&&f.local.isDownloadingCompleted)send(new TdApi.DeleteFile(id),r->{});}
+    });}
     void releaseRom(int fileId,long account){main.post(()->{
         if(fileId<1||account!=accountId||client==null)return;
         deletingFiles.add(fileId);files.remove(fileId);requestedDownloads.remove(fileId);watchedFiles.remove(fileId);

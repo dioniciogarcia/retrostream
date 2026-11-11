@@ -27,6 +27,14 @@ final class TEn {
         m.put("Logos originales", "Original logos");
         m.put("Logos a color", "Color logos");
         m.put("JUEGOS", "GAMES");
+        m.put("RESOLUCIÓN", "RESOLUTION");
+        m.put("Personalizada", "Custom");
+        m.put("Por consola", "Per console");
+        m.put("Elige la resolución de cada consola. En N64 cambia el tamaño del dibujo; en las consolas 2D cambia cómo se escala la imagen.", "Choose the resolution for each console. On N64 it changes the drawing size; on 2D consoles it changes how the picture is scaled.");
+        m.put("Cambia todas a la vez", "Changes all at once");
+        m.put("Tamaño del dibujo", "Drawing size");
+        m.put("Solo con el motor DeSmuME", "DeSmuME engine only");
+        m.put("Escalado de la imagen", "Picture scaling");
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
