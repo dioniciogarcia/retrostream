@@ -53,6 +53,7 @@ public class MainActivity extends Activity {
     private Typeface fontRegular, fontBold;
     private boolean pixel;
     private String page = "home", query = "";
+    private String embedded = null;
     private Console console;
     private Game selected;
     private boolean favorites;
@@ -78,6 +79,8 @@ public class MainActivity extends Activity {
             public void onInputDeviceRemoved(int id) { controllers.disconnect(id); }
         };
         inputManager.registerInputDeviceListener(inputListener,null);
+        // Phone app: opened from PhoneActivity for one settings-type page; going back from it closes it.
+        if (getIntent() != null && getIntent().hasExtra("embed_page")) { embedded = getIntent().getStringExtra("embed_page"); page = embedded; }
         if (state != null) {
             page = state.getString("page", "home"); query = state.getString("query", "");
             favorites = state.getBoolean("favorites"); lastFocus = state.getString("focus", "");
@@ -85,7 +88,7 @@ public class MainActivity extends Activity {
             try { console = Console.valueOf(state.getString("console", "")); } catch (IllegalArgumentException ignored) { }
             for (Game g : library.games) if (g.id.equals(state.getString("game"))) selected = g;
         }
-        if(!drive.onboarded()&&!drive.skipped())page="welcome";
+        if(!drive.onboarded()&&!drive.skipped()&&embedded==null)page="welcome";
         render();
         scrape();
         driveListener=catalog->{
@@ -304,7 +307,7 @@ public class MainActivity extends Activity {
         }
     }
     private void cancelPending(){discFor="";discParts=null;if(!pendingPlay.isEmpty()&&selected!=null&&pendingPlay.equals(selected.id)){org.drinkless.tdlib.TdApi.File f=drive.file(selected);if(f!=null&&f.local.isDownloadingActive)drive.cancelDownload(selected);}pendingPlay="";}
-    private void route(String target) { cancelPending();rememberLibrary();page = target; lastFocus = ""; heroEntry = true; render(); }
+    private void route(String target) { if (embedded != null && target.equals("home")) { finish(); return; } cancelPending();rememberLibrary();page = target; lastFocus = ""; heroEntry = true; render(); }
     private void backToLibrary() {cancelPending();page="library";lastFocus=libraryFocus;heroEntry=true;render();}
     private void render() {
         if (BuildConfig.PHONE) { int want = PhoneGames.lockLandscape(this) ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER; if (getRequestedOrientation() != want) setRequestedOrientation(want); }
@@ -1645,6 +1648,7 @@ public class MainActivity extends Activity {
         return super.onGenericMotionEvent(event);
     }
     @Override public void onBackPressed() {
+        if (embedded != null && (page.equals(embedded) || page.equals("home") || page.equals("welcome"))) { finish(); return; }
         if(page.equals("welcome")){drive.skip();route("home");return;}
         if (page.equals("loading")) backToLibrary();
         else if (page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("phone")) route("settings");
@@ -1652,7 +1656,7 @@ public class MainActivity extends Activity {
         else new AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
                     .setPositiveButton(T.t("Salir"), (d,w) -> finish()).setNegativeButton(T.t("Cancelar"), null).show();
     }
-    @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artCancel.set(true); artwork.close(); if (isFinishing()) { drive.releaseAll(); TemporaryRoms.purge(getApplicationContext()); } super.onDestroy(); }
+    @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artCancel.set(true); artwork.close(); if (isFinishing() && embedded == null) { drive.releaseAll(); TemporaryRoms.purge(getApplicationContext()); } super.onDestroy(); }
     @Override protected void onPause(){cancelPending();super.onPause();}
     @Override public void onConfigurationChanged(android.content.res.Configuration c){super.onConfigurationChanged(c);if(root!=null)render();}
     @Override protected void onStart(){super.onStart();if(drive!=null)drive.appVisible(true);}
