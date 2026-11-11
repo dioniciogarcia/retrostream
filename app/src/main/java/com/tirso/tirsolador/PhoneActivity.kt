@@ -141,7 +141,7 @@ class PhoneActivity : Activity() {
         when (page) {
             "welcome" -> render()
             "loading" -> updateLoading()
-            "home", "library" -> if (catalog) render() else updateBadge()
+            "home", "library", "consoles" -> if (catalog) render() else updateBadge()
         }
     }
 
@@ -220,6 +220,7 @@ class PhoneActivity : Activity() {
             "welcome" -> welcome()
             "library" -> libraryPage()
             "detail" -> detailPage()
+            "consoles" -> consolesPage()
             "loading" -> loadingPage()
             else -> home()
         }
@@ -370,7 +371,7 @@ class PhoneActivity : Activity() {
         val last = recent().firstOrNull()?.first
         if (landscape) {
             val row = horizontal(); row.gravity = Gravity.TOP; row.setPadding(dp(12), dp(10), dp(12), dp(8))
-            row.addView(continueCard(last, true), LinearLayout.LayoutParams(0, -1, 0.9f))
+            if (HomeLayout.shown(this, "continue")) row.addView(continueCard(last, true), LinearLayout.LayoutParams(0, -1, 0.9f))
             val right = vertical(); right.setPadding(dp(12), 0, 0, 0)
             val top = horizontal()
             top.addView(tv(T.t("Inicio"), 18f, p.text, bold = true).apply { setPadding(dp(4), 0, dp(4), 0) })
@@ -380,9 +381,9 @@ class PhoneActivity : Activity() {
             top.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { openEmbedded("friends") })
             top.addView(icon("settings", T.t("Ajustes"), "h_settings") { openEmbedded("settings") })
             right.addView(top)
-            right.addView(section(T.t("Consolas")))
-            right.addView(consoleRow(dp(104), dp(70)))
-            recentBlock(right, dp(78), dp(104))
+            if (HomeLayout.shown(this, "recent")) recentBlock(right, dp(78), dp(104))
+            if (HomeLayout.shown(this, "consoles")) { right.addView(section(T.t("Consolas"))); right.addView(consoleRow(dp(104), dp(70))) }
+            if (HomeLayout.shown(this, "friends")) friendsBlock(right)
             row.addView(scroll(right), LinearLayout.LayoutParams(0, -1, 1.25f))
             val outer = vertical(); outer.addView(row, LinearLayout.LayoutParams(-1, 0, 1f))
             if (hasController()) outer.addView(hints("A" to T.t("Abrir"), "B" to T.t("Volver"), "Y" to T.t("Buscar"), "X" to T.t("Favoritos")))
@@ -391,12 +392,22 @@ class PhoneActivity : Activity() {
         }
         val col = vertical(); col.setPadding(0, 0, 0, dp(18))
         col.addView(header(T.t("Inicio"), false))
-        col.addView(continueCard(last, false), LinearLayout.LayoutParams(-1, dp(220)).apply { setMargins(dp(14), dp(4), dp(14), 0) })
-        recentBlock(col, dp(104), dp(140))
-        col.addView(section(T.t("Consolas")).apply { setPadding(dp(18), dp(18), 0, dp(6)) })
-        col.addView(consoleRow(dp(120), dp(84)))
-        friendsBlock(col)
-        suggestedBlock(col)
+        if (HomeLayout.shown(this, "continue")) col.addView(continueCard(last, false), LinearLayout.LayoutParams(-1, dp(220)).apply { setMargins(dp(14), dp(4), dp(14), 0) })
+        if (HomeLayout.shown(this, "recent")) recentBlock(col, dp(104), dp(140))
+        if (HomeLayout.shown(this, "consoles")) {
+            if (HomeLayout.consoleGrid(this)) {
+                val head = horizontal(); head.setPadding(dp(18), dp(18), dp(14), dp(6))
+                head.addView(tv(T.t("Consolas").uppercase(), 11f, p.muted, mono = true).apply { letterSpacing = .1f }, LinearLayout.LayoutParams(0, -2, 1f))
+                if (visibleConsoles().size > 9) head.addView(tv(T.t("Ver todo"), 12f, p.primary).also { control(it, "consoles_all", Color.TRANSPARENT, 8f, false) { go("consoles") } })
+                col.addView(head)
+                col.addView(consoleGrid(visibleConsoles().take(9)))
+            } else {
+                col.addView(section(T.t("Consolas")).apply { setPadding(dp(18), dp(18), 0, dp(6)) })
+                col.addView(consoleRow(dp(120), dp(84)))
+            }
+        }
+        if (HomeLayout.shown(this, "friends")) friendsBlock(col)
+        if (HomeLayout.shown(this, "suggested")) suggestedBlock(col)
         root.addView(scroll(col))
     }
 
@@ -433,6 +444,50 @@ class PhoneActivity : Activity() {
             card.addView(resume, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(16), 0, 0, dp(16)) })
         }
         return card
+    }
+
+    /** Consoles as a 3-column grid of tiles. */
+    private fun consoleGrid(list: List<Console>): View {
+        val grid = vertical(); grid.setPadding(dp(12), 0, dp(12), 0)
+        var row: LinearLayout? = null
+        list.forEachIndexed { i, c ->
+            if (i % 3 == 0) { row = horizontal(); grid.addView(row, LinearLayout.LayoutParams(-1, -2)) }
+            row!!.addView(consoleTile(c), LinearLayout.LayoutParams(0, dp(84), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+        }
+        val rest = list.size % 3
+        if (rest != 0) repeat(3 - rest) { row!!.addView(View(this), LinearLayout.LayoutParams(0, dp(10), 1f).apply { setMargins(dp(4), 0, dp(4), 0) }) }
+        return grid
+    }
+    private fun consolesPage() {
+        val outer = vertical()
+        outer.addView(header(T.t("Consolas"), true))
+        val list = visibleConsoles()
+        outer.addView(scroll(vertical().apply { setPadding(0, 0, 0, dp(16)); addView(if (landscape) consoleGridCols(list, 5) else consoleGrid(list)) }), LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(outer)
+    }
+    private fun consoleGridCols(list: List<Console>, cols: Int): View {
+        val grid = vertical(); grid.setPadding(dp(12), 0, dp(12), 0)
+        var row: LinearLayout? = null
+        list.forEachIndexed { i, c ->
+            if (i % cols == 0) { row = horizontal(); grid.addView(row, LinearLayout.LayoutParams(-1, -2)) }
+            row!!.addView(consoleTile(c), LinearLayout.LayoutParams(0, dp(80), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+        }
+        val rest = list.size % cols
+        if (rest != 0) repeat(cols - rest) { row!!.addView(View(this), LinearLayout.LayoutParams(0, dp(10), 1f).apply { setMargins(dp(4), 0, dp(4), 0) }) }
+        return grid
+    }
+    private fun consoleTile(c: Console): View {
+        val tile = FrameLayout(this); tile.setPadding(dp(8), dp(6), dp(8), dp(6))
+        val filled = style == "console" || style == "tiles"
+        val img = logo(c, filled)
+        if (img != null) tile.addView(img, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(2), dp(2), dp(2), dp(16)) })
+        else tile.addView(tv(c.title, 13f, if (filled) Color.WHITE else p.text, bold = true).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(12) })
+        tile.addView(tv(c.name, 11f, if (filled) Color.WHITE else p.text, bold = true), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START))
+        val n = library.count(c)
+        if (n > 0) tile.addView(tv(n.toString(), 10f, if (filled) 0xCCFFFFFF.toInt() else p.muted), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END))
+        if (style == "midnight") tile.addView(View(this).apply { setBackgroundColor(c.color) }, FrameLayout.LayoutParams(-1, dp(3), Gravity.TOP))
+        control(tile, "tile_${c.name}", if (filled) c.color else p.surface, if (style == "tiles") 18f else 12f, style == "gba") { openConsole(c) }
+        return tile
     }
 
     /** Consoles as one swipeable row of tiles. */
@@ -885,6 +940,7 @@ class PhoneActivity : Activity() {
             "welcome" -> { if (drive.stage != TirsoDrive.Stage.READY) drive.skip(); go("home") }
             "loading" -> cancelLoading()
             "detail" -> go("library")
+            "consoles" -> go("home")
             "library" -> { query = ""; source = "all"; console = null; go("home") }
             else -> AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
                 .setPositiveButton(T.t("Salir")) { _, _ -> finish() }.setNegativeButton(T.t("Cancelar"), null).show()

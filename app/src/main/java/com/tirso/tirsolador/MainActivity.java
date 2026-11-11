@@ -339,7 +339,9 @@ public class MainActivity extends Activity {
             case "consoles": monoTitle = T.t("CONSOLAS"); monoRight = ""; break;
             case "welcome": monoTitle = "TIRSODRIVE"; monoRight = ""; break;
             case "loading": monoTitle = T.t("CARGANDO"); monoRight = ""; break;
+            case "home_layout": monoTitle = T.t("PANTALLA DE INICIO"); monoRight = ""; break;
             default:
+                if (!BuildConfig.PHONE && HomeLayout.tvStyle(this).equals("a")) { monoTitle = T.t("INICIO"); monoRight = ""; break; }
                 monoTitle = T.t("CONSOLAS");
                 monoRight = th.equals("console") ? (heroIndex() + 1) + T.t(" DE ") + systems : systems + T.t(" SISTEMAS");
         }
@@ -354,11 +356,12 @@ public class MainActivity extends Activity {
         else if (page.equals("resolution")) resolutionScreen();
         else if (page.equals("phone")) phoneScreen();
         else if (page.equals("consoles")) consolesScreen();
+        else if (page.equals("home_layout")) homeLayoutScreen();
         else if (page.equals("loading") && selected != null) loadingScreen();
         else if (page.equals("library")) libraryScreen();
         else home();
         if (page.equals("library")) footer(new String[][]{{"A", T.t("Jugar")}, {"B", T.t("Volver")}, {"Y", T.t("Buscar")}, {"X", T.t("Favorito")}}, T.t("Carátulas de libretro · guardadas en la TV"));
-        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("friends") || page.equals("phone") || page.equals("consoles")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
+        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("friends") || page.equals("phone") || page.equals("consoles") || page.equals("home_layout")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
         root.post(() -> {
             View target = lastFocus.isEmpty() ? null : root.findViewWithTag(lastFocus);
             if (target == null) target = firstContentFocusable(content == null ? body : content);
@@ -573,6 +576,7 @@ public class MainActivity extends Activity {
             content = scrollContent(); content.addView(label(T.t("No hay consolas visibles"), 20, text, true));
             content.addView(button(T.t("Elegir consolas"), "empty_settings", () -> route("settings"))); return;
         }
+        if (!BuildConfig.PHONE && HomeLayout.tvStyle(this).equals("a")) { homeA(visible); return; }
         if (th.equals("console")) { heroHome(visible); return; }
         if (th.equals("midnight")) {
             TextView t = tv(T.t("Tu biblioteca retro"), 62, text, fHead); t.setPadding(0, px(18), 0, 0); body.addView(t);
@@ -1088,8 +1092,8 @@ public class MainActivity extends Activity {
         int shownConsoles = 0; for (Console cn : Console.all()) if (library.visible(cn)) shownConsoles++;
         LinearLayout cv = sRow();
         sCard(cv, T.t("Consolas"), shownConsoles + T.t(" de ") + Console.all().length + T.t(" visibles"), "CON", 0xFF14C9AA, "consoles_page", () -> route("consoles"));
+        sCard(cv, T.t("Pantalla de inicio"), T.t("Qué secciones se muestran"), "HOM", 0xFF7A4DFF, "home_layout", () -> route("home_layout"));
         sCard(cv, T.t("Limpiar grupos vacíos"), T.t("Borra grupos TD duplicados sin archivos"), "DEL", 0xFFFF4D73, "cleanup_groups", this::cleanupGroups);
-        sFiller(cv, 1);
         sSection(T.t("Aplicación")); LinearLayout d = sRow();
         sCard(d, T.t("Actualizaciones"), T.t("Buscar e instalar la última versión"), "UPD", 0xFF7A4DFF, "updates", this::checkUpdates);
         sCard(d, T.t("Informe de problemas"), T.t("Qué registró Android si un juego falla"), "LOG", 0xFFFF9A2E, "crash_report", this::crashReport);
@@ -1193,6 +1197,137 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(px(8), px(5), px(8), px(5)); content.addView(row, p);
     }
     private String onOff(boolean on) { return on ? T.t("Sí") : T.t("No"); }
+    // ------------------------------------------------------------------ Settings > Home screen
+    private void homeLayoutScreen() {
+        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
+        content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content);
+        if (!mono) { TextView h = tv(T.t("Pantalla de inicio"), 62, text, fHead); h.setPadding(px(10), px(10), 0, px(6)); body.addView(h); }
+        body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        if (!BuildConfig.PHONE) {
+            phoneSection(T.t("DISEÑO"));
+            boolean a = HomeLayout.tvStyle(this).equals("a");
+            phoneRow(T.t("Inicio: ") + (a ? T.t("Continuar y filas") : T.t("Clásico")), a ? T.t("Tarjeta Continuar, recientes, consolas y amigos") : T.t("Las pantallas de consolas de antes, según el tema"), "home_style",
+                () -> { HomeLayout.tvStyle(this, a ? "classic" : "a"); render(); });
+        } else {
+            phoneSection(T.t("CONSOLAS"));
+            boolean g = HomeLayout.consoleGrid(this);
+            phoneRow(T.t("Consolas: ") + (g ? T.t("Cuadrícula") : T.t("Fila")), g ? T.t("Las primeras 9 y «Ver todo»") : T.t("Una fila que se desliza (como antes)"), "home_grid",
+                () -> { HomeLayout.consoleGrid(this, !g); render(); });
+        }
+        phoneSection(T.t("SECCIONES"));
+        String[][] names = {{"continue", T.t("Continuar")}, {"recent", T.t("Jugados recientemente")}, {"consoles", T.t("Consolas")}, {"friends", T.t("Amigos")}, {"suggested", T.t("Juegos sugeridos")}};
+        for (String[] n : names) {
+            if (n[0].equals("suggested") && !BuildConfig.PHONE) continue;
+            boolean on = HomeLayout.shown(this, n[0]);
+            phoneRow(n[1] + ": " + onOff(on), n[0].equals("suggested") ? T.t("Solo con el teléfono en vertical") : null, "home_" + n[0], () -> { HomeLayout.shown(this, n[0], !on); render(); });
+        }
+    }
+
+    // ------------------------------------------------------------------ TV home, option A: Continue card + rows
+    private void homeA(java.util.List<Console> visible) {
+        java.util.List<Object[]> plays = library.plays();
+        java.util.LinkedHashMap<String, Game> recent = new java.util.LinkedHashMap<>();
+        for (Object[] r : plays) { Game g = (Game) r[0]; if (!recent.containsKey(g.id)) recent.put(g.id, g); if (recent.size() >= 12) break; }
+        java.util.List<Game> rec = new java.util.ArrayList<>(recent.values());
+        Game last = rec.isEmpty() ? null : rec.get(0);
+        LinearLayout row = horizontal(); row.setGravity(Gravity.TOP); row.setClipChildren(false); row.setClipToPadding(false); row.setPadding(0, px(14), 0, 0);
+        body.addView(row, new LinearLayout.LayoutParams(-1, 0, 1));
+        if (HomeLayout.shown(this, "continue")) row.addView(continueCardTv(last, visible), new LinearLayout.LayoutParams(px(740), -1));
+        LinearLayout right = vertical(); right.setClipChildren(false); right.setPadding(px(40), 0, 0, 0);
+        content = right;
+        ScrollView sc = new ScrollView(this); sc.setClipChildren(false); sc.setClipToPadding(false); sc.addView(right);
+        row.addView(sc, new LinearLayout.LayoutParams(0, -1, 1));
+        if (HomeLayout.shown(this, "recent") && rec.size() > 1) {
+            LinearLayout head = horizontal(); head.addView(homeSection(T.t("Jugados recientemente")), new LinearLayout.LayoutParams(0, -2, 1));
+            TextView all = tv(T.t("Ver todo"), 24, accent, fBody); all.setPadding(px(14), px(6), px(14), px(6));
+            focusableWith(all, "home_recent_all", f -> { GradientDrawable g = round(0, 14); if (f) g.setStroke(px(4), focusRing()); return g; }, () -> route("history"));
+            head.addView(all); right.addView(head);
+            LinearLayout r = horizontal(); r.setGravity(Gravity.TOP); r.setClipChildren(false); r.setClipToPadding(false); r.setPadding(px(6), px(6), px(6), px(6));
+            for (Game g : rec.subList(1, rec.size())) r.addView(recentCardTv(g), new LinearLayout.LayoutParams(px(190), -2));
+            right.addView(hscroll(r));
+        }
+        if (HomeLayout.shown(this, "consoles")) {
+            right.addView(homeSection(T.t("Consolas")));
+            LinearLayout r = horizontal(); r.setClipChildren(false); r.setClipToPadding(false); r.setPadding(px(6), px(6), px(6), px(6));
+            for (Console c : visible) r.addView(consoleChipTv(c), new LinearLayout.LayoutParams(px(250), px(150)));
+            right.addView(hscroll(r));
+        }
+        if (HomeLayout.shown(this, "friends") && drive.friendsChat() != 0) {
+            right.addView(homeSection(T.t("Amigos")));
+            int shown = 0;
+            for (TirsoDrive.Friend f : drive.friends.values()) {
+                if (f.userId == drive.accountId || !f.online()) continue;
+                LinearLayout fr = horizontal(); fr.setPadding(px(10), px(8), px(10), px(8));
+                String name = f.name.isEmpty() ? "…" : f.name;
+                TextView av = tv(name.substring(0, 1).toUpperCase(java.util.Locale.ROOT), 24, 0xFF06210F, fHead); av.setGravity(Gravity.CENTER); av.setBackground(round(f.playing() ? 0xFF22C55E : 0xFF3B82F6, 24));
+                fr.addView(av, new LinearLayout.LayoutParams(px(48), px(48)));
+                TextView t = tv(name + " · " + (f.playing() ? f.game : T.t("En el menú")), 26, text, fBody); t.setPadding(px(16), 0, 0, 0); fr.addView(t);
+                right.addView(fr); if (++shown >= 4) break;
+            }
+            if (shown == 0) { TextView t = tv(T.t("Nadie conectado ahora"), 24, muted, fBody); t.setPadding(px(10), 0, 0, 0); right.addView(t); }
+        }
+    }
+    private TextView homeSection(String title) {
+        TextView t = tv(title.toUpperCase(java.util.Locale.ROOT), 21, muted, fMono); t.setLetterSpacing(.12f); t.setPadding(px(6), px(22), 0, px(8)); return t;
+    }
+    private android.widget.HorizontalScrollView hscroll(View inner) {
+        android.widget.HorizontalScrollView h = new android.widget.HorizontalScrollView(this); h.setHorizontalScrollBarEnabled(false); h.setClipChildren(false); h.setClipToPadding(false); h.addView(inner); return h;
+    }
+    private boolean filledCards() { return th.equals("console") || th.equals("tiles"); }
+    private View continueCardTv(Game g, java.util.List<Console> visible) {
+        Console c = g != null ? g.console : visible.isEmpty() ? Console.GBA : heroConsole(visible);
+        boolean filled = filledCards();
+        int radius = th.equals("tiles") ? 44 : 34;
+        FrameLayout card = new FrameLayout(this); card.setClipToOutline(true);
+        int ink2 = filled ? Color.WHITE : text, soft = filled ? 0xD9FFFFFF : muted;
+        if (g != null) {
+            FrameLayout cover = new FrameLayout(this); cover.setBackground(round(0xFFF2EEE4, 16)); cover.setClipToOutline(true);
+            ImageView iv = new ImageView(this); iv.setScaleType(ImageView.ScaleType.CENTER_CROP); cover.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+            artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles"); cover.setRotation(6f);
+            FrameLayout.LayoutParams cl = new FrameLayout.LayoutParams(px(250), px(340), Gravity.END | Gravity.CENTER_VERTICAL); cl.rightMargin = px(-14); card.addView(cover, cl);
+        }
+        LinearLayout texts = vertical(); texts.setPadding(px(36), px(36), px(36), 0);
+        TextView k = tv(g != null ? T.t("CONTINUAR") + " · " + c.title.toUpperCase(java.util.Locale.ROOT) : T.t("EMPIEZA A JUGAR"), 21, soft, fMono); k.setLetterSpacing(.08f); texts.addView(k);
+        TextView ttl = tv(g != null ? g.title : T.t("Elige una consola"), 50, ink2, fHead); ttl.setMaxLines(2); ttl.setEllipsize(android.text.TextUtils.TruncateAt.END); ttl.setPadding(0, px(12), 0, 0);
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-1, -2); tl.rightMargin = px(250); texts.addView(ttl, tl);
+        if (g != null && !PlayTime.label(this, g.id).isEmpty()) {
+            TextView pt = tv(PlayTime.label(this, g.id) + T.t(" jugadas"), 24, ink2, fBody); pt.setPadding(px(18), px(8), px(18), px(8)); pt.setBackground(round(filled ? 0x2EFFFFFF : ov(0x14FFFFFF), 20));
+            LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(-2, -2); pl.topMargin = px(18); texts.addView(pt, pl);
+        }
+        card.addView(texts, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+        if (g != null) { TextView resume = tv("▶  " + T.t("Reanudar"), 30, filled ? 0xFF14161E : (dark ? 0xFF14161E : Color.WHITE), fHead); resume.setPadding(px(32), px(16), px(32), px(16)); resume.setBackground(round(filled ? Color.WHITE : (dark ? Color.WHITE : ink), 24));
+            FrameLayout.LayoutParams rl = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.START); rl.setMargins(px(36), 0, 0, px(36)); card.addView(resume, rl); }
+        int bg = filled ? c.color : surface;
+        focusableWith(card, "home_continue", f -> { GradientDrawable d = round(bg, radius); if (f) d.setStroke(px(6), focusRing()); else if (!filled) d.setStroke(px(th.equals("gba") ? 4 : 2), th.equals("gba") ? ink : c.color); return d; },
+            () -> { if (g != null) startPlay(g); else openConsole(c); });
+        return card;
+    }
+    private View recentCardTv(Game g) {
+        LinearLayout cell = vertical(); cell.setPadding(px(8), px(8), px(8), px(8));
+        FrameLayout art = new FrameLayout(this); art.setBackground(round(0xFFF2EEE4, 14)); art.setClipToOutline(true);
+        TextView ph = tv(g.title, 20, 0xFF2B2B2B, fHead); ph.setGravity(Gravity.CENTER); ph.setPadding(px(8), px(8), px(8), px(8)); art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
+        ImageView iv = new ImageView(this); iv.setScaleType(ImageView.ScaleType.CENTER_CROP); art.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+        artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles");
+        cell.addView(art, new LinearLayout.LayoutParams(-1, px(230)));
+        TextView t = tv(g.title, 21, text, fBody); t.setSingleLine(true); t.setEllipsize(android.text.TextUtils.TruncateAt.END); t.setPadding(px(2), px(8), px(2), 0); cell.addView(t);
+        String pt = PlayTime.label(this, g.id); if (!pt.isEmpty()) { TextView m = tv(pt, 18, muted, fBody); m.setPadding(px(2), px(2), 0, 0); cell.addView(m); }
+        focusableWith(cell, "home_recent_" + g.id, f -> { GradientDrawable d = round(0, 20); if (f) d.setStroke(px(5), focusRing()); return d; }, () -> startPlay(g));
+        return cell;
+    }
+    private View consoleChipTv(Console c) {
+        boolean filled = filledCards();
+        FrameLayout tile = new FrameLayout(this); tile.setPadding(px(16), px(12), px(16), px(12));
+        if (logoMode()) { ImageView iv = new ImageView(this); iv.setScaleType(ImageView.ScaleType.FIT_CENTER); setLogo(iv, c, filled || dark ? Color.WHITE : ink);
+            FrameLayout.LayoutParams il = new FrameLayout.LayoutParams(-1, -1); il.setMargins(px(4), px(4), px(4), px(34)); tile.addView(iv, il); }
+        else { TextView n = tv(c.title, 26, filled ? Color.WHITE : text, fHead); n.setGravity(Gravity.CENTER); tile.addView(n, new FrameLayout.LayoutParams(-1, -1)); }
+        tile.addView(tv(c.name(), 21, filled ? Color.WHITE : text, fHead), new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.START));
+        int n = library.count(c); if (n > 0) tile.addView(tv(String.valueOf(n), 18, filled ? 0xCCFFFFFF : muted, fBody), new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END));
+        int bg = filled ? c.color : surface;
+        focusableWith(tile, "home_console_" + c.name(), f -> { GradientDrawable d = round(bg, th.equals("tiles") ? 30 : 22); if (f) d.setStroke(px(5), focusRing()); else if (!filled) d.setStroke(px(th.equals("gba") ? 3 : 2), th.equals("gba") ? ink : c.color); return d; },
+            () -> openConsole(c));
+        FrameLayout wrap = new FrameLayout(this); wrap.setPadding(px(8), 0, px(8), 0); wrap.addView(tile, new FrameLayout.LayoutParams(-1, -1)); return wrap;
+    }
+
     private void consolesScreen() {
         ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
         content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content);
@@ -1678,7 +1813,7 @@ public class MainActivity extends Activity {
         if (embedded != null && (page.equals(embedded) || page.equals("home") || page.equals("welcome"))) { finish(); return; }
         if(page.equals("welcome")){drive.skip();route("home");return;}
         if (page.equals("loading")) backToLibrary();
-        else if (page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("phone") || page.equals("consoles")) route("settings");
+        else if (page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("phone") || page.equals("consoles") || page.equals("home_layout")) route("settings");
         else if (!page.equals("home")) route("home");
         else new AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
                     .setPositiveButton(T.t("Salir"), (d,w) -> finish()).setNegativeButton(T.t("Cancelar"), null).show();
