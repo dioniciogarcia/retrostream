@@ -1248,6 +1248,13 @@ open class GameActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()  // the emulator view pauses itself through the lifecycle
         persist()
+        if (playStart > 0) { PlayTime.add(this, intent.getStringExtra("gameid") ?: "", android.os.SystemClock.elapsedRealtime() - playStart); playStart = 0 }
+    }
+
+    private var playStart = 0L
+    override fun onResume() {
+        super.onResume()
+        playStart = android.os.SystemClock.elapsedRealtime()
     }
 
     override fun onStart() {

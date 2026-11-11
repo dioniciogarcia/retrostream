@@ -336,6 +336,7 @@ public class MainActivity extends Activity {
             case "artwork": monoTitle = T.t("IMÁGENES"); monoRight = ""; break;
             case "resolution": monoTitle = T.t("RESOLUCIÓN"); monoRight = ""; break;
             case "phone": monoTitle = T.t("TELÉFONO"); monoRight = ""; break;
+            case "consoles": monoTitle = T.t("CONSOLAS"); monoRight = ""; break;
             case "welcome": monoTitle = "TIRSODRIVE"; monoRight = ""; break;
             case "loading": monoTitle = T.t("CARGANDO"); monoRight = ""; break;
             default:
@@ -352,11 +353,12 @@ public class MainActivity extends Activity {
         else if (page.equals("artwork")) artworkScreen();
         else if (page.equals("resolution")) resolutionScreen();
         else if (page.equals("phone")) phoneScreen();
+        else if (page.equals("consoles")) consolesScreen();
         else if (page.equals("loading") && selected != null) loadingScreen();
         else if (page.equals("library")) libraryScreen();
         else home();
         if (page.equals("library")) footer(new String[][]{{"A", T.t("Jugar")}, {"B", T.t("Volver")}, {"Y", T.t("Buscar")}, {"X", T.t("Favorito")}}, T.t("Carátulas de libretro · guardadas en la TV"));
-        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("friends") || page.equals("phone")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
+        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("friends") || page.equals("phone") || page.equals("consoles")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
         root.post(() -> {
             View target = lastFocus.isEmpty() ? null : root.findViewWithTag(lastFocus);
             if (target == null) target = firstContentFocusable(content == null ? body : content);
@@ -1083,26 +1085,11 @@ public class MainActivity extends Activity {
             sCard(d, T.t("Teléfono y almacenamiento"), T.t("Carpetas, juegos guardados, Wi-Fi"), "TEL", 0xFF38BDF8, "phone_page", () -> route("phone"));
             sCard(d, T.t("Controlador de GPU"), PhoneGames.driverName(this).isEmpty() ? T.t("El del teléfono") : PhoneGames.driverName(this), "GPU", 0xFFA06BFF, "gpu_driver", this::gpuDriver);
             sFiller(d, 1); }
-        sSection(T.t("Consolas visibles"));
-        LinearLayout row = null; int n = 0;
-        for (Console cn : Console.all()) {
-            if (n++ % 3 == 0) { row = sRow(); }
-            boolean on = library.visible(cn);
-            LinearLayout chip = horizontal(); chip.setPadding(px(22), px(12), px(22), px(12));
-            View dot = new View(this); dot.setBackground(round(on ? brand(cn) : 0x44808080, 16)); chip.addView(dot, new LinearLayout.LayoutParams(px(32), px(32)));
-            LinearLayout col = vertical(); col.setPadding(px(20), 0, 0, 0);
-            col.addView(tv(cn.title, 25, on ? text : muted, fHead)); col.addView(tv(gameCount(library.count(cn)), 20, muted, fBody));
-            chip.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
-            chip.addView(tv(on ? T.t("SÍ") : T.t("NO"), 24, on ? accent : muted, fMono));
-            chip.setContentDescription(cn.title + ", " + (on ? "visible" : "oculta"));
-            focusableWith(chip, "visible_" + cn.name(), this::cardBg, () -> { library.visible(cn, !library.visible(cn)); lastFocus = "visible_" + cn.name(); render(); });
-            View.OnFocusChangeListener base = chip.getOnFocusChangeListener();
-            chip.setOnFocusChangeListener((x, has) -> { base.onFocusChange(x, has); x.setScaleX(1f); x.setScaleY(1f); });
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, px(88), 1); p.setMargins(px(10), px(6), px(10), px(6)); row.addView(chip, p);
-        }
-        sFiller(row, (3 - n % 3) % 3);
-        LinearLayout all = sRow(); all.setGravity(Gravity.START);
-        all.addView(button(T.t("Mostrar todas"), "show_all", () -> { for (Console cn : Console.all()) library.visible(cn, true); lastFocus = "show_all"; render(); }));
+        int shownConsoles = 0; for (Console cn : Console.all()) if (library.visible(cn)) shownConsoles++;
+        LinearLayout cv = sRow();
+        sCard(cv, T.t("Consolas"), shownConsoles + T.t(" de ") + Console.all().length + T.t(" visibles"), "CON", 0xFF14C9AA, "consoles_page", () -> route("consoles"));
+        sCard(cv, T.t("Limpiar grupos vacíos"), T.t("Borra grupos TD duplicados sin archivos"), "DEL", 0xFFFF4D73, "cleanup_groups", this::cleanupGroups);
+        sFiller(cv, 1);
         sSection(T.t("Aplicación")); LinearLayout d = sRow();
         sCard(d, T.t("Actualizaciones"), T.t("Buscar e instalar la última versión"), "UPD", 0xFF7A4DFF, "updates", this::checkUpdates);
         sCard(d, T.t("Informe de problemas"), T.t("Qué registró Android si un juego falla"), "LOG", 0xFFFF9A2E, "crash_report", this::crashReport);
@@ -1206,6 +1193,46 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(px(8), px(5), px(8), px(5)); content.addView(row, p);
     }
     private String onOff(boolean on) { return on ? T.t("Sí") : T.t("No"); }
+    private void consolesScreen() {
+        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
+        content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content);
+        if (!mono) { TextView h = tv(T.t("Consolas"), 62, text, fHead); h.setPadding(px(10), px(10), 0, px(6)); body.addView(h); }
+        body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        sSection(T.t("Consolas visibles"));
+        LinearLayout row = null; int n = 0;
+        for (Console cn : Console.all()) {
+            if (n++ % 3 == 0) { row = sRow(); }
+            boolean on = library.visible(cn);
+            LinearLayout chip = horizontal(); chip.setPadding(px(22), px(12), px(22), px(12));
+            View dot = new View(this); dot.setBackground(round(on ? brand(cn) : 0x44808080, 16)); chip.addView(dot, new LinearLayout.LayoutParams(px(32), px(32)));
+            LinearLayout col = vertical(); col.setPadding(px(20), 0, 0, 0);
+            col.addView(tv(cn.title, 25, on ? text : muted, fHead)); col.addView(tv(gameCount(library.count(cn)), 20, muted, fBody));
+            chip.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+            chip.addView(tv(on ? T.t("SÍ") : T.t("NO"), 24, on ? accent : muted, fMono));
+            chip.setContentDescription(cn.title + ", " + (on ? "visible" : "oculta"));
+            focusableWith(chip, "visible_" + cn.name(), this::cardBg, () -> { library.visible(cn, !library.visible(cn)); lastFocus = "visible_" + cn.name(); render(); });
+            View.OnFocusChangeListener base = chip.getOnFocusChangeListener();
+            chip.setOnFocusChangeListener((x, has) -> { base.onFocusChange(x, has); x.setScaleX(1f); x.setScaleY(1f); });
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, px(88), 1); p.setMargins(px(10), px(6), px(10), px(6)); row.addView(chip, p);
+        }
+        sFiller(row, (3 - n % 3) % 3);
+        LinearLayout all = sRow(); all.setGravity(Gravity.START);
+        all.addView(button(T.t("Mostrar todas"), "show_all", () -> { for (Console cn : Console.all()) library.visible(cn, true); lastFocus = "show_all"; render(); }));
+    }
+    /** Deletes empty "TD - " groups and channels this account created (duplicates with no game files, saves or pictures). */
+    private void cleanupGroups() {
+        if (!drive.ready()) { message(T.t("Limpiar grupos vacíos"), T.t("Conecta TirsoDrive primero.")); return; }
+        Toast.makeText(this, T.t("Buscando grupos vacíos…"), Toast.LENGTH_SHORT).show();
+        drive.emptyGroups((list, err) -> {
+            if (err != null) { message(T.t("Limpiar grupos vacíos"), err); return; }
+            if (list == null || list.isEmpty()) { message(T.t("Limpiar grupos vacíos"), T.t("No hay grupos vacíos que borrar.")); return; }
+            StringBuilder names = new StringBuilder(); for (org.drinkless.tdlib.TdApi.Chat c : list) names.append("• ").append(c.title).append("\n");
+            new AlertDialog.Builder(this).setTitle(T.t("Borrar ") + list.size() + T.t(" grupos vacíos"))
+                .setMessage(T.t("Estos grupos los creaste tú y no tienen juegos, partidas ni capturas. Se borrarán de Telegram:\n\n") + names)
+                .setPositiveButton(T.t("Borrar"), (d, w) -> drive.deleteGroups(list, (n, e2) -> message(T.t("Limpiar grupos vacíos"), e2 != null ? e2 : n + T.t(" grupos borrados."))))
+                .setNegativeButton(T.t("Cancelar"), null).show();
+        });
+    }
     private void phoneScreen() {
         ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
         content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content);
@@ -1651,7 +1678,7 @@ public class MainActivity extends Activity {
         if (embedded != null && (page.equals(embedded) || page.equals("home") || page.equals("welcome"))) { finish(); return; }
         if(page.equals("welcome")){drive.skip();route("home");return;}
         if (page.equals("loading")) backToLibrary();
-        else if (page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("phone")) route("settings");
+        else if (page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("phone") || page.equals("consoles")) route("settings");
         else if (!page.equals("home")) route("home");
         else new AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
                     .setPositiveButton(T.t("Salir"), (d,w) -> finish()).setNegativeButton(T.t("Cancelar"), null).show();

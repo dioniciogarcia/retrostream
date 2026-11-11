@@ -45,6 +45,7 @@ class PhoneActivity : Activity() {
         val theme = library.theme()
         val key = when (theme) { "GBA clásico" -> "gba"; "Mosaico" -> "tiles"; "Consola completa" -> "console"; else -> "midnight" }
         val dark = library.dark(key)
+        style = key
         return when (key) {
             "gba" -> if (dark) Pal(0xFF14142A.toInt(), 0xFF1F1F3D.toInt(), 0xFF2A2A52.toInt(), 0xFFECEBFF.toInt(), 0xFFA9A6D6.toInt(),
                 0xFFAFA9EC.toInt(), 0xFF14142A.toInt(), 0xFFECEBFF.toInt(), 0xFFAFA9EC.toInt(), 14f, true)
@@ -66,6 +67,9 @@ class PhoneActivity : Activity() {
     }
 
     private lateinit var p: Pal
+    /** console | midnight | tiles | gba: how cards and tiles are drawn, not just their colors. */
+    private var style = "console"
+    private fun logoStyle(): String { val u = getSharedPreferences("ui", MODE_PRIVATE); return u.getString("logo_style", null) ?: if (u.getBoolean("logos", true)) "color" else "text" }
     private lateinit var library: Library
     private lateinit var artwork: Artwork
     private lateinit var drive: TirsoDrive
@@ -182,13 +186,15 @@ class PhoneActivity : Activity() {
         return v
     }
     private fun section(title: String) = tv(title.uppercase(), 11f, p.muted, mono = true).apply { letterSpacing = .1f; setPadding(dp(4), dp(14), 0, dp(6)) }
-    private fun logo(c: Console, white: Boolean): ImageView = ImageView(this).apply {
-        scaleType = ImageView.ScaleType.FIT_CENTER
-        val name = if (white) "logom_${c.logo}" else "logoc_${c.logo}"
-        val id = resources.getIdentifier(name, "drawable", packageName).takeIf { it != 0 }
+    /** The console's logo in the style chosen in Settings (color, mono outline); null for "text only". */
+    private fun logo(c: Console, onColor: Boolean): ImageView? {
+        val st = logoStyle(); if (st == "text") return null
+        val pick = if (st == "mono" || (onColor && st != "color")) "logom_" else "logoc_"
+        val id = resources.getIdentifier(pick + c.logo, "drawable", packageName).takeIf { it != 0 }
             ?: resources.getIdentifier("logo_${c.logo}", "drawable", packageName)
-        if (id != 0) setImageResource(id)
-        contentDescription = c.title
+        if (id == 0) return null
+        return ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; setImageResource(id); contentDescription = c.title
+            if (st == "mono" && !onColor) setColorFilter(p.text) }
     }
     private fun hasController(): Boolean = InputDevice.getDeviceIds().any { id ->
         val d = InputDevice.getDevice(id); d != null && (d.sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD)
@@ -229,17 +235,17 @@ class PhoneActivity : Activity() {
     }
     private fun go(target: String) { page = target; lastFocus = ""; render() }
 
-    /** Header: title on the left, icons on the right (search, favorites, friends, history, settings). */
-    private fun header(title: String, back: Boolean, extra: List<View> = emptyList()): View {
+    /** Header: title with search beside it on the left (clear of the camera); favorites, friends, settings on the right. */
+    private fun header(title: String, back: Boolean, history: Boolean = false): View {
         val row = horizontal(); row.setPadding(dp(14), dp(10), dp(8), dp(6))
         if (back) row.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
-        row.addView(tv(title, 20f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(dp(6), 0, 0, 0) },
-            LinearLayout.LayoutParams(0, -2, 1f))
-        extra.forEach { row.addView(it) }
+        row.addView(tv(title, if (style == "tiles") 22f else 20f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(dp(6), 0, dp(4), 0) },
+            LinearLayout.LayoutParams(-2, -2).apply { weight = 0f })
         row.addView(icon("search", T.t("Buscar juegos"), "h_search") { search() })
+        row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         row.addView(icon("star", T.t("Favoritos"), "h_fav") { console = null; source = "fav"; go("library") })
         row.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { openEmbedded("friends") })
-        row.addView(icon("history", T.t("Historial de juego"), "h_history") { openEmbedded("history") })
+        if (history) row.addView(icon("history", T.t("Historial de juego"), "h_history") { openEmbedded("history") })
         row.addView(icon("settings", T.t("Ajustes"), "h_settings") { openEmbedded("settings") })
         return row
     }
@@ -346,115 +352,151 @@ class PhoneActivity : Activity() {
         AlertDialog.Builder(this).setTitle(c.title).setItems(labels) { _, w -> if (w == 0) drive.unbind(c) else drive.bind(c, choices[w - 1].id) }.show()
     }
 
-    // ------------------------------------------------------------------ home
+    // ------------------------------------------------------------------ home (option A: continue first)
     private fun visibleConsoles() = Console.all().filter { library.visible(it) }
     private fun heroConsole(): Console {
         val list = visibleConsoles()
         return list.firstOrNull { it.name == library.homeConsole() } ?: list.firstOrNull { library.count(it) > 0 } ?: list.firstOrNull() ?: Console.GBA
     }
-    private var heroViews: Triple<FrameLayout, TextView, TextView>? = null
+    private fun recent(): List<Pair<Game, Long>> {
+        val seen = HashSet<String>(); val out = mutableListOf<Pair<Game, Long>>()
+        for (r in library.plays()) { val g = r[0] as Game; if (seen.add(g.id)) out += g to (r[1] as Long); if (out.size >= 12) break }
+        return out
+    }
 
     private fun home() {
-        val col = vertical()
-        col.addView(header(T.t("Consolas"), false))
-        val hero = heroCard(heroConsole())
-        val grid = consoleGrid(if (landscape) 3 else 3)
+        val last = recent().firstOrNull()?.first
         if (landscape) {
-            val row = horizontal(); row.gravity = Gravity.TOP; row.setPadding(dp(14), dp(4), dp(14), 0)
-            row.addView(hero, LinearLayout.LayoutParams(0, dp(210), 1.05f))
-            row.addView(grid, LinearLayout.LayoutParams(0, -2, 1.4f).apply { marginStart = dp(14) })
-            col.addView(row)
-        } else {
-            col.addView(hero, LinearLayout.LayoutParams(-1, dp(190)).apply { setMargins(dp(14), dp(4), dp(14), 0) })
-            col.addView(section(T.t("Todas las consolas")).apply { setPadding(dp(18), dp(16), 0, dp(6)) })
-            col.addView(grid, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(14), 0, dp(14), 0) })
+            val row = horizontal(); row.gravity = Gravity.TOP; row.setPadding(dp(12), dp(10), dp(12), dp(8))
+            row.addView(continueCard(last, true), LinearLayout.LayoutParams(0, -1, 0.9f))
+            val right = vertical(); right.setPadding(dp(12), 0, 0, 0)
+            val top = horizontal()
+            top.addView(tv(T.t("Inicio"), 18f, p.text, bold = true).apply { setPadding(dp(4), 0, dp(4), 0) })
+            top.addView(icon("search", T.t("Buscar juegos"), "h_search") { search() })
+            top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+            top.addView(icon("star", T.t("Favoritos"), "h_fav") { console = null; source = "fav"; go("library") })
+            top.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { openEmbedded("friends") })
+            top.addView(icon("settings", T.t("Ajustes"), "h_settings") { openEmbedded("settings") })
+            right.addView(top)
+            right.addView(section(T.t("Consolas")))
+            right.addView(consoleRow(dp(104), dp(70)))
+            recentBlock(right, dp(78), dp(104))
+            row.addView(scroll(right), LinearLayout.LayoutParams(0, -1, 1.25f))
+            val outer = vertical(); outer.addView(row, LinearLayout.LayoutParams(-1, 0, 1f))
+            if (hasController()) outer.addView(hints("A" to T.t("Abrir"), "B" to T.t("Volver"), "Y" to T.t("Buscar"), "X" to T.t("Favoritos")))
+            root.addView(outer)
+            return
         }
-        continueRow()?.let { col.addView(it) }
-        val outer = vertical()
-        outer.addView(scroll(col), LinearLayout.LayoutParams(-1, 0, 1f))
-        if (landscape && hasController()) outer.addView(hints("A" to T.t("Abrir"), "B" to T.t("Volver"), "Y" to T.t("Buscar"), "X" to T.t("Favoritos"), "L" to "", "R" to T.t("Cambiar consola")))
-        root.addView(outer)
+        val col = vertical(); col.setPadding(0, 0, 0, dp(18))
+        col.addView(header(T.t("Inicio"), false))
+        col.addView(continueCard(last, false), LinearLayout.LayoutParams(-1, dp(220)).apply { setMargins(dp(14), dp(4), dp(14), 0) })
+        col.addView(section(T.t("Consolas")).apply { setPadding(dp(18), dp(18), 0, dp(6)) })
+        col.addView(consoleRow(dp(120), dp(84)))
+        recentBlock(col, dp(104), dp(140))
+        friendsBlock(col)
+        root.addView(scroll(col))
     }
 
-    private fun heroCard(c: Console): View {
-        val card = FrameLayout(this); card.setPadding(dp(18), dp(16), dp(18), dp(16))
-        val bg = c.color
-        card.background = round(bg, 18f)
-        val name = tv(c.title, if (landscape) 26f else 28f, Color.WHITE, bold = true)
-        val count = tv("", 12f, Color.WHITE).apply { setPadding(dp(10), dp(4), dp(10), dp(4)); background = round(0x2EFFFFFF, 12f) }
-        val texts = vertical(); texts.addView(name)
-        texts.addView(tv(subtitle(c), 13f, 0xD9FFFFFF.toInt()).apply { setPadding(0, dp(3), 0, 0) })
+    /** The big card: the last game played, its console's color, cover, time played and Resume. */
+    private fun continueCard(g: Game?, tall: Boolean): View {
+        val c = g?.console ?: heroConsole()
+        val filled = style == "console" || style == "tiles"
+        val card = FrameLayout(this); card.clipToOutline = true
+        val radius = if (style == "tiles") 26f else 18f
+        card.background = if (filled) round(c.color, radius) else round(p.surface, radius, dp(if (style == "gba") 2 else 1), if (style == "gba") p.outline else c.color)
+        val ink = if (filled) Color.WHITE else p.text
+        val soft = if (filled) 0xD9FFFFFF.toInt() else p.muted
+        if (g != null) {
+            val cover = FrameLayout(this); cover.background = round(0xFFF2EEE4.toInt(), 10f); cover.clipToOutline = true
+            val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.CENTER_CROP; cover.addView(iv, FrameLayout.LayoutParams(-1, -1))
+            artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles")
+            cover.rotation = 6f
+            card.addView(cover, FrameLayout.LayoutParams(dp(if (tall) 120 else 118), dp(if (tall) 160 else 158), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = dp(-8) })
+        }
+        val texts = vertical(); texts.setPadding(dp(16), dp(16), dp(16), 0)
+        texts.addView(tv(if (g != null) (T.t("CONTINUAR") + " · " + c.title.uppercase()) else T.t("EMPIEZA A JUGAR"), 11f, soft, mono = true).apply { letterSpacing = .08f })
+        texts.addView(tv(g?.title ?: T.t("Elige una consola abajo"), 22f, ink, bold = true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(6), 0, 0) },
+            LinearLayout.LayoutParams(-1, -2).apply { marginEnd = dp(118) })
+        if (g != null) {
+            val played = PlayTime.label(this, g.id)
+            if (played.isNotEmpty()) texts.addView(tv(played + T.t(" jugadas"), 12f, ink).apply {
+                setPadding(dp(9), dp(4), dp(9), dp(4)); background = round(if (filled) 0x2EFFFFFF else p.surface2, 10f) },
+                LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10) })
+        }
         card.addView(texts, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
-        val logoView = logo(c, true); logoView.alpha = .9f
-        card.addView(logoView, FrameLayout.LayoutParams(dp(120), dp(60), Gravity.END or Gravity.TOP))
-        card.addView(count, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START))
-        val open = tv(T.t("Abrir"), 14f, 0xFF14161E.toInt(), bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(16), dp(8), dp(16), dp(8)) }
-        control(open, "hero_open", 0xFFF2F3F7.toInt(), 14f, false) { openConsole(heroConsole()) }
-        card.addView(open, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END))
-        heroViews = Triple(card, name, count)
-        fillHero(c)
+        if (g != null) {
+            val resume = tv("▶  " + T.t("Reanudar"), 15f, if (filled) 0xFF14161E.toInt() else p.onPrimary, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(16), dp(9), dp(16), dp(9)) }
+            control(resume, "resume", if (filled) Color.WHITE else p.primary, 12f, false) { play(g) }
+            card.addView(resume, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(16), 0, 0, dp(16)) })
+        }
         return card
     }
-    private fun subtitle(c: Console) = when (c) {
-        Console.N64 -> "Nintendo 64"; Console.NDS -> "Nintendo DS"; Console.GBA -> "Game Boy Advance"; Console.GBC -> "Game Boy Color"
-        Console.GB -> "Game Boy"; Console.SNES -> "Super Nintendo"; Console.NES -> "Nintendo Entertainment System"; Console.MD -> "Sega Mega Drive"
-        Console.PSP -> "PlayStation Portable"; Console.PS2 -> "PlayStation 2"; Console.GC -> "Nintendo GameCube"; Console.WII -> "Nintendo Wii"; Console.MAME -> "Arcade"
-    }
-    private fun fillHero(c: Console) {
-        val (card, name, count) = heroViews ?: return
-        card.background = round(c.color, 18f)
-        name.text = c.title
-        val n = library.count(c); count.text = "$n " + if (n == 1) T.t("juego") else T.t("juegos")
-        (name.parent as? LinearLayout)?.let { (it.getChildAt(1) as? TextView)?.text = subtitle(c) }
-        val logoView = card.getChildAt(1) as? ImageView
-        if (logoView != null) {
-            val id = resources.getIdentifier("logom_${c.logo}", "drawable", packageName).takeIf { it != 0 } ?: resources.getIdentifier("logo_${c.logo}", "drawable", packageName)
-            if (id != 0) logoView.setImageResource(id) else logoView.setImageDrawable(null)
-        }
-    }
-    private fun consoleGrid(columns: Int): View {
-        val grid = vertical()
-        var row: LinearLayout? = null
-        val list = visibleConsoles()
-        list.forEachIndexed { i, c ->
-            if (i % columns == 0) { row = horizontal(); grid.addView(row, LinearLayout.LayoutParams(-1, -2)) }
-            val tile = FrameLayout(this); tile.setPadding(dp(8), dp(8), dp(8), dp(8))
-            val img = logo(c, !p.outlined)
-            tile.addView(img, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(4), dp(4), dp(4), dp(14)) })
-            tile.addView(tv(c.name.replace("_", " "), 11f, if (p.outlined) p.text else Color.WHITE, bold = true), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START))
+
+    /** Consoles as one swipeable row of tiles. */
+    private fun consoleRow(w: Int, h: Int): View {
+        val row = horizontal(); row.setPadding(dp(14), 0, dp(14), 0)
+        for (c in visibleConsoles()) {
+            val tile = FrameLayout(this); tile.setPadding(dp(8), dp(6), dp(8), dp(6))
+            val filled = style == "console" || style == "tiles"
+            val bg = if (filled) c.color else p.surface
+            val img = logo(c, filled)
+            if (img != null) tile.addView(img, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(2), dp(2), dp(2), dp(16)) })
+            else tile.addView(tv(c.title, 13f, if (filled) Color.WHITE else p.text, bold = true).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(12) })
+            tile.addView(tv(c.name, 11f, if (filled) Color.WHITE else p.text, bold = true), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START))
             val n = library.count(c)
-            if (n > 0) tile.addView(tv(n.toString(), 10f, if (p.outlined) p.muted else 0xCCFFFFFF.toInt()), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END))
-            control(tile, "tile_${c.name}", if (p.outlined) p.surface else c.color, 12f, p.outlined) { openConsole(c) }
-            tile.setOnFocusChangeListener { v, has ->
-                v.background = round(if (p.outlined) p.surface else c.color, 12f, if (has) dp(3) else if (p.outlined) dp(1.5f) else 0, if (has) p.ring else p.outline)
-                if (has) { lastFocus = "tile_${c.name}"; library.homeConsole(c); fillHero(c) }
-            }
-            row!!.addView(tile, LinearLayout.LayoutParams(0, dp(if (landscape) 62 else 72), 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            if (n > 0) tile.addView(tv(n.toString(), 10f, if (filled) 0xCCFFFFFF.toInt() else p.muted), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END))
+            if (style == "midnight") tile.addView(View(this).apply { setBackgroundColor(c.color) }, FrameLayout.LayoutParams(-1, dp(3), Gravity.TOP))
+            control(tile, "tile_${c.name}", bg, if (style == "tiles") 18f else 12f, style == "gba") { openConsole(c) }
+            row.addView(tile, LinearLayout.LayoutParams(w, h).apply { marginEnd = dp(8) })
         }
-        val rest = list.size % columns
-        if (rest != 0) repeat(columns - rest) { row!!.addView(View(this), LinearLayout.LayoutParams(0, dp(10), 1f).apply { setMargins(dp(4), 0, dp(4), 0) }) }
-        return grid
+        return HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; clipToPadding = false; addView(row) }
     }
-    private fun continueRow(): View? {
-        val last = library.plays().firstOrNull() ?: return null
-        val g = last[0] as Game; val t = last[1] as Long
-        val row = horizontal(); row.setPadding(dp(14), dp(10), dp(14), dp(10))
-        row.addView(tv("▶  " + T.t("Continuar: ") + g.title, 14f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(tv(ago(t), 12f, p.muted))
-        control(row, "continue", p.surface) { play(g) }
-        val wrap = FrameLayout(this); wrap.setPadding(dp(18), dp(12), dp(18), dp(12))
-        wrap.addView(row, FrameLayout.LayoutParams(-1, -2))
-        return wrap
+
+    private fun recentBlock(parent: LinearLayout, w: Int, h: Int) {
+        val list = recent(); if (list.size < 2) return
+        val head = horizontal(); head.setPadding(dp(18), dp(16), dp(14), dp(6))
+        head.addView(tv(T.t("Jugados recientemente").uppercase(), 11f, p.muted, mono = true).apply { letterSpacing = .1f }, LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(tv(T.t("Ver todo"), 12f, p.primary).also { control(it, "recent_all", Color.TRANSPARENT, 8f, false) { openEmbedded("history") } })
+        parent.addView(head)
+        val row = horizontal(); row.setPadding(dp(14), 0, dp(14), 0); row.gravity = Gravity.TOP
+        for ((g, _) in list.drop(1)) {
+            val cell = vertical()
+            val art = FrameLayout(this); art.background = round(0xFFF2EEE4.toInt(), 10f); art.clipToOutline = true
+            art.addView(tv(g.title, 11f, 0xFF2B2B2B.toInt(), bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(4), dp(4), dp(4)) }, FrameLayout.LayoutParams(-1, -1))
+            val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.CENTER_CROP; art.addView(iv, FrameLayout.LayoutParams(-1, -1))
+            artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles")
+            cell.addView(art, LinearLayout.LayoutParams(w, h))
+            cell.addView(tv(g.title, 11f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(5), dp(2), 0) }, LinearLayout.LayoutParams(w, -2))
+            val pt = PlayTime.label(this, g.id)
+            if (pt.isNotEmpty()) cell.addView(tv(pt, 10f, p.muted).apply { setPadding(dp(2), dp(1), dp(2), 0) })
+            control(cell, "recent_${g.id}", Color.TRANSPARENT, 12f, false) { play(g) }
+            cell.setOnLongClickListener { selected = g; gameMore(g); true }
+            row.addView(cell, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(10) })
+        }
+        parent.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) })
     }
-    private fun ago(t: Long): String {
-        val m = (System.currentTimeMillis() - t) / 60000
-        return when { m < 1 -> T.t("ahora"); m < 60 -> "$m min"; m < 1440 -> "${m / 60} h"; else -> "${m / 1440} d" }
+
+    /** Friends who are online or playing (only when the friends group is set up). */
+    private fun friendsBlock(parent: LinearLayout) {
+        if (drive.friendsChat() == 0L) return
+        parent.addView(section(T.t("Amigos")).apply { setPadding(dp(18), dp(16), 0, dp(6)) })
+        val on = drive.friends.values.filter { it.userId != drive.accountId && it.online() }.sortedBy { if (it.playing()) 0 else 1 }
+        if (on.isEmpty()) { parent.addView(tv(T.t("Nadie conectado ahora"), 13f, p.muted).apply { setPadding(dp(18), 0, 0, 0) }); return }
+        for (f in on.take(4)) {
+            val row = horizontal(); row.setPadding(dp(18), dp(4), dp(18), dp(4))
+            val name = f.name.ifEmpty { "…" }
+            val av = tv(name.take(1).uppercase(), 13f, 0xFF06210F.toInt(), bold = true).apply { gravity = Gravity.CENTER; background = round(if (f.playing()) 0xFF22C55E.toInt() else 0xFF3B82F6.toInt(), 14f) }
+            row.addView(av, LinearLayout.LayoutParams(dp(28), dp(28)))
+            row.addView(tv(name + " · " + if (f.playing()) f.game else T.t("En el menú"), 14f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(10), 0, 0, 0) })
+            control(row, "friend_${f.userId}", Color.TRANSPARENT, 10f, false) { openEmbedded("friends") }
+            parent.addView(row)
+        }
     }
     private fun openConsole(c: Console) { console = c; source = "all"; library.homeConsole(c); go("library") }
     private fun shiftConsole(step: Int) {
         val list = visibleConsoles(); if (list.isEmpty()) return
         val i = (list.indexOf(heroConsole()) + step + list.size) % list.size
-        library.homeConsole(list[i]); fillHero(list[i])
+        library.homeConsole(list[i]); lastFocus = "tile_${list[i].name}"; render()
     }
 
     // ------------------------------------------------------------------ library

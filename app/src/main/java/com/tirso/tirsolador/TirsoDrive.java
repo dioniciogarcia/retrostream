@@ -380,6 +380,69 @@ final class TirsoDrive {
     }
     TdApi.File part(int fileId){return files.get(fileId);}
 
+    /** Last check before creating a group: asks Telegram for an existing chat with that exact title. */
+    private void searchExisting(String title,java.util.function.Consumer<TdApi.Chat> found){
+        send(new TdApi.SearchChats(title,null,20),r->{
+            if(!(r instanceof TdApi.Chats)){found.accept(null);return;}
+            long[] ids=((TdApi.Chats)r).chatIds;searchExistingAt(ids,0,title,found);
+        });
+    }
+    private void searchExistingAt(long[] ids,int i,String title,java.util.function.Consumer<TdApi.Chat> found){
+        if(i>=ids.length){found.accept(null);return;}
+        send(new TdApi.GetChat(ids[i]),r->{
+            if(r instanceof TdApi.Chat&&norm(((TdApi.Chat)r).title).equals(norm(title))&&TelegramCatalog.group((TdApi.Chat)r)){found.accept((TdApi.Chat)r);return;}
+            searchExistingAt(ids,i+1,title,found);
+        });
+    }
+
+    // ------------------------------------------------------------------ cleanup of empty TD groups
+    /** "TD - " groups and channels this account created that hold no files, photos or videos (duplicates). */
+    void emptyGroups(Done<List<TdApi.Chat>> callback){
+        Done<List<TdApi.Chat>> cb=once(callback,null);
+        if(stage!=Stage.READY||accountId==0){cb.done(null,T.t("Conecta TirsoDrive primero."));return;}
+        int token=generation;
+        loadList(new TdApi.ChatListMain(),0,token,()->loadList(new TdApi.ChatListArchive(),0,token,()->{
+            List<TdApi.Chat> candidates=new ArrayList<>();
+            long friends=friendsChat();
+            for(TdApi.Chat c:chats.values())if(TelegramCatalog.group(c)&&c.title!=null&&norm(c.title).startsWith(norm("TD -"))&&c.id!=friends)candidates.add(c);
+            checkEmpty(candidates,0,new ArrayList<>(),cb);
+        }));
+    }
+    private static final TdApi.SearchMessagesFilter[] CONTENT={new TdApi.SearchMessagesFilterDocument(),new TdApi.SearchMessagesFilterPhoto(),new TdApi.SearchMessagesFilterVideo(),new TdApi.SearchMessagesFilterAudio()};
+    private void checkEmpty(List<TdApi.Chat> list,int i,List<TdApi.Chat> out,Done<List<TdApi.Chat>> cb){
+        if(i>=list.size()){cb.done(out,null);return;}
+        TdApi.Chat c=list.get(i);
+        send(new TdApi.GetChatMember(c.id,new TdApi.MessageSenderUser(accountId)),m->{
+            boolean creator=m instanceof TdApi.ChatMember&&((TdApi.ChatMember)m).status instanceof TdApi.ChatMemberStatusCreator;
+            if(!creator){checkEmpty(list,i+1,out,cb);return;}
+            countContent(c.id,0,0,total->{if(total==0)out.add(c);checkEmpty(list,i+1,out,cb);});
+        });
+    }
+    private void countContent(long chat,int f,int sum,java.util.function.IntConsumer done){
+        if(f>=CONTENT.length){done.accept(sum);return;}
+        send(new TdApi.SearchChatMessages(chat,null,"",null,0,0,1,CONTENT[f]),r->{
+            // Unknown answer: count it as not empty, so nothing is deleted by mistake.
+            int n=r instanceof TdApi.FoundChatMessages?Math.max(((TdApi.FoundChatMessages)r).totalCount,((TdApi.FoundChatMessages)r).messages.length):1;
+            if(n>0){done.accept(n);return;}
+            countContent(chat,f+1,sum,done);
+        });
+    }
+    void deleteGroups(List<TdApi.Chat> list,Done<Integer> callback){
+        Done<Integer> cb=once(callback,0);
+        int[] done={0};deleteAt(list,0,done,cb);
+    }
+    private void deleteAt(List<TdApi.Chat> list,int i,int[] done,Done<Integer> cb){
+        if(i>=list.size()){cb.done(done[0],null);return;}
+        long id=list.get(i).id;
+        send(new TdApi.DeleteChat(id),r->{
+            if(r instanceof TdApi.Ok){done[0]++;chats.remove(id);
+                SharedPreferences.Editor e=prefs.edit();
+                for(String k:new String[]{"shotsChat_"+accountId,"backupChat_"+accountId})if(prefs.getLong(k,0)==id)e.remove(k);
+                e.apply();}
+            deleteAt(list,i+1,done,cb);
+        });
+    }
+
     void releaseAll(){main.post(()->{
         if(client==null)return;
         for(Integer id:new java.util.ArrayList<>(files.keySet())){TdApi.File f=files.get(id);if(f!=null&&f.local.isDownloadingCompleted&&!PhoneGames.isKept(context,f.local.path))send(new TdApi.DeleteFile(id),r->{});}
@@ -541,9 +604,12 @@ final class TirsoDrive {
         loadList(new TdApi.ChatListMain(),0,token,()->loadList(new TdApi.ChatListArchive(),0,token,()->{
             TdApi.Chat again=findShotsChat();
             if(again!=null){prefs.edit().putLong("shotsChat_"+accountId,again.id).apply();cb.done(again.id,null);return;}
+            searchExisting(SHOTS_TITLE,existing->{
+                if(existing!=null){chats.put(existing.id,existing);prefs.edit().putLong("shotsChat_"+accountId,existing.id).apply();cb.done(existing.id,null);return;}
             send(new TdApi.CreateNewSupergroupChat(SHOTS_TITLE,false,true,"RetroStream · capturas de pantalla de tus juegos",null,0,false),r->{
                 if(r instanceof TdApi.Chat){TdApi.Chat chat=(TdApi.Chat)r;chats.put(chat.id,chat);prefs.edit().putLong("shotsChat_"+accountId,chat.id).apply();cb.done(chat.id,null);}
                 else cb.done(0L,errorText(r));
+            });
             });
         }));
     }
@@ -558,10 +624,10 @@ final class TirsoDrive {
     /** The screenshots of one game (by its id), newest first. */
     void listShots(String gameId,Done<List<Shot>> callback){
         Done<List<Shot>> cb=once(callback,null);
-        shotsChannel((chat,err)->{
-            if(chat==0){cb.done(null,err);return;}
-            pageShots(chat,0,gameId,new ArrayList<>(),0,cb);
-        });
+        // Only reads: the channel is created when the first screenshot is sent, never just to look.
+        TdApi.Chat found=findShotsChat();
+        if(found==null){cb.done(new ArrayList<>(),null);return;}
+        pageShots(found.id,0,gameId,new ArrayList<>(),0,cb);
     }
     private void pageShots(long chat,long from,String gameId,List<Shot> out,int pages,Done<List<Shot>> cb){
         send(new TdApi.SearchChatMessages(chat,null,"",null,from,0,100,new TdApi.SearchMessagesFilterPhoto()),r->{
@@ -624,9 +690,12 @@ final class TirsoDrive {
         loadList(new TdApi.ChatListMain(),0,token,()->loadList(new TdApi.ChatListArchive(),0,token,()->{
             TdApi.Chat again=findBackupChat();
             if(again!=null){prefs.edit().putLong("backupChat_"+accountId,again.id).apply();cb.done(again.id,null);return;}
+            searchExisting(BACKUP_TITLE,existing->{
+                if(existing!=null){chats.put(existing.id,existing);prefs.edit().putLong("backupChat_"+accountId,existing.id).apply();cb.done(existing.id,null);return;}
             send(new TdApi.CreateNewSupergroupChat(BACKUP_TITLE,false,true,"RetroStream · copias automáticas de partidas guardadas",null,0,false),r->{
                 if(r instanceof TdApi.Chat){TdApi.Chat chat=(TdApi.Chat)r;chats.put(chat.id,chat);prefs.edit().putLong("backupChat_"+accountId,chat.id).apply();cb.done(chat.id,null);}
                 else cb.done(0L,errorText(r));
+            });
             });
         }));
     }
