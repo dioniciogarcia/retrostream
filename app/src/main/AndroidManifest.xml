@@ -13,6 +13,8 @@
         android:allowBackup="false" android:extractNativeLibs="true" android:supportsRtl="true" android:usesCleartextTraffic="false">
         <activity android:name=".GameActivity" android:exported="false" android:screenOrientation="sensorLandscape" android:theme="@style/Theme.RetroStreamGame"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density" />
+        <activity android:name=".GameActivityN64" android:exported="false" android:process=":game" android:screenOrientation="sensorLandscape" android:theme="@style/Theme.RetroStreamGame"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density" />
         <receiver android:name=".UpdateReceiver" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape">
             <intent-filter>

@@ -41,8 +41,9 @@ final class Artwork {
         } catch (Exception e) { return null; }
     }
     private final Context appContext;
-    private static String urlFor(Console console, String name) {
-        return "https://thumbnails.libretro.com/" + path(console.thumbnailSystem) + "/Named_Boxarts/" + path(name) + ".png";
+    private static String urlFor(Console console, String name) { return urlFor(console, name, "Named_Boxarts"); }
+    private static String urlFor(Console console, String name, String kind) {
+        return "https://thumbnails.libretro.com/" + path(console.thumbnailSystem) + "/" + kind + "/" + path(name) + ".png";
     }
     private static String hashOf(String url) throws Exception {
         StringBuilder hash = new StringBuilder();
@@ -60,14 +61,15 @@ final class Artwork {
         } catch (Exception ignored) { }
         return null;
     }
-    void load(Game game, ImageView view) {
-        final String tag = game.id + "|" + game.coverName; view.setTag(tag);
+    void load(Game game, ImageView view) { load(game, view, "Named_Boxarts"); }
+    void load(Game game, ImageView view, String kind) {
+        final String tag = game.id + "|" + game.coverName + "|" + kind; view.setTag(tag);
         Bitmap cached = memory.get(tag); if (cached != null) { view.setImageBitmap(cached); reveal(view); return; }
         pool.execute(() -> {
             try {
                 byte[] bytes = null;
                 for (String name : GameMeta.coverNames(appContext, game)) {
-                    String url = urlFor(game.console, name);
+                    String url = urlFor(game.console, name, kind);
                     String hash = hashOf(url);
                     File file = new File(directory, hash + ".png"), miss = new File(directory, hash + ".miss");
                     if (file.isFile()) { try (InputStream in = new java.io.FileInputStream(file)) { bytes = Library.readLimited(in, 4_000_000); } break; }

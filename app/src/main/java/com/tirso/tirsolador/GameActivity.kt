@@ -47,7 +47,7 @@ import kotlinx.coroutines.withContext
  * The only screen of a Tirso game app: it unpacks the embedded game on first
  * launch, starts the emulator and shows touch controls and a pause menu.
  */
-class GameActivity : AppCompatActivity() {
+open class GameActivity : AppCompatActivity() {
 
     private lateinit var config: GameConfig
     private lateinit var saves: SaveManager
@@ -122,9 +122,12 @@ class GameActivity : AppCompatActivity() {
     }
 
     private var romSha = ""
+    /** N64 runs in its own process so a native crash while closing it can't take the app down with it. */
+    private val isolated get() = this is GameActivityN64
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        T.init(this)
         installCrashReporter()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_game)
@@ -192,7 +195,11 @@ class GameActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         val ws = workspace; val lease = romLease; val source = sourceRom; val app = applicationContext
-        Thread { ws?.let { ArchiveContent.removeTree(it) }; TemporaryRoms.finish(app, lease, source) }.start()
+        val kill = isolated
+        Thread {
+            ws?.let { ArchiveContent.removeTree(it) }; TemporaryRoms.finish(app, lease, source)
+            if (kill) android.os.Process.killProcess(android.os.Process.myPid())
+        }.start()
     }
 
     // ------------------------------------------------------------------ game
@@ -1100,13 +1107,18 @@ class GameActivity : AppCompatActivity() {
 
     /** Sends the saves to the Telegram backup channel on its own when they changed (when TirsoDrive is connected). */
     private fun autoBackup() {
-        if (romSha.isEmpty()) return
+        if (romSha.isEmpty() || isolated) return  // the app uploads changed saves itself when you come back to it
         val drive = TirsoDrive.get(this)
         if (!drive.ready() || !SaveBackups.changed(this, entry())) return
         SaveBackups.upload(this, drive, entry(), true) { ok, _ -> if (!ok) Log.w("Tirso", "Automatic save backup failed") }
     }
 
     private fun backUpToTelegram() {
+        if (isolated) {
+            runCatching { persist() }; closeMenu()
+            toast("Saves will be backed up to Telegram when you leave the game")
+            return
+        }
         val drive = TirsoDrive.get(this)
         if (!drive.ready()) { toast("Connect TirsoDrive on the home screen to back up to Telegram"); closeMenu(); return }
         runCatching { persist() }
@@ -1116,6 +1128,11 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun restoreFromTelegram() {
+        if (isolated) {
+            toast("To restore from Telegram, leave the game and use Settings > Save backups")
+            closeMenu()
+            return
+        }
         val drive = TirsoDrive.get(this)
         if (!drive.ready()) { toast("Connect TirsoDrive on the home screen to restore from Telegram"); closeMenu(); return }
         toast("Looking in Telegram…")

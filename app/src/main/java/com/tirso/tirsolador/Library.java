@@ -63,6 +63,8 @@ public final class Library {
         games.clear(); games.addAll(valid); demo = false;
     }
     public boolean dark() { return prefs.getBoolean("dark", true); }
+    public boolean dark(String themeKey) { return prefs.getBoolean("dark_" + themeKey, themeKey.equals("midnight") || themeKey.equals("tiles")); }
+    public void dark(String themeKey, boolean value) { prefs.edit().putBoolean("dark_" + themeKey, value).apply(); }
     public void dark(boolean value) { prefs.edit().putBoolean("dark", value).apply(); }
     public String theme() { return prefs.getString("theme", "Moderno"); }
     public void theme(String value) { prefs.edit().putString("theme", value).apply(); }

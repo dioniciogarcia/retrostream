@@ -29,6 +29,8 @@ private val ES = mapOf(
     "Backing up to Telegram…" to "Guardando copia en Telegram…", "Looking in Telegram…" to "Buscando en Telegram…",
     "Couldn't read the backup channel" to "No se pudo leer el canal de copias",
     "No backup of this game in Telegram yet" to "Aún no hay copia de este juego en Telegram",
+    "Saves will be backed up to Telegram when you leave the game" to "Las partidas se copiarán a Telegram al salir del juego",
+    "To restore from Telegram, leave the game and use Settings > Save backups" to "Para restaurar desde Telegram, sal del juego y usa Ajustes > Copias de partidas",
     "Latest" to "Última", "Restore saves from Telegram" to "Restaurar partidas desde Telegram",
     "Restore this backup?" to "¿Restaurar esta copia?", "Restoring…" to "Restaurando…",
 

@@ -116,13 +116,31 @@ public class MainActivity extends Activity {
     private int px(float n) { return Math.round(n * u); }
     private Typeface font(int id) { try { return getResources().getFont(id); } catch (Exception e) { return null; } }
     private String themeKey() { String t = library.theme(); return t.equals("GBA clásico") ? "gba" : t.equals("Mosaico") ? "tiles" : t.equals("Consola completa") ? "console" : "midnight"; }
+    private boolean dark;
+    private int ink, tilesRing;
+    private int ov(int c) { return (c & 0xFF000000) | (dark ? 0xFFFFFF : 0x000000); }
+    private int ring() { return th.equals("midnight") ? (dark ? Color.WHITE : 0xFF142238) : th.equals("tiles") ? tilesRing : accent; }
+    private int focusRing() { return th.equals("midnight") ? accent : th.equals("tiles") ? tilesRing : ink; }
+    private int logoTint() { return th.equals("tiles") ? Color.WHITE : th.equals("midnight") ? (dark ? Color.WHITE : Color.BLACK) : ink; }
     private void applyTheme() {
-        th = themeKey(); mono = !th.equals("midnight");
+        th = themeKey(); mono = !th.equals("midnight"); dark = library.dark(th);
         switch (th) {
-            case "gba": background = 0xFFF1EFE9; surface = Color.WHITE; text = 0xFF1A1A2E; muted = 0xFF5A5A70; accent = 0xFF7A4DFF; strokeColor = 0xFF1A1A2E; break;
-            case "tiles": background = 0xFF1C2447; surface = 0xFF2A3560; text = Color.WHITE; muted = 0xFFC8D1F5; accent = Color.WHITE; strokeColor = 0x33FFFFFF; break;
-            case "console": background = 0xFFF4F1EC; surface = Color.WHITE; text = 0xFF1A1A2E; muted = 0xFF6B6B7A; accent = 0xFFE5382B; strokeColor = 0xFF1A1A2E; break;
-            default: background = 0xFF07101F; surface = 0x12FFFFFF; text = 0xFFF4F7FC; muted = 0xFF8FA3BF; accent = 0xFF2DE2C8; strokeColor = 0x1FFFFFFF;
+            case "gba":
+                if (dark) { background = 0xFF14142A; surface = 0xFF222240; text = 0xFFF1EFE9; muted = 0xFFA6A6C0; accent = 0xFF9D7BFF; ink = 0xFFF1EFE9; }
+                else { background = 0xFFF1EFE9; surface = Color.WHITE; text = ink; muted = 0xFF5A5A70; accent = 0xFF7A4DFF; ink = ink; }
+                strokeColor = ink; break;
+            case "tiles":
+                if (dark) { background = 0xFF1C2447; surface = 0xFF2A3560; text = Color.WHITE; muted = 0xFFC8D1F5; accent = Color.WHITE; tilesRing = Color.WHITE; strokeColor = 0x33FFFFFF; }
+                else { background = 0xFFEEF1FA; surface = Color.WHITE; text = 0xFF1C2447; muted = 0xFF4A5680; accent = 0xFF1C2447; tilesRing = 0xFF1C2447; strokeColor = 0x331C2447; }
+                ink = text; break;
+            case "console":
+                if (dark) { background = 0xFF16161D; surface = 0xFF24242E; text = 0xFFF4F1EC; muted = 0xFFA0A0B0; accent = 0xFFFF5A4D; ink = 0xFFF4F1EC; }
+                else { background = 0xFFF4F1EC; surface = Color.WHITE; text = ink; muted = 0xFF6B6B7A; accent = 0xFFE5382B; ink = ink; }
+                strokeColor = ink; break;
+            default:
+                if (dark) { background = 0xFF07101F; surface = ov(0x12FFFFFF); text = 0xFFF4F7FC; muted = 0xFF8FA3BF; accent = 0xFF2DE2C8; strokeColor = ov(0x1FFFFFFF); }
+                else { background = 0xFFF3F6FC; surface = Color.WHITE; text = 0xFF142238; muted = 0xFF52657A; accent = 0xFF007E89; strokeColor = 0x22142238; }
+                ink = text;
         }
         fBody = font(R.font.inter_regular);
         fMono = font(R.font.dejavu_mono_bold);
@@ -153,9 +171,9 @@ public class MainActivity extends Activity {
     }
     private Drawable iconBg(boolean f) {
         GradientDrawable g = new GradientDrawable(); g.setShape(GradientDrawable.OVAL);
-        g.setColor(th.equals("midnight") ? 0x14FFFFFF : th.equals("tiles") ? 0x22FFFFFF : 0x00000000);
+        g.setColor(th.equals("midnight") ? ov(0x14FFFFFF) : th.equals("tiles") ? ov(0x22FFFFFF) : 0x00000000);
         if (f) g.setStroke(px(4), th.equals("midnight") ? accent : th.equals("tiles") ? Color.WHITE : strokeColor);
-        else if (th.equals("midnight")) g.setStroke(px(1.5f), 0x24FFFFFF);
+        else if (th.equals("midnight")) g.setStroke(px(1.5f), ov(0x24FFFFFF));
         return g;
     }
     private View icon(String name, String label, String key, Runnable click) {
@@ -197,7 +215,7 @@ public class MainActivity extends Activity {
             row.addView(tv("● ", 22, text, fMono)); row.addView(tv((name).toUpperCase(java.util.Locale.ROOT), 22, text, fMono));
             ((TextView) row.getChildAt(1)).setLetterSpacing(.12f);
         } else {
-            TextView k = tv(key, 22, text, fHead); k.setGravity(Gravity.CENTER); k.setPadding(px(18), px(6), px(18), px(6)); k.setBackground(round(0x1FFFFFFF, 12));
+            TextView k = tv(key, 22, text, fHead); k.setGravity(Gravity.CENTER); k.setPadding(px(18), px(6), px(18), px(6)); k.setBackground(round(ov(0x1FFFFFFF), 12));
             row.addView(k); TextView n = tv(name, 24, muted, fBody); n.setPadding(px(12), 0, px(26), 0); row.addView(n);
         }
         if (mono) row.setPadding(0, 0, px(44), 0);
@@ -272,7 +290,7 @@ public class MainActivity extends Activity {
         root = vertical();
         int sidePad = px(mono ? 80 : 70);
         root.setPadding(sidePad, px(mono ? 38 : 34), sidePad, px(mono ? 30 : 28));
-        if (th.equals("midnight")) root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFF0C2442, 0xFF07101F, 0xFF07101F, 0xFF0A2A33}));
+        if (th.equals("midnight") && dark) root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFF0C2442, 0xFF07101F, 0xFF07101F, 0xFF0A2A33}));
         else root.setBackgroundColor(background);
         setContentView(root);
         content = null; activeScroll = null; catalogStatus = null; infoPanel = null;
@@ -414,18 +432,18 @@ public class MainActivity extends Activity {
     }
     private void focusableWith(View v,String key,java.util.function.Function<Boolean,android.graphics.drawable.Drawable> bg,Runnable click){
         v.setTag(key);v.setFocusable(true);v.setClickable(true);v.setBackground(bg.apply(false));v.setOnClickListener(x->click.run());
-        v.setOnFocusChangeListener((x,has)->{x.setBackground(bg.apply(has));if(has)lastFocus=key;x.setElevation(dp(has?12:0));x.animate().scaleX(has?1.05f:1f).scaleY(has?1.05f:1f).setDuration(140).start();});
+        v.setOnFocusChangeListener((x,has)->{x.setBackground(bg.apply(has));if(has)lastFocus=key;});
     }
     private void heading(String title, String subtitle) {
         TextView t = tv(title, mono ? 58 : 60, text, fHead); t.setPadding(0, px(6), 0, 0); body.addView(t);
         TextView s = tv(subtitle, 26, muted, fBody); s.setPadding(0, px(10), 0, px(14)); body.addView(s);
     }
-    private int onAccent() { return th.equals("midnight") ? 0xFF04121F : th.equals("gba") || th.equals("console") ? Color.WHITE : 0xFF1C2447; }
+    private int onAccent() { return th.equals("midnight") ? 0xFF04121F : th.equals("gba") || th.equals("console") ? (dark ? 0xFF14142A : Color.WHITE) : 0xFF1C2447; }
     private TextView primary(String title, String key, Runnable click) {
         TextView t = tv(title, 30, onAccent(), fHead); t.setGravity(Gravity.CENTER); t.setPadding(px(40), px(20), px(40), px(20));
         focusableWith(t, key, focused -> {
-            GradientDrawable g = th.equals("midnight") ? gradient(0xFF2DE2C8, 0xFF2A9BFF, 24, GradientDrawable.Orientation.LEFT_RIGHT) : round(th.equals("tiles") ? 0xFFFFC857 : 0xFF1A1A2E, th.equals("tiles") ? 26 : 18);
-            if (focused) g.setStroke(px(5), th.equals("midnight") ? Color.WHITE : th.equals("tiles") ? Color.WHITE : accent);
+            GradientDrawable g = th.equals("midnight") ? gradient(0xFF2DE2C8, 0xFF2A9BFF, 24, GradientDrawable.Orientation.LEFT_RIGHT) : round(th.equals("tiles") ? 0xFFFFC857 : ink, th.equals("tiles") ? 26 : 18);
+            if (focused) g.setStroke(px(5), ring());
             return g;
         }, click);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, px(92)); p.setMargins(px(4), px(6), px(4), px(6)); t.setLayoutParams(p); return t;
@@ -438,31 +456,31 @@ public class MainActivity extends Activity {
     private Drawable tileBg(Console c, boolean focused) {
         int brand = brand(c);
         if (th.equals("gba")) {
-            GradientDrawable face = round(focused ? brand : Color.WHITE, 28); face.setStroke(px(focused ? 5 : 3.5f), 0xFF1A1A2E);
+            GradientDrawable face = round(focused ? brand : surface, 28); face.setStroke(px(focused ? 5 : 3.5f), ink);
             if (!focused) return face;
-            GradientDrawable shadow = round(0xFF1A1A2E, 28);
+            GradientDrawable shadow = round(ink, 28);
             android.graphics.drawable.LayerDrawable l = new android.graphics.drawable.LayerDrawable(new Drawable[]{shadow, face});
             l.setLayerInset(0, px(14), px(14), 0, 0); l.setLayerInset(1, 0, 0, px(14), px(14)); return l;
         }
         if (th.equals("tiles")) {
             GradientDrawable g = gradient(blend(0xFFFFFFFF, brand, .14f), shade(brand, .82f), 34, GradientDrawable.Orientation.TL_BR);
-            if (focused) g.setStroke(px(7), Color.WHITE); return g;
+            if (focused) g.setStroke(px(7), tilesRing); return g;
         }
-        int base = 0xFF0E1A2C;
+        int base = dark ? 0xFF0E1A2C : 0xFFFFFFFF;
         GradientDrawable g = gradient(blend(brand, base, focused ? .42f : .24f), base, 30, GradientDrawable.Orientation.TL_BR);
-        g.setStroke(px(focused ? 4 : 1.5f), focused ? accent : 0x1FFFFFFF); return g;
+        g.setStroke(px(focused ? 4 : 1.5f), focused ? accent : ov(0x1FFFFFFF)); return g;
     }
     private View consoleTile(Console c) {
         LinearLayout tile = vertical(); tile.setGravity(Gravity.CENTER); tile.setPadding(px(20), px(16), px(20), px(24));
         boolean gba = th.equals("gba");
         View mark;
         if (logoMode()) {
-            ImageView logo = logo(c); logo.setColorFilter(gba ? 0xFF1A1A2E : Color.WHITE, android.graphics.PorterDuff.Mode.SRC_IN);
+            ImageView logo = logo(c); logo.setColorFilter(logoTint(), android.graphics.PorterDuff.Mode.SRC_IN);
             mark = logo; tile.addView(mark, new LinearLayout.LayoutParams(-1, 0, 1));
         } else {
-            TextView wm = tv(wordmark(c), th.equals("midnight") ? 90 : th.equals("tiles") ? 124 : 92, gba ? 0xFF1A1A2E : Color.WHITE, fWord);
+            TextView wm = tv(wordmark(c), th.equals("midnight") ? 90 : th.equals("tiles") ? 124 : 92, gba ? ink : th.equals("midnight") ? text : Color.WHITE, fWord);
             wm.setGravity(Gravity.CENTER); wm.setSingleLine(true);
-            if (th.equals("midnight")) wm.setShadowLayer(px(30), 0, 0, brand(c));
+            if (th.equals("midnight") && dark) wm.setShadowLayer(px(30), 0, 0, brand(c));
             else if (th.equals("tiles")) wm.setShadowLayer(px(2), 0, px(7), 0x55000000);
             tile.addView(wm, new LinearLayout.LayoutParams(-1, 0, 1)); mark = wm;
             if (!gba) wm.setGravity(Gravity.CENTER);
@@ -472,7 +490,7 @@ public class MainActivity extends Activity {
         String countText = gameCount(library.count(c)); if (mono) countText = countText.toUpperCase(java.util.Locale.ROOT);
         TextView count = tv(countText, th.equals("tiles") ? 27 : 23, th.equals("tiles") ? 0xE6FFFFFF : muted, mono ? fMono : fBody);
         count.setGravity(Gravity.CENTER); if (mono) count.setLetterSpacing(.12f);
-        if (th.equals("midnight")) { count.setPadding(px(24), px(8), px(24), px(8)); count.setBackground(round(0x66000000, 40)); }
+        if (th.equals("midnight")) { count.setPadding(px(24), px(8), px(24), px(8)); count.setBackground(round(dark ? 0x66000000 : 0x14000000, 40)); }
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2, -2); cp.gravity = Gravity.CENTER_HORIZONTAL; cp.topMargin = px(12); tile.addView(count, cp);
         tile.setContentDescription(c.title + ", " + library.count(c) + T.t(" juegos"));
         focusableWith(tile, "console_" + c.name(), focused -> tileBg(c, focused), () -> openConsole(c));
@@ -480,7 +498,7 @@ public class MainActivity extends Activity {
             View.OnFocusChangeListener base = tile.getOnFocusChangeListener();
             tile.setOnFocusChangeListener((v, has) -> {
                 base.onFocusChange(v, has);
-                if (mark instanceof TextView) ((TextView) mark).setTextColor(has ? Color.WHITE : 0xFF1A1A2E);
+                if (mark instanceof TextView) ((TextView) mark).setTextColor(has ? Color.WHITE : ink);
                 count.setTextColor(has ? 0xFFEDE6FF : muted); v.setScaleX(1f); v.setScaleY(1f);
             });
         }
@@ -534,7 +552,7 @@ public class MainActivity extends Activity {
         TextView info = tv(gameCount(library.count(current)) + " · " + (drive.sources.get(current) != null && drive.sources.get(current).chatId != 0 ? drive.sources.get(current).title : TelegramCatalog.expectedTitle(current)), 32, 0xE6FFFFFF, fBody);
         info.setPadding(0, px(30), 0, 0); hero.addView(info);
         hero.setContentDescription(current.title + ", " + library.count(current) + T.t(" juegos. Abrir biblioteca"));
-        focusableWith(hero, "hero_console", f -> { GradientDrawable g = gradient(blend(0xFFFFFFFF, brand(current), .12f), shade(brand(current), .78f), 58, GradientDrawable.Orientation.TL_BR); if (f) g.setStroke(px(7), 0xFF1A1A2E); return g; }, () -> openConsole(current));
+        focusableWith(hero, "hero_console", f -> { GradientDrawable g = gradient(blend(0xFFFFFFFF, brand(current), .12f), shade(brand(current), .78f), 58, GradientDrawable.Orientation.TL_BR); if (f) g.setStroke(px(7), ink); return g; }, () -> openConsole(current));
         View.OnFocusChangeListener heroBase = hero.getOnFocusChangeListener();
         hero.setOnFocusChangeListener((v, has) -> { heroBase.onFocusChange(v, has); v.setScaleX(1f); v.setScaleY(1f); v.setElevation(0); });
         hero.setOnKeyListener((v, key, e) -> {
@@ -547,8 +565,8 @@ public class MainActivity extends Activity {
         LinearLayout strip = horizontal(); strip.setGravity(Gravity.CENTER);
         for (Console c : consoles) {
             boolean on = c == current;
-            TextView chip = tv(c.name(), 27, on ? Color.WHITE : 0xFF6B6B5A, fMono); chip.setLetterSpacing(.1f); chip.setGravity(Gravity.CENTER);
-            focusableWith(chip, "chip_" + c.name(), f -> { GradientDrawable g = round(on ? brand(c) : 0xFFE4DFD6, 20); if (f) g.setStroke(px(5), 0xFF1A1A2E); return g; }, () -> { library.homeConsole(c); lastFocus = "hero_console"; render(); });
+            TextView chip = tv(c.name(), 27, on ? Color.WHITE : muted, fMono); chip.setLetterSpacing(.1f); chip.setGravity(Gravity.CENTER);
+            focusableWith(chip, "chip_" + c.name(), f -> { GradientDrawable g = round(on ? brand(c) : surface, 20); if (f) g.setStroke(px(5), ink); return g; }, () -> { library.homeConsole(c); lastFocus = "hero_console"; render(); });
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(px(120), px(78)); cp.setMargins(px(8), 0, px(8), 0); strip.addView(chip, cp);
         }
         content.addView(strip, new LinearLayout.LayoutParams(-1, -2));
@@ -590,7 +608,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < 3; i++) {
             final int m = i; boolean on = (favorites ? 1 : mode) == i;
             TextView chip = tv(names[i], 25, on ? onAccent() : text, fBody); chip.setGravity(Gravity.CENTER); chip.setPadding(px(30), px(12), px(30), px(12));
-            focusableWith(chip, "mode_" + i, f -> { GradientDrawable g = round(on ? (th.equals("midnight") ? accent : th.equals("tiles") ? Color.WHITE : 0xFF1A1A2E) : (th.equals("midnight") ? 0x14FFFFFF : 0x22000000), 40); if (f) g.setStroke(px(4), th.equals("midnight") ? Color.WHITE : accent); return g; },
+            focusableWith(chip, "mode_" + i, f -> { GradientDrawable g = round(on ? (focusRing()) : (th.equals("midnight") ? ov(0x14FFFFFF) : ov(0x22FFFFFF)), 40); if (f) g.setStroke(px(4), th.equals("midnight") ? Color.WHITE : accent); return g; },
                 () -> { favorites = false; mode = m; libraryScroll = 0; libraryFocus = ""; lastFocus = "mode_" + m; render(); });
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2, px(64)); cp.leftMargin = px(12); titleRow.addView(chip, cp);
         }
@@ -603,36 +621,31 @@ public class MainActivity extends Activity {
         int columns = gba ? 3 : 4; int gap = px(gba ? 26 : 24);
         int panelW = px(gba ? 600 : 560);
         int gridW = getResources().getDisplayMetrics().widthPixels - 2 * px(mono ? 80 : 70) - panelW - px(40) - px(16);
-        int cardW = (gridW - columns * (gap + px(14))) / columns - 2; int cardH = gba ? Math.round(cardW * .8f) : cardW;
+        int cardW = (gridW - columns * (gap + px(14))) / columns - 2; int cardH = Math.round(cardW * (gba ? .66f : .72f));
         LinearLayout row = null; int index = 0;
-        for (Game game : games.subList(0, Math.min(visibleGames, games.size()))) {
+        for (Game game : games) {
             if (index % columns == 0) { row = horizontal(); row.setGravity(Gravity.TOP); grid.addView(row); }
-            LinearLayout cell = vertical(); cell.setPadding(0, 0, 0, px(10));
+            LinearLayout cell = vertical();
             FrameLayout art = new FrameLayout(this);
-            int[] gc = gameColors(game);
-            art.setBackground(gradient(gc[0], gc[1], gba ? 22 : 26, GradientDrawable.Orientation.TL_BR));
-            TextView ph = tv(game.title, gba ? 28 : 30, Color.WHITE, fHead); ph.setGravity(Gravity.CENTER); ph.setPadding(px(14), px(14), px(14), px(14)); ph.setMaxLines(4); ph.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            art.setBackground(round(Color.WHITE, 22));
+            TextView ph = tv(game.title, 26, 0xFF1A1A2E, fHead); ph.setGravity(Gravity.CENTER); ph.setPadding(px(16), px(12), px(16), px(12)); ph.setMaxLines(3); ph.setEllipsize(android.text.TextUtils.TruncateAt.END);
             art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
-            ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER); image.setContentDescription(game.title);
-            art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.load(game, image);
+            ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER); image.setContentDescription(game.title); image.setPadding(px(14), px(12), px(14), px(12));
+            art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.load(game, image, "Named_Logos");
+            if (library.favorite(game)) { TextView fav = tv("★", 30, 0xFFFFB400, fHead); fav.setPadding(px(10), px(4), px(12), 0); art.addView(fav, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END)); }
             cell.addView(art, new LinearLayout.LayoutParams(cardW, cardH));
-            if (!gba) {
-                TextView name = tv((library.favorite(game) ? "★ " : "") + game.title, 24, text, fBody); name.setMaxLines(1); name.setEllipsize(android.text.TextUtils.TruncateAt.END); name.setPadding(px(4), px(10), px(4), 0);
-                cell.addView(name, new LinearLayout.LayoutParams(cardW, -2));
-            }
-            cell.setPadding(px(6), px(6), px(6), px(6));
-            final int ringColor = th.equals("midnight") ? accent : th.equals("tiles") ? Color.WHITE : 0xFF1A1A2E;
-            focusableWith(cell, "game_" + game.id, f -> { GradientDrawable g = round(0, 30); if (f) g.setStroke(px(6), ringColor); return g; }, () -> startPlay(game));
+            cell.setPadding(px(7), px(7), px(7), px(7));
+            final int ringColor = focusRing();
+            focusableWith(cell, "game_" + game.id, f -> { GradientDrawable g = round(0, 28); if (f) g.setStroke(px(6), ringColor); return g; }, () -> selectGame(game));
             View.OnFocusChangeListener base = cell.getOnFocusChangeListener();
-            cell.setOnFocusChangeListener((v, has) -> { base.onFocusChange(v, has); v.setScaleX(1f); v.setScaleY(1f); if (has) showInfo(game); });
+            cell.setOnFocusChangeListener((v, has) -> { base.onFocusChange(v, has); if (has) showInfo(game); });
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2); p.setMargins(gap / 2, gap / 4, gap / 2, gap / 4); row.addView(cell, p); index++;
         }
         if (index == 0) grid.addView(tv(favorites || mode == 1 ? T.t("Guarda juegos con X para verlos aquí.") : mode == 2 ? T.t("Aún no has jugado a nada.") : T.t("No hay juegos que coincidan."), 30, muted, fBody));
-        if (games.size() > visibleGames) grid.addView(button(T.t("Mostrar más juegos"), "load_more", () -> { int next = visibleGames; visibleGames += 60; lastFocus = "game_" + games.get(next).id; render(); }));
         // right panel
         infoPanel = vertical(); infoPanel.setPadding(px(32), px(32), px(32), px(32));
-        if (gba) { GradientDrawable g = round(Color.WHITE, 26); g.setStroke(px(4), 0xFF1A1A2E); infoPanel.setBackground(g); }
-        else infoPanel.setBackground(round(th.equals("midnight") ? 0x0FFFFFFF : 0x22000000, 34));
+        if (gba) { GradientDrawable g = round(surface, 26); g.setStroke(px(4), ink); infoPanel.setBackground(g); }
+        else infoPanel.setBackground(round(th.equals("midnight") ? ov(0x0FFFFFFF) : ov(0x22FFFFFF), 34));
         LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(panelW, -1); ip.leftMargin = px(40); split.addView(infoPanel, ip);
         Game first = games.isEmpty() ? null : games.get(0);
         if (!libraryFocus.isEmpty()) for (Game g : games) if (("game_" + g.id).equals(libraryFocus)) first = g;
@@ -649,22 +662,41 @@ public class MainActivity extends Activity {
         TextView ph = tv(game.title, 36, Color.WHITE, fHead); ph.setGravity(Gravity.CENTER); ph.setPadding(px(20), px(20), px(20), px(20)); art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
         ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER); art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.load(game, image);
         infoPanel.addView(art, new LinearLayout.LayoutParams(-1, px(gba ? 250 : 340)));
-        TextView title = tv(game.title, 38, gba ? 0xFF1A1A2E : text, fHead); title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END); title.setPadding(0, px(22), 0, 0); infoPanel.addView(title);
+        TextView title = tv(game.title, 38, gba ? ink : text, fHead); title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END); title.setPadding(0, px(22), 0, 0); infoPanel.addView(title);
         String size = game.fileSize > 0 ? android.text.format.Formatter.formatFileSize(this, game.fileSize) : "—";
         TextView meta = tv(game.console.title + " · " + size, 24, gba ? 0xFF5A5A70 : muted, fBody); meta.setPadding(0, px(8), 0, px(10)); infoPanel.addView(meta);
-        TextView desc = tv(game.description, 24, gba ? 0xFF3A3A50 : muted, fBody); desc.setMaxLines(4); desc.setEllipsize(android.text.TextUtils.TruncateAt.END); infoPanel.addView(desc, new LinearLayout.LayoutParams(-1, 0, 1));
+        TextView desc = tv(game.description.isEmpty() ? T.t("Sin descripción disponible") : game.description, 24, gba ? 0xFF3A3A50 : muted, fBody); desc.setMaxLines(4); desc.setEllipsize(android.text.TextUtils.TruncateAt.END); infoPanel.addView(desc, new LinearLayout.LayoutParams(-1, 0, 1));
         LinearLayout chips = horizontal(); chips.setPadding(0, px(10), 0, px(14));
-        chips.addView(pill(T.t("Tamaño ") + size, 22, gba ? 0xFF1A1A2E : text, gba ? 0x14000000 : 0x14FFFFFF));
-        TextView core = pill(T.t("Núcleo ") + coreName(game.console), 22, gba ? 0xFF1A1A2E : text, gba ? 0x14000000 : 0x14FFFFFF);
+        chips.addView(pill(T.t("Tamaño ") + size, 22, gba ? ink : text, gba ? ov(0x14FFFFFF) : ov(0x14FFFFFF)));
+        TextView core = pill(T.t("Núcleo ") + coreName(game.console), 22, gba ? ink : text, gba ? ov(0x14FFFFFF) : ov(0x14FFFFFF));
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2, -2); cp.leftMargin = px(12); chips.addView(core, cp);
         infoPanel.addView(chips);
         LinearLayout actions = horizontal();
         TextView play = primary(T.t("▶  Jugar"), "panel_play", () -> startPlay(game));
         actions.addView(play, new LinearLayout.LayoutParams(0, px(92), 1));
-        TextView star = tv(library.favorite(game) ? "★" : "☆", 40, gba ? 0xFF1A1A2E : text, fHead); star.setGravity(Gravity.CENTER);
-        focusableWith(star, "panel_fav", f -> { GradientDrawable g = round(gba ? 0x14000000 : 0x14FFFFFF, 26); if (f) g.setStroke(px(5), th.equals("midnight") ? accent : gba ? 0xFF1A1A2E : Color.WHITE); return g; }, () -> { library.toggleFavorite(game); libraryFocus = "game_" + game.id; lastFocus = "panel_fav"; render(); });
+        TextView infoBtn = tv("i", 40, gba ? ink : text, fHead); infoBtn.setGravity(Gravity.CENTER); infoBtn.setContentDescription(T.t("Más información"));
+        focusableWith(infoBtn, "panel_info", f -> { GradientDrawable g = round(ov(0x14FFFFFF), 26); if (f) g.setStroke(px(5), focusRing()); return g; }, () -> showFullInfo(game));
+        LinearLayout.LayoutParams ip2 = new LinearLayout.LayoutParams(px(92), px(92)); ip2.leftMargin = px(12); actions.addView(infoBtn, ip2);
+        TextView star = tv(library.favorite(game) ? "★" : "☆", 40, gba ? ink : text, fHead); star.setGravity(Gravity.CENTER);
+        focusableWith(star, "panel_fav", f -> { GradientDrawable g = round(gba ? ov(0x14FFFFFF) : ov(0x14FFFFFF), 26); if (f) g.setStroke(px(5), focusRing()); return g; }, () -> { library.toggleFavorite(game); libraryFocus = "game_" + game.id; lastFocus = "panel_fav"; render(); });
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(px(92), px(92)); sp.leftMargin = px(12); actions.addView(star, sp);
         infoPanel.addView(actions);
+    }
+    private void showFullInfo(Game game) {
+        Toast.makeText(this, T.t("Cargando información…"), Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            Artwork art = new Artwork(getApplicationContext());
+            android.graphics.Bitmap box = null; java.util.List<android.graphics.Bitmap> shots = new java.util.ArrayList<>();
+            try { java.io.File f = art.cachedCover(game); if (f != null) box = android.graphics.BitmapFactory.decodeFile(f.getPath()); } catch (Exception ignored) { }
+            try { android.graphics.Bitmap b1 = art.snapshot(game, "Named_Snaps"); if (b1 != null) shots.add(b1); android.graphics.Bitmap b2 = art.snapshot(game, "Named_Titles"); if (b2 != null) shots.add(b2); } catch (Exception ignored) { }
+            art.close();
+            final android.graphics.Bitmap boxFinal = box;
+            runOnUiThread(() -> { if (!isFinishing()) GameInfo.INSTANCE.show(this, GameMeta.info(this, game), boxFinal, shots, () -> kotlin.Unit.INSTANCE); });
+        }, "game-info").start();
+    }
+    private void selectGame(Game game) {
+        libraryFocus = "game_" + game.id; showInfo(game);
+        if (infoPanel != null) { View play = infoPanel.findViewWithTag("panel_play"); if (play != null) play.requestFocusFromTouch(); }
     }
     private void startPlay(Game game) {
         selected = game; drive.inspectFile(game); playSelected();
@@ -681,7 +713,7 @@ public class MainActivity extends Activity {
         TextView t = tv(selected.title, 40, text, fHead); t.setPadding(0, px(22), 0, 0); center.addView(t);
         loadingTitle = tv(T.t("Cargando…"), 30, muted, fBody); loadingTitle.setPadding(0, px(6), 0, px(18)); center.addView(loadingTitle);
         playProgress = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); playProgress.setMax(1000);
-        GradientDrawable track = round(th.equals("gba") ? 0x22000000 : 0x22FFFFFF, 12);
+        GradientDrawable track = round(th.equals("gba") ? ov(0x22FFFFFF) : ov(0x22FFFFFF), 12);
         android.graphics.drawable.ClipDrawable fill = new android.graphics.drawable.ClipDrawable(gradient(th.equals("midnight") ? 0xFF2DE2C8 : accent, th.equals("midnight") ? 0xFF2A9BFF : accent, 12, GradientDrawable.Orientation.LEFT_RIGHT), Gravity.START, android.graphics.drawable.ClipDrawable.HORIZONTAL);
         android.graphics.drawable.LayerDrawable ld = new android.graphics.drawable.LayerDrawable(new Drawable[]{track, fill}); ld.setId(0, android.R.id.background); ld.setId(1, android.R.id.progress);
         playProgress.setProgressDrawable(ld);
@@ -689,9 +721,15 @@ public class MainActivity extends Activity {
         downloadLabel = tv("", 26, muted, fBody); downloadLabel.setPadding(0, px(14), 0, px(8)); center.addView(downloadLabel);
         stepsRow = horizontal(); stepsRow.setPadding(0, px(8), 0, px(20)); center.addView(stepsRow);
         TextView cancel = tv("B  " + T.t("Cancelar descarga"), 28, text, fHead); cancel.setPadding(px(34), px(14), px(34), px(14));
-        focusableWith(cancel, "cancel_load", f -> { GradientDrawable g = round(th.equals("midnight") ? 0x14FFFFFF : 0x22000000, 30); if (f) g.setStroke(px(4), th.equals("midnight") ? accent : text); return g; }, this::backToLibrary);
+        focusableWith(cancel, "cancel_load", f -> { GradientDrawable g = round(th.equals("midnight") ? ov(0x14FFFFFF) : ov(0x22FFFFFF), 30); if (f) g.setStroke(px(4), th.equals("midnight") ? accent : text); return g; }, this::backToLibrary);
         center.addView(cancel);
         TextView note = tv(T.t("La ROM se elimina de esta TV al salir"), 22, muted, fBody); note.setPadding(0, px(14), 0, 0); center.addView(note);
+        for (int i = 0; i < center.getChildCount(); i++) {
+            View k = center.getChildAt(i); ViewGroup.LayoutParams lp0 = k.getLayoutParams();
+            LinearLayout.LayoutParams lp = lp0 instanceof LinearLayout.LayoutParams ? (LinearLayout.LayoutParams) lp0 : new LinearLayout.LayoutParams(-2, -2);
+            lp.gravity = Gravity.CENTER_HORIZONTAL; if (lp.width == -1) lp.width = -2; k.setLayoutParams(lp);
+            if (k instanceof TextView) ((TextView) k).setGravity(Gravity.CENTER);
+        }
         updateDownload();
     }
     private TextView loadingTitle; private LinearLayout stepsRow; private Game focusedGame; private long lastBytes, lastBytesAt; private double speed;
@@ -752,7 +790,7 @@ public class MainActivity extends Activity {
     }
     private void playDownloaded(String path){
         pendingPlay="";library.addRecent(selected);page="library";lastFocus="game_"+selected.id;libraryFocus=lastFocus;render();
-        Intent intent=new Intent(this,GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
+        Intent intent=new Intent(this,selected.console==Console.N64?GameActivityN64.class:GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
         startActivity(intent);
     }
     private void search() {
@@ -763,35 +801,35 @@ public class MainActivity extends Activity {
     }
     private LinearLayout sRow() { LinearLayout r = horizontal(); r.setClipChildren(false); r.setClipToPadding(false); content.addView(r, new LinearLayout.LayoutParams(-1, -2)); return r; }
     private void sSection(String title) {
-        TextView t = tv(mono ? title.toUpperCase(java.util.Locale.ROOT) : title, mono ? 26 : 32, mono ? muted : text, mono ? fMono : fHead);
-        if (mono) t.setLetterSpacing(.14f); t.setPadding(px(10), px(30), 0, px(10)); content.addView(t);
+        TextView t = tv(mono ? title.toUpperCase(java.util.Locale.ROOT) : title, mono ? 22 : 28, mono ? muted : text, mono ? fMono : fHead);
+        if (mono) t.setLetterSpacing(.14f); t.setPadding(px(10), px(20), 0, px(6)); content.addView(t);
     }
     private Drawable cardBg(boolean f) {
         GradientDrawable g;
-        if (th.equals("midnight")) { g = gradient(0x1AFFFFFF, 0x0DFFFFFF, 28, GradientDrawable.Orientation.TL_BR); g.setStroke(px(f ? 4 : 1.5f), f ? accent : 0x1FFFFFFF); }
-        else if (th.equals("tiles")) { g = round(f ? 0x44FFFFFF : 0x24FFFFFF, 30); if (f) g.setStroke(px(5), Color.WHITE); }
-        else { g = round(f ? 0xFFEDE6FF : Color.WHITE, 24); g.setStroke(px(f ? 5 : 3.5f), f ? accent : 0xFF1A1A2E); }
+        if (th.equals("midnight")) { g = gradient(ov(0x1AFFFFFF), ov(0x0DFFFFFF), 28, GradientDrawable.Orientation.TL_BR); g.setStroke(px(f ? 4 : 1.5f), f ? accent : ov(0x1FFFFFFF)); }
+        else if (th.equals("tiles")) { g = round(f ? ov(0x44FFFFFF) : ov(0x24FFFFFF), 30); if (f) g.setStroke(px(5), tilesRing); }
+        else { g = round(f ? (dark ? 0xFF33335A : 0xFFEDE6FF) : surface, 24); g.setStroke(px(f ? 5 : 3.5f), f ? accent : ink); }
         return g;
     }
     private void sCard(LinearLayout row, String title, String value, String code, int tint, String tag, Runnable action) {
-        LinearLayout card = horizontal(); card.setPadding(px(26), px(20), px(26), px(20));
-        TextView badge = tv(code, 28, Color.WHITE, fMono); badge.setGravity(Gravity.CENTER); badge.setBackground(gradient(tint, shade(tint, .72f), 20, GradientDrawable.Orientation.TL_BR));
-        card.addView(badge, new LinearLayout.LayoutParams(px(84), px(84)));
+        LinearLayout card = horizontal(); card.setPadding(px(22), px(14), px(22), px(14));
+        TextView badge = tv(code, 24, Color.WHITE, fMono); badge.setGravity(Gravity.CENTER); badge.setBackground(gradient(tint, shade(tint, .72f), 16, GradientDrawable.Orientation.TL_BR));
+        card.addView(badge, new LinearLayout.LayoutParams(px(68), px(68)));
         LinearLayout col = vertical(); col.setPadding(px(22), 0, 0, 0);
-        TextView t = tv(title, 31, text, fHead); t.setSingleLine(true); t.setEllipsize(android.text.TextUtils.TruncateAt.END); col.addView(t);
-        TextView v = tv(value, 24, muted, fBody); v.setSingleLine(true); v.setEllipsize(android.text.TextUtils.TruncateAt.END); v.setPadding(0, px(6), 0, 0); col.addView(v);
+        TextView t = tv(title, 28, text, fHead); t.setSingleLine(true); t.setEllipsize(android.text.TextUtils.TruncateAt.END); col.addView(t);
+        TextView v = tv(value, 22, muted, fBody); v.setSingleLine(true); v.setEllipsize(android.text.TextUtils.TruncateAt.END); v.setPadding(0, px(4), 0, 0); col.addView(v);
         card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
         focusableWith(card, tag, this::cardBg, action);
         View.OnFocusChangeListener base = card.getOnFocusChangeListener();
         card.setOnFocusChangeListener((x, has) -> { base.onFocusChange(x, has); x.setScaleX(1f); x.setScaleY(1f); });
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, px(132), 1); p.setMargins(px(10), px(8), px(10), px(8)); row.addView(card, p);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, px(104), 1); p.setMargins(px(10), px(6), px(10), px(6)); row.addView(card, p);
     }
-    private void sFiller(LinearLayout row, int n) { for (int i = 0; i < n; i++) row.addView(new View(this), new LinearLayout.LayoutParams(0, px(132), 1)); }
+    private void sFiller(LinearLayout row, int n) { for (int i = 0; i < n; i++) row.addView(new View(this), new LinearLayout.LayoutParams(0, px(104), 1)); }
     private void settings() {
         ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
         content = vertical(); content.setPadding(0, 0, 0, px(24)); content.setClipChildren(false); scroll.addView(content);
         body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        if (!mono) { TextView h = tv(T.t("Ajustes"), 62, text, fHead); h.setPadding(px(10), px(10), 0, 0); content.addView(h); }
+        if (!mono) { TextView h = tv(T.t("Ajustes"), 50, text, fHead); h.setPadding(px(10), px(4), 0, 0); content.addView(h); }
         sSection(T.t("Apariencia")); LinearLayout a = sRow();
         sCard(a, T.t("Diseño"), T.t(themeName()), "DSN", 0xFF7A4DFF, "visual_theme", () -> {
             String[] themes = {"Moderno", "GBA clásico", "Mosaico", "Consola completa"};
@@ -799,11 +837,14 @@ public class MainActivity extends Activity {
             int current = java.util.Arrays.asList(themes).indexOf(themeName());
             new AlertDialog.Builder(this).setTitle(T.t("Tema visual")).setSingleChoiceItems(shown, current, (d, w) -> { library.theme(themes[w]); d.dismiss(); lastFocus = "visual_theme"; render(); }).show();
         });
+        sCard(a, T.t("Color"), dark ? T.t("Oscuro") : T.t("Claro"), "CLR", 0xFF4DB36B, "color_mode", () -> { library.dark(th, !dark); lastFocus = "color_mode"; render(); });
         sCard(a, "Idioma / Language", T.english() ? "English" : "Español", "LNG", 0xFF2AA8FF, "language", () -> {
             String[] codes = {"es", "en"}; String[] names = {"Español", "English"};
             new AlertDialog.Builder(this).setTitle("Idioma / Language").setSingleChoiceItems(names, T.english() ? 1 : 0, (d, w) -> { T.set(this, codes[w]); d.dismiss(); recreate(); }).show();
         });
-        sCard(a, T.t("Logotipos"), logoMode() ? T.t("Logos originales") : T.t("Texto"), "LOG", 0xFFFF9A2E, "logo_mode", () -> { getSharedPreferences("ui", MODE_PRIVATE).edit().putBoolean("logos", !logoMode()).apply(); lastFocus = "logo_mode"; render(); });
+        LinearLayout a2 = sRow(); sFiller(a2, 0);
+        sCard(a2, T.t("Logotipos"), logoMode() ? T.t("Logos originales") : T.t("Texto"), "LOG", 0xFFFF9A2E, "logo_mode", () -> { getSharedPreferences("ui", MODE_PRIVATE).edit().putBoolean("logos", !logoMode()).apply(); lastFocus = "logo_mode"; render(); });
+        sFiller(a2, 2);
         sSection(T.t("Tu biblioteca")); LinearLayout b = sRow();
         sCard(b, "TirsoDrive", drive.stage == TirsoDrive.Stage.READY ? T.t("Conectado · gestionar grupos") : T.t("Vincular colección"), "TD", 0xFF14C9AA, "telegram", this::connectScreen);
         sCard(b, T.t("Copias de partidas"), T.t("Guardadas en tu canal de Telegram"), "BAK", 0xFF2DE2C8, "backups", () -> openBackups());
@@ -819,17 +860,17 @@ public class MainActivity extends Activity {
         for (Console cn : Console.values()) {
             if (n++ % 3 == 0) { row = sRow(); }
             boolean on = library.visible(cn);
-            LinearLayout chip = horizontal(); chip.setPadding(px(26), px(18), px(26), px(18));
+            LinearLayout chip = horizontal(); chip.setPadding(px(22), px(12), px(22), px(12));
             View dot = new View(this); dot.setBackground(round(on ? brand(cn) : 0x44808080, 16)); chip.addView(dot, new LinearLayout.LayoutParams(px(32), px(32)));
             LinearLayout col = vertical(); col.setPadding(px(20), 0, 0, 0);
-            col.addView(tv(cn.title, 28, on ? text : muted, fHead)); col.addView(tv(gameCount(library.count(cn)), 22, muted, fBody));
+            col.addView(tv(cn.title, 25, on ? text : muted, fHead)); col.addView(tv(gameCount(library.count(cn)), 20, muted, fBody));
             chip.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
             chip.addView(tv(on ? T.t("SÍ") : T.t("NO"), 24, on ? accent : muted, fMono));
             chip.setContentDescription(cn.title + ", " + (on ? "visible" : "oculta"));
             focusableWith(chip, "visible_" + cn.name(), this::cardBg, () -> { library.visible(cn, !library.visible(cn)); lastFocus = "visible_" + cn.name(); render(); });
             View.OnFocusChangeListener base = chip.getOnFocusChangeListener();
             chip.setOnFocusChangeListener((x, has) -> { base.onFocusChange(x, has); x.setScaleX(1f); x.setScaleY(1f); });
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, px(104), 1); p.setMargins(px(10), px(8), px(10), px(8)); row.addView(chip, p);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, px(88), 1); p.setMargins(px(10), px(6), px(10), px(6)); row.addView(chip, p);
         }
         sFiller(row, (3 - n % 3) % 3);
         LinearLayout all = sRow(); all.setGravity(Gravity.START);
@@ -862,10 +903,10 @@ public class MainActivity extends Activity {
     private TextView actionButton(String title, String tag, boolean primary, Runnable click) {
         TextView t = tv(title, 28, primary ? onAccent() : text, fHead); t.setGravity(Gravity.CENTER); t.setPadding(px(34), px(16), px(34), px(16));
         focusableWith(t, tag, f -> {
-            GradientDrawable g = primary ? (th.equals("midnight") ? gradient(0xFF2DE2C8, 0xFF2A9BFF, 26, GradientDrawable.Orientation.LEFT_RIGHT) : round(th.equals("tiles") ? 0xFFFFC857 : 0xFF1A1A2E, 26))
-                : round(th.equals("midnight") ? 0x18FFFFFF : th.equals("tiles") ? 0x24FFFFFF : Color.WHITE, 26);
-            if (!primary && !th.equals("midnight") && !th.equals("tiles")) g.setStroke(px(3.5f), 0xFF1A1A2E);
-            if (f) g.setStroke(px(5), th.equals("midnight") ? Color.WHITE : th.equals("tiles") ? Color.WHITE : accent); return g; }, click);
+            GradientDrawable g = primary ? (th.equals("midnight") ? gradient(0xFF2DE2C8, 0xFF2A9BFF, 26, GradientDrawable.Orientation.LEFT_RIGHT) : round(th.equals("tiles") ? 0xFFFFC857 : ink, 26))
+                : round(th.equals("midnight") ? ov(0x18FFFFFF) : th.equals("tiles") ? ov(0x24FFFFFF) : surface, 26);
+            if (!primary && !th.equals("midnight") && !th.equals("tiles")) g.setStroke(px(3.5f), ink);
+            if (f) g.setStroke(px(5), ring()); return g; }, click);
         View.OnFocusChangeListener base = t.getOnFocusChangeListener(); t.setOnFocusChangeListener((x, has) -> { base.onFocusChange(x, has); x.setScaleX(1f); x.setScaleY(1f); });
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, px(88)); p.setMargins(px(8), px(6), px(8), px(6)); t.setLayoutParams(p); return t;
     }
@@ -1070,4 +1111,9 @@ public class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artwork.close(); super.onDestroy(); }
     @Override protected void onPause(){cancelPending();super.onPause();}
+    @Override protected void onResume(){
+        super.onResume();
+        // Saves changed while playing are copied to the Telegram channel in the background.
+        if(drive!=null&&drive.ready()&&page!=null&&!page.equals("welcome"))SaveBackups.uploadAll(this,drive,p->kotlin.Unit.INSTANCE,(ok,msg)->kotlin.Unit.INSTANCE);
+    }
 }
