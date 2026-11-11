@@ -510,7 +510,7 @@ final class TirsoDrive {
     void appVisible(boolean visible){menuVisible=visible;if(visible&&myState.equals("offline")){myState="menu";mySince=System.currentTimeMillis();}presenceChanged();if(visible)loadFriends();}
     void gameVisible(boolean visible){gameVisible=visible;presenceChanged();}
     /** The player started a game. */
-    void playing(Game game){myState="playing";myGame=game.title;myConsole=game.console.name();mySince=System.currentTimeMillis();playingIsolated=game.console==Console.N64;presenceChanged();}
+    void playing(Game game){myState="playing";myGame=game.title;myConsole=game.console.name();mySince=System.currentTimeMillis();playingIsolated=Console.ownProcess(game.console);presenceChanged();}
     /** Back in the menus. */
     void inMenu(){if(!myState.equals("menu")){myState="menu";myGame="";myConsole="";mySince=System.currentTimeMillis();}playingIsolated=false;presenceChanged();}
     private void startHeartbeat(){

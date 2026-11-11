@@ -23,6 +23,9 @@ public enum Console {
     }
     /** Consoles only the phone app can play. */
     public boolean phoneOnly() { return this == PSP || this == PS2 || this == GC || this == WII; }
+    /** Played in a fresh process of their own: N64 (closing it can crash), and on the phone PSP, PS2, GameCube and
+     *  Wii, whose engines leave graphics state behind that breaks the next big engine started in the same process. */
+    public static boolean ownProcess(Console c) { return c == N64 || (BuildConfig.PHONE && (c == PSP || c == PS2 || c == GC || c == WII)); }
     private static Console[] cached;
     /** The consoles this app plays (the TV app leaves out the phone-only ones). */
     public static Console[] all() {

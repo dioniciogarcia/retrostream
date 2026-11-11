@@ -317,7 +317,7 @@ open class GameActivity : AppCompatActivity() {
             if (prefs.getBoolean("fix_starting", false) && pictureFix != SAFE_PICTURE) {
                 // The last start with this graphics choice never got going: use the safe one so the game opens.
                 val bad = PICTURE_FIXES.getOrElse(pictureFix) { PICTURE_FIXES[0] }.name
-                prefs.edit().putInt("picture_fix_v5", SAFE_PICTURE).putBoolean("fix_starting", false).commit()
+                prefs.edit().putInt("picture_fix_v6", SAFE_PICTURE).putBoolean("fix_starting", false).commit()
                 toast("$bad made the game close, so graphics are back to ${PICTURE_FIXES[SAFE_PICTURE].name}")
             }
             if (pictureFix != SAFE_PICTURE) {
@@ -1142,7 +1142,7 @@ open class GameActivity : AppCompatActivity() {
     private fun snapshot(): ByteArray? =
         runCatching { retroView?.serializeState(useEmulationThread = true) }.getOrNull()?.takeIf { it.isNotEmpty() }
     private val prefs get() = getSharedPreferences("tirso_player", MODE_PRIVATE)
-    private val pictureFix get() = prefs.getInt("picture_fix_v5", if (config.graphics == "opengl") SAFE_PICTURE else 0)
+    private val pictureFix get() = prefs.getInt("picture_fix_v6", if (config.graphics == "opengl") SAFE_PICTURE else 0)
 
     /** The way the picture is scaled to the screen (the game's own resolution stays the same). */
     private val screenFilter get() = prefs.getString("screen_filter", null) ?: config.shader
@@ -1181,7 +1181,7 @@ open class GameActivity : AppCompatActivity() {
                     "This changes how GameCube and Wii pictures are drawn. " +
                     "The game will close, and you open it again to use this setting." +
                     (if (config.autoResume) " It continues where you are now." else " Save in the game first.")) {
-                    prefs.edit().putInt("picture_fix_v5", which).commit()
+                    prefs.edit().putInt("picture_fix_v6", which).commit()
                     restartProcess()
                 }
             }

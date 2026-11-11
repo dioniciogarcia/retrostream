@@ -931,7 +931,7 @@ public class MainActivity extends Activity {
         if(PhoneGames.keep(this)&&selected!=null&&selected.telegramAccount!=0){PhoneGames.remember(this,selected,path);
             if(parts!=null)try{org.json.JSONArray a=new org.json.JSONArray(parts);for(int i=0;i<a.length();i++){String tp=a.getJSONObject(i).getString("path");PhoneGames.remember(this,new Game(selected.id+"#"+i,selected.title,selected.console,"",""),tp);}}catch(Exception ignored){}}
         pendingPlay="";library.addRecent(selected);page="library";lastFocus="game_"+selected.id;libraryFocus=lastFocus;render();
-        Intent intent=new Intent(this,selected.console==Console.N64?GameActivityN64.class:GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
+        Intent intent=new Intent(this,Console.ownProcess(selected.console)?GameActivityN64.class:GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
         if(parts!=null)intent.putExtra("parts",parts);
         drive.playing(selected);
         startActivity(intent);
