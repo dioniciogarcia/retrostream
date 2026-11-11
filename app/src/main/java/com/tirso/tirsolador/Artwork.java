@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.LruCache;
+import android.view.View;
 import android.widget.ImageView;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -18,13 +19,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class Artwork {
-    private final ExecutorService pool = Executors.newFixedThreadPool(3);
+    private final ExecutorService pool = Executors.newFixedThreadPool(6);
+    private final ExecutorService disk = Executors.newFixedThreadPool(2);
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private final LruCache<String, Bitmap> memory = new LruCache<String, Bitmap>(12 * 1024 * 1024) {
+    private final LruCache<String, Bitmap> memory = new LruCache<String, Bitmap>(Math.max(24, (int) (Runtime.getRuntime().maxMemory() / (1024 * 1024) / 6)) * 1024 * 1024) {
         @Override protected int sizeOf(String key, Bitmap bitmap) { return bitmap.getByteCount(); }
     };
     private final File directory;
-    Artwork(Context context) { appContext = context.getApplicationContext(); directory = new File(context.getCacheDir(), "artwork"); directory.mkdirs(); }
+    Artwork(Context context) { appContext = context.getApplicationContext(); directory = new File(context.getFilesDir(), "artwork"); directory.mkdirs();
+        // Pictures used to live in the cache folder, which Android may empty at any time: move them to permanent storage.
+        File old = new File(context.getCacheDir(), "artwork"); File[] found = old.listFiles();
+        if (found != null) new Thread(() -> { for (File f : found) { File to = new File(directory, f.getName()); if (!to.exists()) f.renameTo(to); else f.delete(); } old.delete(); }, "art-migrate").start(); }
     private static String path(String s) { return android.net.Uri.encode(s); }
     static String url(Game g) {
         return "https://thumbnails.libretro.com/" + path(g.console.thumbnailSystem)
@@ -37,7 +42,7 @@ final class Artwork {
             StringBuilder hash = new StringBuilder();
             for (byte b : MessageDigest.getInstance("SHA-256").digest(url.getBytes(StandardCharsets.UTF_8)))
                 hash.append(String.format(java.util.Locale.ROOT, "%02x", b));
-            return new File(new File(context.getCacheDir(), "artwork"), hash + ".png");
+            return new File(new File(context.getFilesDir(), "artwork"), hash + ".png");
         } catch (Exception e) { return null; }
     }
     private final Context appContext;
@@ -66,48 +71,86 @@ final class Artwork {
     /** Tries the picture kinds in order (e.g. logo, then title screen, then box art) and shows the first one libretro has. */
     void loadFirst(Game game, ImageView view, String... kinds) {
         final String tag = game.id + "|" + game.coverName + "|" + String.join(",", kinds); view.setTag(tag);
+        final int maxDim = kinds.length > 1 ? 360 : 700;
         Bitmap cached = memory.get(tag); if (cached != null) { view.setImageBitmap(cached); reveal(view); return; }
-        pool.execute(() -> {
+        // 1) pictures already saved on the device appear straight away, never waiting behind downloads
+        disk.execute(() -> {
             try {
-                byte[] bytes = null;
+                byte[] bytes = null; boolean allKnown = true;
                 search:
                 for (String kind : kinds) {
-                    // libretro has no Named_Logos folder for these systems.
-                    if (kind.equals("Named_Logos") && (game.console == Console.GBC || game.console == Console.NDS)) continue;
+                    if (skipKind(game, kind)) continue;
                     for (String name : GameMeta.coverNames(appContext, game)) {
-                        String url = urlFor(game.console, name, kind);
-                        String hash = hashOf(url);
-                        File file = new File(directory, hash + ".png"), miss = new File(directory, hash + ".miss");
+                        String hash = hashOf(urlFor(game.console, name, kind));
+                        File file = new File(directory, hash + ".png");
                         if (file.isFile()) { try (InputStream in = new java.io.FileInputStream(file)) { bytes = Library.readLimited(in, 4_000_000); } break search; }
-                        if (miss.exists()) continue;
-                        HttpURLConnection connection = null;
-                        try {
-                            connection = (HttpURLConnection) new java.net.URL(url).openConnection();
-                            connection.setConnectTimeout(8000); connection.setReadTimeout(8000);
-                            connection.setInstanceFollowRedirects(false);
-                            int code = connection.getResponseCode();
-                            if (code == 404) { miss.createNewFile(); continue; }
-                            if (code != 200) return;
-                            try (InputStream in = connection.getInputStream()) { bytes = Library.readLimited(in, 4_000_000); }
-                        } finally { if (connection != null) connection.disconnect(); }
-                        long size = 0; File[] files = directory.listFiles();
-                        if (files != null) for (File f : files) size += f.length();
-                        if (size < 64L * 1024 * 1024) try (FileOutputStream out = new FileOutputStream(file)) { out.write(bytes); }
-                        break search;
+                        if (!new File(directory, hash + ".miss").exists()) allKnown = false;
                     }
                 }
-                if (bytes == null) return;
-                BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inJustDecodeBounds = true;
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
-                if (opts.outWidth <= 0 || opts.outHeight <= 0) return;
-                int sample = 1; while (opts.outWidth / sample > 700 || opts.outHeight / sample > 700) sample *= 2;
-                opts.inJustDecodeBounds = false; opts.inSampleSize = sample;
-                Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
-                if (bitmap == null) return;
-                memory.put(tag, bitmap);
-                ui.post(() -> { if (tag.equals(view.getTag())) { view.setImageBitmap(bitmap); reveal(view); } });
-            } catch (Exception ignored) { /* Placeholder remains usable offline. */ }
+                if (bytes != null) { show(tag, view, bytes, maxDim); return; }
+                if (allKnown) return; // everything was already tried and libretro has nothing
+            } catch (Exception ignored) { }
+            // 2) otherwise download, but only for tiles that are actually on screen
+            ui.post(() -> whenVisible(view, tag, () -> pool.execute(() -> download(game, view, tag, maxDim, kinds))));
         });
+    }
+    private static boolean skipKind(Game game, String kind) {
+        return kind.equals("Named_Logos") && (game.console == Console.GBC || game.console == Console.NDS); // libretro has no logo folder there
+    }
+    /** Runs the task once the view is visible; tiles scrolled away wait until they come into view. */
+    private void whenVisible(View view, String tag, Runnable task) {
+        if (!tag.equals(view.getTag())) return;
+        android.graphics.Rect r = new android.graphics.Rect();
+        if (view.isAttachedToWindow() && view.getGlobalVisibleRect(r)) { task.run(); return; }
+        if (!view.isAttachedToWindow()) return;
+        final android.view.ViewTreeObserver.OnScrollChangedListener[] holder = new android.view.ViewTreeObserver.OnScrollChangedListener[1];
+        holder[0] = () -> {
+            if (!tag.equals(view.getTag()) || !view.isAttachedToWindow()) { remove(view, holder[0]); return; }
+            if (view.getGlobalVisibleRect(new android.graphics.Rect())) { remove(view, holder[0]); task.run(); }
+        };
+        view.getViewTreeObserver().addOnScrollChangedListener(holder[0]);
+    }
+    private static void remove(View view, android.view.ViewTreeObserver.OnScrollChangedListener l) { try { view.getViewTreeObserver().removeOnScrollChangedListener(l); } catch (Exception ignored) { } }
+    private void download(Game game, ImageView view, String tag, int maxDim, String... kinds) {
+        try {
+            if (!tag.equals(view.getTag())) return;
+            byte[] bytes = null;
+            search:
+            for (String kind : kinds) {
+                if (skipKind(game, kind)) continue;
+                for (String name : GameMeta.coverNames(appContext, game)) {
+                    String url = urlFor(game.console, name, kind);
+                    String hash = hashOf(url);
+                    File file = new File(directory, hash + ".png"), miss = new File(directory, hash + ".miss");
+                    if (file.isFile()) { try (InputStream in = new java.io.FileInputStream(file)) { bytes = Library.readLimited(in, 4_000_000); } break search; }
+                    if (miss.exists()) continue;
+                    HttpURLConnection connection = null;
+                    try {
+                        connection = (HttpURLConnection) new java.net.URL(url).openConnection();
+                        connection.setConnectTimeout(6000); connection.setReadTimeout(6000);
+                        connection.setInstanceFollowRedirects(false);
+                        int code = connection.getResponseCode();
+                        if (code == 404) { miss.createNewFile(); continue; }
+                        if (code != 200) return;
+                        try (InputStream in = connection.getInputStream()) { bytes = Library.readLimited(in, 4_000_000); }
+                    } finally { if (connection != null) connection.disconnect(); }
+                    try (FileOutputStream out = new FileOutputStream(file)) { out.write(bytes); }
+                    break search;
+                }
+            }
+            if (bytes != null) show(tag, view, bytes, maxDim);
+        } catch (Exception ignored) { /* Placeholder remains usable offline. */ }
+    }
+    private void show(String tag, ImageView view, byte[] bytes, int maxDim) {
+        BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
+        if (opts.outWidth <= 0 || opts.outHeight <= 0) return;
+        int sample = 1; while (opts.outWidth / sample > maxDim || opts.outHeight / sample > maxDim) sample *= 2;
+        opts.inJustDecodeBounds = false; opts.inSampleSize = sample;
+        Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
+        if (bitmap == null) return;
+        memory.put(tag, bitmap);
+        ui.post(() -> { if (tag.equals(view.getTag())) { view.setImageBitmap(bitmap); reveal(view); } });
     }
     /** Screenshot / title screen of a game from libretro (null when there is none). */
     Bitmap snapshot(Game game, String kind) {
@@ -141,5 +184,5 @@ final class Artwork {
             for (int i = 0; i < frame.getChildCount(); i++) if (frame.getChildAt(i) != view) frame.getChildAt(i).setVisibility(android.view.View.INVISIBLE);
         }
     }
-    void close() { pool.shutdownNow(); ui.removeCallbacksAndMessages(null); memory.evictAll(); }
+    void close() { pool.shutdownNow(); disk.shutdownNow(); ui.removeCallbacksAndMessages(null); memory.evictAll(); }
 }
