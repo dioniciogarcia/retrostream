@@ -12,7 +12,7 @@ app/src/androidTest/assets/diagnostic.nds
 vendor/
 native-build/
 native-dist/
-app/src/main/jniLibs/
+#app/src/main/jniLibs/ (the engines are committed on purpose)
 app/.cxx/
 app/src/androidTest/assets/diagnostic.*
 app/src/androidTest/assets/gridlee.zip
