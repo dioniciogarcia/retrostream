@@ -208,6 +208,30 @@ class PhoneActivity : Activity() {
         }
         return row
     }
+    /** Box art shape per console (width / height), so each cover shows whole: DVD cases are tall, N64/SNES boxes wide. */
+    private fun coverRatio(c: Console): Float = when (c) {
+        Console.PS2, Console.GC, Console.WII -> 0.71f; Console.PSP -> 0.58f
+        Console.NES, Console.MD, Console.MAME -> 0.72f; Console.NDS -> 0.89f
+        Console.GB, Console.GBC, Console.GBA -> 1.0f; Console.N64, Console.SNES -> 1.38f
+    }
+    /** A frame whose height follows its width at the console's cover shape. */
+    private inner class CoverFrame(private val ratio: Float) : FrameLayout(this@PhoneActivity) {
+        override fun onMeasure(w: Int, h: Int) {
+            val width = MeasureSpec.getSize(w)
+            super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec((width / ratio).toInt(), MeasureSpec.EXACTLY))
+        }
+    }
+    /** Cover picture shown whole (never stretched); hides the title placeholder and the frame color once it arrives. */
+    private inner class CoverImage(private val frame: View, private val placeholder: View?) : ImageView(this@PhoneActivity) {
+        init { scaleType = ScaleType.FIT_CENTER }
+        override fun setImageBitmap(bm: android.graphics.Bitmap?) { super.setImageBitmap(bm); arrived(bm != null) }
+        override fun setImageDrawable(d: android.graphics.drawable.Drawable?) { super.setImageDrawable(d); arrived(d != null) }
+        private fun arrived(on: Boolean) {
+            if (!on) return
+            placeholder?.visibility = View.INVISIBLE
+            frame.background = round(Color.TRANSPARENT, 10f)
+        }
+    }
     private fun scroll(content: View) = ScrollView(this).apply { isFillViewport = true; clipToPadding = false; addView(content) }
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
 
@@ -422,10 +446,11 @@ class PhoneActivity : Activity() {
         val soft = if (filled) 0xD9FFFFFF.toInt() else p.muted
         if (g != null) {
             val cover = FrameLayout(this); cover.background = round(0xFFF2EEE4.toInt(), 10f); cover.clipToOutline = true
-            val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.CENTER_CROP; cover.addView(iv, FrameLayout.LayoutParams(-1, -1))
+            val iv = CoverImage(cover, null); cover.addView(iv, FrameLayout.LayoutParams(-1, -1))
             artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles")
             cover.rotation = 6f
-            card.addView(cover, FrameLayout.LayoutParams(dp(if (tall) 120 else 118), dp(if (tall) 160 else 158), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = dp(-8) })
+            val ch = dp(160); val cw = minOf((ch * coverRatio(g.console)).toInt(), dp(190))
+            card.addView(cover, FrameLayout.LayoutParams(cw, (cw / coverRatio(g.console)).toInt(), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = dp(-8) })
         }
         val texts = vertical(); texts.setPadding(dp(16), dp(16), dp(16), 0)
         texts.addView(tv(if (g != null) (T.t("CONTINUAR") + " · " + c.title.uppercase()) else T.t("EMPIEZA A JUGAR"), 11f, soft, mono = true).apply { letterSpacing = .08f })
@@ -520,11 +545,13 @@ class PhoneActivity : Activity() {
         for ((g, _) in list.drop(1)) {
             val cell = vertical()
             val art = FrameLayout(this); art.background = round(0xFFF2EEE4.toInt(), 10f); art.clipToOutline = true
-            art.addView(tv(g.title, 11f, 0xFF2B2B2B.toInt(), bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(4), dp(4), dp(4)) }, FrameLayout.LayoutParams(-1, -1))
-            val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.CENTER_CROP; art.addView(iv, FrameLayout.LayoutParams(-1, -1))
+            val ph = tv(g.title, 11f, 0xFF2B2B2B.toInt(), bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(4), dp(4), dp(4)) }
+            art.addView(ph, FrameLayout.LayoutParams(-1, -1))
+            val iv = CoverImage(art, ph); art.addView(iv, FrameLayout.LayoutParams(-1, -1))
             artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles")
-            cell.addView(art, LinearLayout.LayoutParams(w, h))
-            cell.addView(tv(g.title, 11f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(5), dp(2), 0) }, LinearLayout.LayoutParams(w, -2))
+            val cw = (h * coverRatio(g.console)).toInt()   // same height for all, width follows the console's box shape
+            cell.addView(art, LinearLayout.LayoutParams(cw, h))
+            cell.addView(tv(g.title, 11f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(5), dp(2), 0) }, LinearLayout.LayoutParams(maxOf(cw, w), -2))
             val pt = PlayTime.label(this, g.id)
             if (pt.isNotEmpty()) cell.addView(tv(pt, 10f, p.muted).apply { setPadding(dp(2), dp(1), dp(2), 0) })
             control(cell, "recent_${g.id}", Color.TRANSPARENT, 12f, false) { play(g) }
@@ -547,13 +574,14 @@ class PhoneActivity : Activity() {
         picks.forEachIndexed { i, g ->
             if (i % 3 == 0) { row = horizontal(); row!!.gravity = Gravity.TOP; grid.addView(row, LinearLayout.LayoutParams(-1, -2)) }
             val cell = vertical()
-            val art = FrameLayout(this); art.background = round(0xFFF2EEE4.toInt(), 10f); art.clipToOutline = true
-            art.addView(tv(g.title, 11f, 0xFF2B2B2B.toInt(), bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(4), dp(4), dp(4)) }, FrameLayout.LayoutParams(-1, -1))
-            val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.CENTER_CROP; art.addView(iv, FrameLayout.LayoutParams(-1, -1))
+            val art = CoverFrame(coverRatio(g.console)); art.background = round(0xFFF2EEE4.toInt(), 10f); art.clipToOutline = true
+            val ph = tv(g.title, 11f, 0xFF2B2B2B.toInt(), bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(4), dp(4), dp(4)) }
+            art.addView(ph, FrameLayout.LayoutParams(-1, -1))
+            val iv = CoverImage(art, ph); art.addView(iv, FrameLayout.LayoutParams(-1, -1))
             artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles")
             val tag = tv(g.console.name, 9f, Color.WHITE, bold = true).apply { setPadding(dp(5), dp(2), dp(5), dp(2)); background = round(g.console.color, 6f) }
             art.addView(tag, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(5), dp(5), 0, 0) })
-            cell.addView(art, LinearLayout.LayoutParams(-1, dp(140)))
+            cell.addView(art, LinearLayout.LayoutParams(-1, -2))
             cell.addView(tv(g.title, 11f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(5), dp(2), 0) })
             control(cell, "sugg_${g.id}", Color.TRANSPARENT, 12f, false) { selected = g; console = g.console; go("detail") }
             cell.setOnLongClickListener { selected = g; gameMore(g); true }
@@ -646,15 +674,15 @@ class PhoneActivity : Activity() {
     }
     private fun gameTile(g: Game, kept: Boolean): View {
         val cell = vertical(); cell.setPadding(0, 0, 0, dp(2))
-        val art = FrameLayout(this); art.background = round(0xFFF2EEE4.toInt(), 10f)
+        val art = CoverFrame(coverRatio(g.console)); art.background = round(0xFFF2EEE4.toInt(), 10f)
         art.clipToOutline = true
-        art.addView(tv(g.title, 12f, 0xFF2B2B2B.toInt(), bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(8), dp(6), dp(8), dp(6)); maxLines = 3 },
-            FrameLayout.LayoutParams(-1, -1))
-        val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.CENTER_CROP
+        val ph = tv(g.title, 12f, 0xFF2B2B2B.toInt(), bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(8), dp(6), dp(8), dp(6)); maxLines = 3 }
+        art.addView(ph, FrameLayout.LayoutParams(-1, -1))
+        val iv = CoverImage(art, ph)
         art.addView(iv, FrameLayout.LayoutParams(-1, -1))
         artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles")
         if (library.favorite(g)) art.addView(tv("★", 14f, 0xFFFFB400.toInt()).apply { setPadding(dp(6), dp(4), dp(6), 0) }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END))
-        cell.addView(art, LinearLayout.LayoutParams(-1, dp(if (landscape) 110 else 150)))
+        cell.addView(art, LinearLayout.LayoutParams(-1, -2))
         val info = horizontal(); info.setPadding(dp(4), dp(6), dp(4), dp(2))
         info.addView(tv(g.title, 12f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
         val (sym, col) = sourceIcon(g, kept)
