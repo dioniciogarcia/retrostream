@@ -58,7 +58,7 @@ final class TelegramCatalog {
             case N64:allowed="n64,v64,z64";break;
             case NDS:allowed="nds";break;
             case PSP:allowed="iso,cso,chd,pbp";break;
-            case PS2:allowed="iso,cso,chd,zso";break;
+            case PS2:allowed="iso,cso,chd,zso,cue";break;   // BIN/CUE: the .cue is the game, its tracks are found when you play
             case GC:allowed="iso,gcm,gcz,rvz,ciso";break;
             case WII:allowed="iso,gcz,rvz,wbfs,wia";break;
             default:allowed="";

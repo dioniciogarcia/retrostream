@@ -340,6 +340,33 @@ final class TirsoDrive {
         else if(percent!=lastDownloadPercent){lastDownloadPercent=percent;publish(false);}
     }
     /** The app is closing: remove every downloaded game from Telegram's file store too, so nothing stale is left. */
+    // ------------------------------------------------------------------ BIN/CUE discs (tracks sent as separate files)
+    /** Finds, in the game's group, the files a .cue sheet lists (by exact file name). */
+    void findParts(Game game,List<String> names,Done<List<TdApi.File>> callback){
+        Done<List<TdApi.File>> cb=once(callback,null);
+        List<TdApi.File> found=new ArrayList<>();
+        findPart(game,names,0,found,cb);
+    }
+    private void findPart(Game game,List<String> names,int i,List<TdApi.File> found,Done<List<TdApi.File>> cb){
+        if(i>=names.size()){cb.done(found,null);return;}
+        String name=names.get(i);
+        send(new TdApi.SearchChatMessages(game.chatId,null,name.replaceAll("\\.[A-Za-z0-9]+$",""),null,0,0,50,new TdApi.SearchMessagesFilterDocument()),r->{
+            TdApi.File hit=null;
+            if(r instanceof TdApi.FoundChatMessages)for(TdApi.Message m:((TdApi.FoundChatMessages)r).messages){
+                if(m.content instanceof TdApi.MessageDocument){TdApi.Document d=((TdApi.MessageDocument)m.content).document;
+                    if(d!=null&&d.fileName!=null&&d.fileName.equalsIgnoreCase(name)){hit=d.document;break;}}
+            }
+            if(hit==null){cb.done(null,T.t("Falta un archivo del disco en el grupo: ")+name);return;}
+            watchedFiles.add(hit.id);files.put(hit.id,hit);found.add(hit);
+            findPart(game,names,i+1,found,cb);
+        });
+    }
+    void downloadPart(int fileId){
+        requestedDownloads.add(fileId);watchedFiles.add(fileId);
+        send(new TdApi.DownloadFile(fileId,16,0,0,false),r->{if(r instanceof TdApi.File)fileUpdated((TdApi.File)r);else if(r instanceof TdApi.Error)fail((TdApi.Error)r);});
+    }
+    TdApi.File part(int fileId){return files.get(fileId);}
+
     void releaseAll(){main.post(()->{
         if(client==null)return;
         for(Integer id:new java.util.ArrayList<>(files.keySet())){TdApi.File f=files.get(id);if(f!=null&&f.local.isDownloadingCompleted)send(new TdApi.DeleteFile(id),r->{});}

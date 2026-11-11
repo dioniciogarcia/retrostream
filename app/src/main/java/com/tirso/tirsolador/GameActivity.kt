@@ -178,7 +178,8 @@ open class GameActivity : AppCompatActivity() {
         val name = intent.getStringExtra("filename")?.takeIf { it.isNotEmpty() } ?: source.name
         val ws = java.nio.file.Files.createTempDirectory(cacheDir.toPath(), "play-").toFile()
         workspace = ws
-        val prepared = ArchiveContent.prepare(source, name, console, ws)
+        val prepared = intent.getStringExtra("parts")?.let { discWithTracks(source, name, it, ws) }
+            ?: ArchiveContent.prepare(source, name, console, ws)
         if (prepared.length() < 1 || prepared.length() > ArchiveContent.limit(console)) throw java.io.IOException("Invalid game size")
         val digest = if (ArchiveContent.disc(console)) GameStorage.quickHash(prepared) else GameStorage.hash(prepared)
         gameId = digest.take(16)
@@ -195,6 +196,22 @@ open class GameActivity : AppCompatActivity() {
             }
         }
         return prepared
+    }
+
+    /** BIN/CUE disc: the .cue and its tracks side by side under the names the .cue uses (tracks linked, not copied). */
+    private fun discWithTracks(cue: File, name: String, json: String, ws: File): File {
+        val root = filesDir.canonicalPath + File.separator
+        val sheet = File(ws, ArchiveContent.base(name))
+        cue.copyTo(sheet, overwrite = true)
+        val arr = org.json.JSONArray(json)
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val track = File(o.getString("path")).canonicalFile
+            if (!track.path.startsWith(root) || !track.isFile) throw java.io.IOException("Disc track missing")
+            val link = File(ws, ArchiveContent.base(o.getString("name")))
+            runCatching { android.system.Os.symlink(track.path, link.path) }.onFailure { track.copyTo(link, overwrite = true) }
+        }
+        return sheet
     }
 
     /** PS2 keeps its memory cards under its system folder, so each game gets its own (inside its saves, backed up

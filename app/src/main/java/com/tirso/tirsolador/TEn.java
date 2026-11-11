@@ -38,6 +38,12 @@ final class TEn {
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
+        m.put("Falta un archivo del disco en el grupo: ", "A disc file is missing from the group: ");
+        m.put("No se pudo leer el archivo .cue", "The .cue file couldn't be read");
+        m.put("El archivo .cue no lista ninguna pista", "The .cue file lists no tracks");
+        m.put("Buscando las pistas del disco…", "Looking for the disc's tracks…");
+        m.put("No se encontraron las pistas del disco", "The disc's tracks weren't found");
+        m.put("Pistas del disco: ", "Disc tracks: ");
         m.put("Archivos BIOS", "BIOS files");
         m.put("BIOS de PS2 lista", "PS2 BIOS ready");
         m.put("Añade tu BIOS de PS2", "Add your PS2 BIOS");

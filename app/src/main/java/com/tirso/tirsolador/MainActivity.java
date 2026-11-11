@@ -837,6 +837,7 @@ public class MainActivity extends Activity {
     }
     private void updateDownload() {
         if (selected == null || selected.telegramAccount == 0 || downloadLabel == null) return;
+        if (updateDisc()) return;
         org.drinkless.tdlib.TdApi.File file = drive.file(selected);
         if (file != null && file.local.isDownloadingCompleted) {
             setSteps(1); playProgress.setProgress(1000); downloadLabel.setText(T.t("Listo"));
@@ -883,9 +884,46 @@ public class MainActivity extends Activity {
         try{java.io.File f=new java.io.File(path).getCanonicalFile();return f.isFile()&&f.getPath().startsWith(getFilesDir().getCanonicalPath()+java.io.File.separator)?f.getPath():null;}
         catch(java.io.IOException e){return null;}
     }
+    // BIN/CUE discs: the .cue is downloaded first, then the tracks it lists; the player gets all of them.
+    private java.util.List<Object[]> discParts;   // {file name, file id}
+    private String discFor="",discCue="",discJson=null;
+    private void prepareDisc(String cuePath){
+        java.util.ArrayList<String> names=new java.util.ArrayList<>();
+        try{for(String line:new String(java.nio.file.Files.readAllBytes(new java.io.File(cuePath).toPath()),StandardCharsets.UTF_8).split("\\r?\\n")){
+            java.util.regex.Matcher m=java.util.regex.Pattern.compile("^\\s*FILE\\s+\"?(.+?)\"?\\s+\\S+\\s*$",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(line);
+            if(m.find()){String n=new java.io.File(m.group(1).replace('\\','/')).getName();if(!names.contains(n))names.add(n);}
+        }}catch(Exception e){Toast.makeText(this,T.t("No se pudo leer el archivo .cue"),Toast.LENGTH_LONG).show();return;}
+        if(names.isEmpty()){Toast.makeText(this,T.t("El archivo .cue no lista ninguna pista"),Toast.LENGTH_LONG).show();return;}
+        Game game=selected;discFor=game.id;discCue=cuePath;discJson=null;discParts=null;
+        pendingPlay=game.id;page="loading";lastFocus="cancel_load";render();
+        downloadLabel.setText(T.t("Buscando las pistas del disco…"));
+        drive.findParts(game,names,(list,error)->{
+            if(selected!=game||!discFor.equals(game.id))return;
+            if(error!=null||list==null){pendingPlay="";discFor="";Toast.makeText(this,error==null?T.t("No se encontraron las pistas del disco"):error,Toast.LENGTH_LONG).show();backToLibrary();return;}
+            discParts=new java.util.ArrayList<>();
+            for(int i=0;i<list.size();i++){discParts.add(new Object[]{names.get(i),list.get(i).id});if(!list.get(i).local.isDownloadingCompleted)drive.downloadPart(list.get(i).id);}
+            updateDownload();
+        });
+    }
+    /** Progress of the disc's tracks; true while they are still coming. */
+    private boolean updateDisc(){
+        if(selected==null||discParts==null||!discFor.equals(selected.id)||discJson!=null)return false;
+        long total=0,done=0;boolean all=true;org.json.JSONArray arr=new org.json.JSONArray();
+        for(Object[] p:discParts){org.drinkless.tdlib.TdApi.File f=drive.part((Integer)p[1]);if(f==null){all=false;continue;}
+            long size=Math.max(1,Math.max(f.size,f.expectedSize));total+=size;done+=f.local.isDownloadingCompleted?size:f.local.downloadedSize;
+            if(!f.local.isDownloadingCompleted||!new java.io.File(f.local.path).isFile())all=false;
+            else{try{arr.put(new org.json.JSONObject().put("name",(String)p[0]).put("path",f.local.path));}catch(org.json.JSONException ignored){}}}
+        if(all){discJson=arr.toString();if(pendingPlay.equals(selected.id)&&page.equals("loading"))playDownloaded(discCue);return true;}
+        setSteps(0);playProgress.setProgress((int)(done*1000/Math.max(1,total)));
+        downloadLabel.setText(T.t("Pistas del disco: ")+android.text.format.Formatter.formatFileSize(this,done)+T.t(" de ")+android.text.format.Formatter.formatFileSize(this,total)+" · "+(int)(done*100/Math.max(1,total))+"%");
+        return true;
+    }
     private void playDownloaded(String path){
+        if(path.toLowerCase(java.util.Locale.ROOT).endsWith(".cue")&&!(discCue.equals(path)&&discJson!=null&&selected!=null&&discFor.equals(selected.id))){prepareDisc(path);return;}
+        String parts=path.toLowerCase(java.util.Locale.ROOT).endsWith(".cue")?discJson:null;
         pendingPlay="";library.addRecent(selected);page="library";lastFocus="game_"+selected.id;libraryFocus=lastFocus;render();
         Intent intent=new Intent(this,selected.console==Console.N64?GameActivityN64.class:GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
+        if(parts!=null)intent.putExtra("parts",parts);
         drive.playing(selected);
         startActivity(intent);
     }
