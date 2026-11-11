@@ -12,7 +12,8 @@ final class TemporaryRoms {
     static void finish(Context c,String token,File source){boolean removed=removeSource(c,source);if(token!=null){if(removed)c.getSharedPreferences("rom_leases",0).edit().remove(token).commit();sessions.decrementAndGet();}}
     static boolean removeSource(Context c,File file){
         if(file==null)return true;try{String p=file.getCanonicalPath();
-            if(PhoneGames.isKept(c,file.getAbsolutePath())||PhoneGames.isKept(c,p))return true;   // phone app: kept on purposeboolean owned=p.startsWith(new File(c.getFilesDir(),"telegram/files").getCanonicalPath()+File.separator)||p.startsWith(c.getCacheDir().getCanonicalPath()+File.separator);return !owned||!file.exists()||file.delete();}catch(Exception e){return false;}
+            if(PhoneGames.isKept(c,file.getAbsolutePath())||PhoneGames.isKept(c,p))return true;   // phone app: kept on purpose
+            boolean owned=p.startsWith(new File(c.getFilesDir(),"telegram/files").getCanonicalPath()+File.separator)||p.startsWith(c.getCacheDir().getCanonicalPath()+File.separator);return !owned||!file.exists()||file.delete();}catch(Exception e){return false;}
     }
     /** The game ended: the download stays for quick replays; it is removed when the app closes (see purge) or at the next start. */
     static void release(){sessions.decrementAndGet();}
