@@ -369,7 +369,7 @@ final class TirsoDrive {
 
     void releaseAll(){main.post(()->{
         if(client==null)return;
-        for(Integer id:new java.util.ArrayList<>(files.keySet())){TdApi.File f=files.get(id);if(f!=null&&f.local.isDownloadingCompleted)send(new TdApi.DeleteFile(id),r->{});}
+        for(Integer id:new java.util.ArrayList<>(files.keySet())){TdApi.File f=files.get(id);if(f!=null&&f.local.isDownloadingCompleted&&!PhoneGames.isKept(context,f.local.path))send(new TdApi.DeleteFile(id),r->{});}
     });}
     void releaseRom(int fileId,long account){main.post(()->{
         if(fileId<1||account!=accountId||client==null)return;

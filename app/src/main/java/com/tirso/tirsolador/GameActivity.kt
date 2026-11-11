@@ -172,7 +172,8 @@ open class GameActivity : AppCompatActivity() {
         val source = File(path).canonicalFile
         val root = filesDir.canonicalPath + File.separator
         val cache = cacheDir.canonicalPath + File.separator
-        if (!source.path.startsWith(root) && !source.path.startsWith(cache)) throw java.io.IOException("Game file outside RetroStream's storage")
+        val phoneFolder = BuildConfig.PHONE && PhoneGames.folders(this).any { source.path.startsWith(File(it).canonicalPath + File.separator) }
+        if (!source.path.startsWith(root) && !source.path.startsWith(cache) && !phoneFolder) throw java.io.IOException("Game file outside RetroStream's storage")
         sourceRom = source
         romLease = TemporaryRoms.begin(this, source)
         val name = intent.getStringExtra("filename")?.takeIf { it.isNotEmpty() } ?: source.name
@@ -304,6 +305,7 @@ open class GameActivity : AppCompatActivity() {
         if (!isDolphin) runCatching {
             android.system.Os.setenv("LIBRETRODROID_VULKAN", if (config.graphics == "vulkan" && console == Console.PS2) "1" else "0", true)
             android.system.Os.unsetenv("TIRSO_GL_OFF")
+            prepareGpuDriver(console == Console.PS2)
         }
         if (isDolphin) {
             if (prefs.getBoolean("fix_starting", false) && pictureFix != SAFE_PICTURE) {
@@ -1067,8 +1069,13 @@ open class GameActivity : AppCompatActivity() {
         val vars = listOf("LIBRETRODROID_VK_DRIVER_DIR", "LIBRETRODROID_VK_DRIVER_LIB",
             "LIBRETRODROID_VK_HOOK_DIR", "LIBRETRODROID_VK_TMP_DIR")
         vars.forEach { runCatching { android.system.Os.unsetenv(it) } }
-        val asset = config.gpuDriver ?: return
         if (!use) return
+        val asset = config.gpuDriver
+        if (asset == null) {   // phone app: the driver chosen in Settings > GPU driver
+            val dir = PhoneGames.driverDir(this)
+            if (File(dir, ".ready").exists()) useDriverDir(dir)
+            return
+        }
         try {
             val root = File(filesDir, "gpu_driver")
             val tag = config.gpuDriverSha1.ifBlank { "driver" }.take(12)
@@ -1089,6 +1096,17 @@ open class GameActivity : AppCompatActivity() {
                 }
                 done.writeText("ok")
             }
+            useDriverDir(dir)
+        } catch (e: Exception) {
+            Log.w("Tirso", "GPU driver couldn't be prepared; using the phone's driver", e)
+            vars.forEach { runCatching { android.system.Os.unsetenv(it) } }
+        }
+    }
+
+    private fun useDriverDir(dir: File) {
+        val vars = listOf("LIBRETRODROID_VK_DRIVER_DIR", "LIBRETRODROID_VK_DRIVER_LIB",
+            "LIBRETRODROID_VK_HOOK_DIR", "LIBRETRODROID_VK_TMP_DIR")
+        try {
             val meta = File(dir, "meta.json")
             val library = runCatching { org.json.JSONObject(meta.readText()).optString("libraryName") }.getOrNull()
                 ?.ifBlank { null }

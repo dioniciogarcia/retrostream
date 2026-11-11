@@ -30,6 +30,12 @@ public final class Library {
                 }
             }
             games.addAll(parse(catalog));
+            // Phone app: games found in folders on the phone join the Telegram ones.
+            String local = prefs.getString("local_catalog", null);
+            if (BuildConfig.PHONE && local != null) {
+                List<Game> found = parse(local);
+                if (!found.isEmpty()) { if (demo) { games.clear(); demo = false; } games.addAll(found); }
+            }
             if (!demo) {
                 for (int i = 0; i < games.size(); i++) games.set(i, GameMeta.apply(context, games.get(i)));
                 java.util.Collections.sort(games, (a, b) -> a.title.compareToIgnoreCase(b.title));
@@ -117,6 +123,10 @@ public final class Library {
     public void replaceTelegram(java.util.List<Game> incoming) throws JSONException {
         JSONArray array=new JSONArray();for(Game game:incoming)array.put(game.toJson());
         importCatalog(new JSONObject().put("schemaVersion",1).put("games",array).toString());
+    }
+    public void replaceLocal(java.util.List<Game> found) {
+        try { JSONArray array = new JSONArray(); for (Game g : found) array.put(g.toJson());
+            prefs.edit().putString("local_catalog", new JSONObject().put("schemaVersion", 1).put("games", array).toString()).apply(); } catch (JSONException ignored) { }
     }
     public void clearTelegram(){
         try{replaceTelegram(new java.util.ArrayList<>());}catch(JSONException ignored){ }

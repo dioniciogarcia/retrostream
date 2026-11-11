@@ -68,6 +68,7 @@ public class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         library = new Library(this); artwork = new Artwork(this); controllers = new ControllerProfiles(this);
+        if (BuildConfig.PHONE && PhoneGames.scanOn(this) && !PhoneGames.folders(this).isEmpty() && PhoneGames.canReadFolders()) scanFolders(false);
         drive=TirsoDrive.get(this);
         inputManager=(android.hardware.input.InputManager)getSystemService(INPUT_SERVICE);
         inputListener=new android.hardware.input.InputManager.InputDeviceListener(){
@@ -301,10 +302,11 @@ public class MainActivity extends Activity {
             if(lastFocus.startsWith("game_"))libraryFocus=lastFocus;
         }
     }
-    private void cancelPending(){if(!pendingPlay.isEmpty()&&selected!=null&&pendingPlay.equals(selected.id)){org.drinkless.tdlib.TdApi.File f=drive.file(selected);if(f!=null&&f.local.isDownloadingActive)drive.cancelDownload(selected);}pendingPlay="";}
+    private void cancelPending(){discFor="";discParts=null;if(!pendingPlay.isEmpty()&&selected!=null&&pendingPlay.equals(selected.id)){org.drinkless.tdlib.TdApi.File f=drive.file(selected);if(f!=null&&f.local.isDownloadingActive)drive.cancelDownload(selected);}pendingPlay="";}
     private void route(String target) { cancelPending();rememberLibrary();page = target; lastFocus = ""; heroEntry = true; render(); }
     private void backToLibrary() {cancelPending();page="library";lastFocus=libraryFocus;heroEntry=true;render();}
     private void render() {
+        if (BuildConfig.PHONE) { int want = PhoneGames.lockLandscape(this) ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER; if (getRequestedOrientation() != want) setRequestedOrientation(want); }
         android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
         // TV: the 1920x1080 design scaled to the screen. Phone: fit both sides (wide phones are taller than 16:9 allows),
         // and upright the same design is shown narrower.
@@ -329,6 +331,7 @@ public class MainActivity extends Activity {
             case "friends": monoTitle = T.t("AMIGOS"); monoRight = drive.friendsChat() != 0 ? drive.friendsOnline() + T.t(" EN LÍNEA") : ""; break;
             case "artwork": monoTitle = T.t("IMÁGENES"); monoRight = ""; break;
             case "resolution": monoTitle = T.t("RESOLUCIÓN"); monoRight = ""; break;
+            case "phone": monoTitle = T.t("TELÉFONO"); monoRight = ""; break;
             case "welcome": monoTitle = "TIRSODRIVE"; monoRight = ""; break;
             case "loading": monoTitle = T.t("CARGANDO"); monoRight = ""; break;
             default:
@@ -344,11 +347,12 @@ public class MainActivity extends Activity {
         else if (page.equals("friends")) friendsScreen();
         else if (page.equals("artwork")) artworkScreen();
         else if (page.equals("resolution")) resolutionScreen();
+        else if (page.equals("phone")) phoneScreen();
         else if (page.equals("loading") && selected != null) loadingScreen();
         else if (page.equals("library")) libraryScreen();
         else home();
         if (page.equals("library")) footer(new String[][]{{"A", T.t("Jugar")}, {"B", T.t("Volver")}, {"Y", T.t("Buscar")}, {"X", T.t("Favorito")}}, T.t("Carátulas de libretro · guardadas en la TV"));
-        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("friends")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
+        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("friends") || page.equals("phone")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
         root.post(() -> {
             View target = lastFocus.isEmpty() ? null : root.findViewWithTag(lastFocus);
             if (target == null) target = firstContentFocusable(content == null ? body : content);
@@ -860,7 +864,9 @@ public class MainActivity extends Activity {
         org.drinkless.tdlib.TdApi.File file = drive.file(selected);
         if (file != null && file.local.isDownloadingCompleted) { playDownloaded(file.local.path); return; }
         String cached = cachedRom(selected); if (cached != null) { playDownloaded(cached); return; }
+        if (selected.id.startsWith("local:")) { Toast.makeText(this, T.t("Ese archivo ya no está en tu teléfono. Busca juegos de nuevo en Ajustes."), Toast.LENGTH_LONG).show(); return; }
         if (!drive.owns(selected)) { connectScreen(); return; }
+        if (PhoneGames.wifiOnly(this) && !PhoneGames.onWifi(this)) { Toast.makeText(this, T.t("Solo Wi-Fi está activado: conéctate a una red Wi-Fi para descargar este juego."), Toast.LENGTH_LONG).show(); return; }
         pendingPlay = selected.id; lastBytes = 0; lastBytesAt = 0; speed = 0; rememberLibrary(); page = "loading"; lastFocus = "cancel_load"; render();
         drive.download(selected); updateDownload();
     }
@@ -879,6 +885,7 @@ public class MainActivity extends Activity {
             }).setNegativeButton(T.t("Cancelar"),null).show();
     }
     private String cachedRom(Game game){
+        if(game.id.startsWith("local:")){String p=PhoneGames.path(this,game.id);return p!=null&&new java.io.File(p).isFile()?p:null;}
         String path=getSharedPreferences("downloaded_roms",MODE_PRIVATE).getString(game.id,null);
         if(path==null)return null;
         try{java.io.File f=new java.io.File(path).getCanonicalFile();return f.isFile()&&f.getPath().startsWith(getFilesDir().getCanonicalPath()+java.io.File.separator)?f.getPath():null;}
@@ -896,7 +903,6 @@ public class MainActivity extends Activity {
         if(names.isEmpty()){Toast.makeText(this,T.t("El archivo .cue no lista ninguna pista"),Toast.LENGTH_LONG).show();return;}
         Game game=selected;discFor=game.id;discCue=cuePath;discJson=null;discParts=null;
         pendingPlay=game.id;page="loading";lastFocus="cancel_load";render();
-        downloadLabel.setText(T.t("Buscando las pistas del disco…"));
         drive.findParts(game,names,(list,error)->{
             if(selected!=game||!discFor.equals(game.id))return;
             if(error!=null||list==null){pendingPlay="";discFor="";Toast.makeText(this,error==null?T.t("No se encontraron las pistas del disco"):error,Toast.LENGTH_LONG).show();backToLibrary();return;}
@@ -907,7 +913,8 @@ public class MainActivity extends Activity {
     }
     /** Progress of the disc's tracks; true while they are still coming. */
     private boolean updateDisc(){
-        if(selected==null||discParts==null||!discFor.equals(selected.id)||discJson!=null)return false;
+        if(selected==null||!discFor.equals(selected.id)||discJson!=null)return false;
+        if(discParts==null){if(downloadLabel!=null)downloadLabel.setText(T.t("Buscando las pistas del disco…"));return true;}   // still looking (don't start the .cue again)
         long total=0,done=0;boolean all=true;org.json.JSONArray arr=new org.json.JSONArray();
         for(Object[] p:discParts){org.drinkless.tdlib.TdApi.File f=drive.part((Integer)p[1]);if(f==null){all=false;continue;}
             long size=Math.max(1,Math.max(f.size,f.expectedSize));total+=size;done+=f.local.isDownloadingCompleted?size:f.local.downloadedSize;
@@ -921,6 +928,8 @@ public class MainActivity extends Activity {
     private void playDownloaded(String path){
         if(path.toLowerCase(java.util.Locale.ROOT).endsWith(".cue")&&!(discCue.equals(path)&&discJson!=null&&selected!=null&&discFor.equals(selected.id))){prepareDisc(path);return;}
         String parts=path.toLowerCase(java.util.Locale.ROOT).endsWith(".cue")?discJson:null;
+        if(PhoneGames.keep(this)&&selected!=null&&selected.telegramAccount!=0){PhoneGames.remember(this,selected,path);
+            if(parts!=null)try{org.json.JSONArray a=new org.json.JSONArray(parts);for(int i=0;i<a.length();i++){String tp=a.getJSONObject(i).getString("path");PhoneGames.remember(this,new Game(selected.id+"#"+i,selected.title,selected.console,"",""),tp);}}catch(Exception ignored){}}
         pendingPlay="";library.addRecent(selected);page="library";lastFocus="game_"+selected.id;libraryFocus=lastFocus;render();
         Intent intent=new Intent(this,selected.console==Console.N64?GameActivityN64.class:GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
         if(parts!=null)intent.putExtra("parts",parts);
@@ -991,6 +1000,10 @@ public class MainActivity extends Activity {
         sCard(c, T.t("Resolución"), resShown + " · " + T.t("Por consola"), "RES", 0xFF2F6DF6, "resolution", () -> route("resolution"));
         sCard(c, T.t("Mandos"), T.t("Perfiles independientes"), "PAD", 0xFFFF4D73, "controllers", this::controllers);
         sCard(c, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "IMG", 0xFFFF9A2E, "artwork_dl", () -> route("artwork"));
+        if (BuildConfig.PHONE) { LinearLayout d = sRow();
+            sCard(d, T.t("Teléfono y almacenamiento"), T.t("Carpetas, juegos guardados, Wi-Fi"), "TEL", 0xFF38BDF8, "phone_page", () -> route("phone"));
+            sCard(d, T.t("Controlador de GPU"), PhoneGames.driverName(this).isEmpty() ? T.t("El del teléfono") : PhoneGames.driverName(this), "GPU", 0xFFA06BFF, "gpu_driver", this::gpuDriver);
+            sFiller(d, 1); }
         sSection(T.t("Consolas visibles"));
         LinearLayout row = null; int n = 0;
         for (Console cn : Console.all()) {
@@ -1087,6 +1100,89 @@ public class MainActivity extends Activity {
         return java.text.DateFormat.getDateInstance(java.text.DateFormat.LONG).format(new java.util.Date(time));
     }
 
+
+    // ------------------------------------------------------------------ phone & storage (phone app)
+    private java.util.List<String> unsorted = new java.util.ArrayList<>();
+    private boolean scanning;
+    private void scanFolders(boolean tell) {
+        if (scanning) return; scanning = true;
+        new Thread(() -> {
+            PhoneGames.Result r = null; try { r = PhoneGames.scan(this); } catch (Exception ignored) { }
+            PhoneGames.Result res = r;
+            runOnUiThread(() -> {
+                scanning = false; if (res == null) return;
+                rememberLibrary(); library.replaceLocal(res.getGames()); library = new Library(this); unsorted = res.getUnsorted();
+                if (tell) Toast.makeText(this, res.getGames().size() + T.t(" juegos encontrados en tu teléfono") + (unsorted.isEmpty() ? "" : " · " + unsorted.size() + T.t(" sin clasificar")), Toast.LENGTH_LONG).show();
+                if (page.equals("phone") || page.equals("home") || page.equals("library")) render();
+            });
+        }).start();
+    }
+    private void phoneSection(String title) { TextView t = tv(title, 24, muted, fMono); t.setLetterSpacing(.14f); t.setPadding(px(14), px(22), 0, px(6)); content.addView(t); }
+    private void phoneRow(String title, String value, String tag, Runnable click) {
+        LinearLayout row = horizontal(); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(px(26), px(16), px(26), px(16));
+        LinearLayout col = vertical(); TextView t = tv(title, 28, text, fHead); col.addView(t);
+        if (value != null && !value.isEmpty()) { TextView v = tv(value, 22, muted, fBody); v.setPadding(0, px(4), 0, 0); col.addView(v); }
+        row.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+        focusable(row, tag, surface, click);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(px(8), px(5), px(8), px(5)); content.addView(row, p);
+    }
+    private String onOff(boolean on) { return on ? T.t("Sí") : T.t("No"); }
+    private void phoneScreen() {
+        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
+        content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content);
+        if (!mono) { TextView h = tv(T.t("Teléfono y almacenamiento"), 62, text, fHead); h.setPadding(px(10), px(10), 0, px(6)); body.addView(h); }
+        body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        phoneSection(T.t("CARPETAS DEL TELÉFONO"));
+        if (!PhoneGames.canReadFolders()) phoneRow(T.t("Permitir acceso a los archivos"), T.t("Necesario para encontrar juegos en tus carpetas"), "allow_files", () -> {
+            try { startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, android.net.Uri.parse("package:" + getPackageName()))); }
+            catch (Exception e) { startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)); }
+        });
+        phoneRow(T.t("Buscar juegos en carpetas: ") + onOff(PhoneGames.scanOn(this)), T.t("Al abrir la app y con «Buscar ahora»"), "scan_on", () -> { PhoneGames.scanOn(this, !PhoneGames.scanOn(this)); render(); });
+        for (String f : PhoneGames.folders(this)) phoneRow(f, T.t("Toca para quitar esta carpeta"), "folder_" + f.hashCode(), () -> new AlertDialog.Builder(this).setTitle(T.t("Quitar carpeta")).setMessage(f)
+            .setPositiveButton(T.t("Quitar"), (d, w) -> { PhoneGames.removeFolder(this, f); scanFolders(false); render(); }).setNegativeButton(T.t("Cancelar"), null).show());
+        phoneRow(T.t("Añadir carpeta"), T.t("Elige una carpeta con juegos (se buscan también sus subcarpetas)"), "add_folder", () -> {
+            try { startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 33); } catch (Exception e) { Toast.makeText(this, T.t("No hay un selector de archivos en este teléfono."), Toast.LENGTH_LONG).show(); }
+        });
+        phoneRow(scanning ? T.t("Buscando…") : T.t("Buscar ahora"), library.games.stream().filter(g -> g.id.startsWith("local:")).count() + T.t(" juegos del teléfono en la biblioteca"), "scan_now", () -> {
+            if (!PhoneGames.canReadFolders()) { Toast.makeText(this, T.t("Primero permite el acceso a los archivos."), Toast.LENGTH_LONG).show(); return; }
+            scanFolders(true); render(); });
+        for (String u : unsorted) phoneRow(new java.io.File(u).getName(), T.t("Sin clasificar · toca para elegir la consola"), "unsorted_" + u.hashCode(), () -> {
+            Console[] all = Console.all(); String[] names = new String[all.length]; for (int i = 0; i < all.length; i++) names[i] = all[i].title;
+            new AlertDialog.Builder(this).setTitle(new java.io.File(u).getName()).setItems(names, (d, w) -> { PhoneGames.choose(this, u, all[w]); scanFolders(false); }).show();
+        });
+        phoneSection(T.t("JUEGOS DE TELEGRAM"));
+        phoneRow(T.t("Guardar juegos descargados: ") + onOff(PhoneGames.keep(this)), T.t("Se quedan en el teléfono para jugar sin volver a descargarlos"), "keep_games", () -> { PhoneGames.keep(this, !PhoneGames.keep(this)); render(); });
+        phoneRow(T.t("Descargar solo con Wi-Fi: ") + onOff(PhoneGames.wifiOnly(this)), T.t("No usa datos móviles para descargar juegos"), "wifi_only", () -> { PhoneGames.wifiOnly(this, !PhoneGames.wifiOnly(this)); render(); });
+        java.util.List<Object[]> kept = PhoneGames.kept(this); long total = 0; for (Object[] k : kept) total += (Long) k[4];
+        if (!kept.isEmpty()) {
+            phoneRow(T.t("Borrar todos los juegos guardados"), android.text.format.Formatter.formatFileSize(this, total) + T.t(" en uso"), "kept_all", () -> new AlertDialog.Builder(this).setTitle(T.t("Borrar juegos guardados"))
+                .setMessage(T.t("Se borran del teléfono; siguen en Telegram.")).setPositiveButton(T.t("Borrar"), (d, w) -> { for (Object[] k : PhoneGames.kept(this)) deleteKept(k); render(); }).setNegativeButton(T.t("Cancelar"), null).show());
+            for (Object[] k : kept) {
+                String id = (String) k[0]; String title = new java.io.File((String) k[3]).getName();
+                for (Game g : library.games) if (g.id.equals(id)) { title = g.title + " · " + g.console.name(); break; }
+                String shown = title;
+                phoneRow(shown, android.text.format.Formatter.formatFileSize(this, (Long) k[4]) + T.t(" · toca para borrar"), "kept_" + id.hashCode(), () -> new AlertDialog.Builder(this).setTitle(shown)
+                    .setMessage(T.t("Se borra del teléfono; sigue en Telegram.")).setPositiveButton(T.t("Borrar"), (d, w) -> { deleteKept(k); render(); }).setNegativeButton(T.t("Cancelar"), null).show());
+            }
+        }
+        phoneSection(T.t("PANTALLA"));
+        phoneRow(T.t("Bloquear en horizontal: ") + onOff(PhoneGames.lockLandscape(this)), T.t("La app no gira al inclinar el teléfono"), "lock_landscape", () -> { PhoneGames.lockLandscape(this, !PhoneGames.lockLandscape(this)); render(); });
+    }
+    private void deleteKept(Object[] k) {
+        PhoneGames.forget(this, (String) k[0]);
+        drive.releaseRom((Integer) k[1], (Long) k[2]);
+        new java.io.File((String) k[3]).delete();
+    }
+    private void gpuDriver() {
+        String now = PhoneGames.driverName(this);
+        String[] items = {T.t("Elegir controlador (.zip)"), T.t("Usar el del teléfono")};
+        new AlertDialog.Builder(this).setTitle(T.t("Controlador de GPU") + (now.isEmpty() ? "" : " · " + now))
+            .setMessage(T.t("Para PS2, GameCube y Wii (Vulkan). Elige un ZIP de controlador como Turnip de Mr. Purple."))
+            .setItems(items, (d, w) -> {
+                if (w == 0) { try { startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 34); } catch (Exception e) { Toast.makeText(this, T.t("No hay un selector de archivos en este teléfono."), Toast.LENGTH_LONG).show(); } }
+                else { PhoneGames.removeDriver(this); render(); }
+            }).setNegativeButton(T.t("Cancelar"), null).show();
+    }
     // ------------------------------------------------------------------ friends
     private Runnable friendsRender;
     private void friendsRefreshSoon() {
@@ -1392,6 +1488,13 @@ public class MainActivity extends Activity {
         }).setNegativeButton(T.t("Cancelar"),null).show();
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
+        if(request==33){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null||data.getData()==null)return;
+            String path=PhoneGames.pathOf(data.getData());if(path==null){Toast.makeText(this,T.t("No se pudo usar esa carpeta."),Toast.LENGTH_LONG).show();return;}
+            PhoneGames.addFolder(this,path);if(PhoneGames.canReadFolders())scanFolders(true);render();return;}
+        if(request==34){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null||data.getData()==null)return;android.net.Uri uri=data.getData();
+            String name="driver";try(android.database.Cursor c=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){if(c!=null&&c.moveToFirst())name=c.getString(0);}catch(Exception ignored){}
+            String fname=name;new Thread(()->{String err;try{err=PhoneGames.addDriver(this,uri,fname);}catch(Exception e){err=e.getMessage();}String fe=err;
+                runOnUiThread(()->{Toast.makeText(this,fe==null?T.t("Controlador de GPU instalado"):fe,Toast.LENGTH_LONG).show();render();});}).start();return;}
         if(request==32){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null||data.getData()==null)return;android.net.Uri uri=data.getData();
             new Thread(()->{String err;try{err=Bios.addPs2(this,uri);}catch(Exception e){err=e.getMessage();}String fe=err;
                 runOnUiThread(()->{Toast.makeText(this,fe==null?T.t("BIOS de PS2 añadida"):fe,Toast.LENGTH_LONG).show();render();});}).start();return;}
@@ -1466,7 +1569,7 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if(page.equals("welcome")){drive.skip();route("home");return;}
         if (page.equals("loading")) backToLibrary();
-        else if (page.equals("backups") || page.equals("artwork") || page.equals("resolution")) route("settings");
+        else if (page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("phone")) route("settings");
         else if (!page.equals("home")) route("home");
         else new AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
                     .setPositiveButton(T.t("Salir"), (d,w) -> finish()).setNegativeButton(T.t("Cancelar"), null).show();
@@ -1478,6 +1581,7 @@ public class MainActivity extends Activity {
     @Override protected void onStop(){if(drive!=null)drive.appVisible(false);super.onStop();}
     @Override protected void onResume(){
         super.onResume();
+        if(BuildConfig.PHONE&&page!=null&&page.equals("phone")&&root!=null)render();   // back from the file access setting
         if(drive!=null)drive.inMenu();
         // Saves changed while playing are copied to the Telegram channel in the background.
         if(drive!=null&&drive.ready()&&page!=null&&!page.equals("welcome"))SaveBackups.uploadAll(this,drive,p->kotlin.Unit.INSTANCE,(ok,msg)->kotlin.Unit.INSTANCE);
