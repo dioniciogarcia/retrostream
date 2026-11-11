@@ -132,6 +132,9 @@ open class GameActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_game)
         hideSystemBars()
+        // Phone app, "Balanced" performance: the phone's steady mode (a little slower, cooler and steady).
+        if (BuildConfig.PHONE && !PhoneGames.perfMax(this) && (getSystemService(POWER_SERVICE) as android.os.PowerManager).isSustainedPerformanceModeSupported)
+            window.setSustainedPerformanceMode(true)
 
         console = runCatching { Console.valueOf(intent.getStringExtra("console") ?: "") }.getOrDefault(Console.NDS)
         gameTitle = intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: console.title
@@ -184,6 +187,7 @@ open class GameActivity : AppCompatActivity() {
         if (prepared.length() < 1 || prepared.length() > ArchiveContent.limit(console)) throw java.io.IOException("Invalid game size")
         val digest = if (ArchiveContent.disc(console)) GameStorage.quickHash(prepared) else GameStorage.hash(prepared)
         gameId = digest.take(16)
+        intent.getStringExtra("gameid")?.let { SaveBackups.rememberSha(this, it, digest) }
         romSha = digest
         val system = File(filesDir, "bios").apply { mkdirs() }
         saves = SaveManager(File(filesDir, "saves/${Presets.key(console)}/$digest"), system)
@@ -395,7 +399,7 @@ open class GameActivity : AppCompatActivity() {
             while (true) {
                 frames = 0
                 delay(1000)
-                if (showSpeed) speedView().text = "$frames fps · ${if (is64) "64-bit" else "32-bit"} · $engineLabel"
+                if (showSpeed) speedView().text = "$frames fps · ${if (is64) "64-bit" else "32-bit"} · $engineLabel" + batteryTemp()
             }
         }
         lifecycleScope.launch {
@@ -648,6 +652,13 @@ open class GameActivity : AppCompatActivity() {
         // Select + Start together opens the menu, for controllers without a Home/Mode button.
         if (event.keyCode == KeyEvent.KEYCODE_BUTTON_SELECT) selectDown = event.action == KeyEvent.ACTION_DOWN
         if (event.keyCode == KeyEvent.KEYCODE_BUTTON_START) startDown = event.action == KeyEvent.ACTION_DOWN
+        // Select + R1: screenshot. Select + R2: fast forward on/off.
+        if (selectDown && event.action == KeyEvent.ACTION_DOWN && !menuOpen && event.repeatCount == 0 &&
+            (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R2)) {
+            retroView?.sendKeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_SELECT)
+            if (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1) takeScreenshot() else toggleFastForward()
+            return true
+        }
         if (selectDown && startDown && event.action == KeyEvent.ACTION_DOWN && !menuOpen) {
             selectDown = false; startDown = false
             retroView?.sendKeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_SELECT)
@@ -785,6 +796,8 @@ open class GameActivity : AppCompatActivity() {
         entries += "Resume" to { closeMenu() }
         entries += "Game information" to { showGameInfo() }
         entries += "Walkthrough" to { walkthrough() }
+        entries += "Take screenshot (Select + R1)" to { closeMenu(); window.decorView.postDelayed({ takeScreenshot() }, 450) }
+        entries += (if (fastSpeed > 1) "Fast forward: ${fastSpeed}x (Select + R2)" else "Fast forward: off (Select + R2)") to { closeMenu(); toggleFastForward() }
         if (cheats.available()) {
             val n = cheats.enabled.size
             entries += (if (n > 0) "Cheats ($n on)" else "Cheats") to { toast("Looking for cheats…"); cheats.ensure { cheats.show(retroView) { closeMenu() } } }
@@ -825,6 +838,26 @@ open class GameActivity : AppCompatActivity() {
             .setItems(entries.map { tr(it.first) }.toTypedArray()) { _, which -> entries[which].second() }
             .setOnCancelListener { closeMenu() }
             .show()
+    }
+
+    /** Phone temperature (from the battery), shown next to the speed. */
+    private fun batteryTemp(): String {
+        val t = registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
+        return if (t > 0) " · ${t / 10}°C" else ""
+    }
+
+    // ------------------------------------------------------------------ screenshots and fast forward
+    private var fastSpeed = 1
+    private fun toggleFastForward() {
+        fastSpeed = when (fastSpeed) { 1 -> 2; 2 -> 3; else -> 1 }
+        retroView?.frameSpeed = fastSpeed
+        toast(if (fastSpeed > 1) "Fast forward ${fastSpeed}x" else "Normal speed")
+    }
+    private fun takeScreenshot() {
+        val view = retroView ?: return
+        Screenshots.capture(this, view, intent.getStringExtra("gameid") ?: gameId, gameTitle, console) { ok ->
+            toast(if (ok) "Screenshot saved (Gallery > RetroStream), it goes to Telegram too" else "The screenshot couldn't be taken")
+        }
     }
 
     /** Opens YouTube searching this game; you add the part you're stuck on (dungeon, boss, chapter). The game stays paused. */

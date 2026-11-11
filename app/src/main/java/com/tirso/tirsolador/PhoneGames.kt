@@ -19,6 +19,9 @@ internal object PhoneGames {
     @JvmStatic fun wifiOnly(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("wifi_only", on).apply()
     @JvmStatic fun lockLandscape(ctx: Context) = BuildConfig.PHONE && prefs(ctx).getBoolean("lock_landscape", false)
     @JvmStatic fun lockLandscape(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("lock_landscape", on).apply()
+    /** "Max" (default): full speed. "Balanced": the phone's steady-performance mode, cooler for long sessions. */
+    @JvmStatic fun perfMax(ctx: Context) = prefs(ctx).getBoolean("perf_max", true)
+    @JvmStatic fun perfMax(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("perf_max", on).apply()
     @JvmStatic fun scanOn(ctx: Context) = prefs(ctx).getBoolean("scan", true)
     @JvmStatic fun scanOn(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("scan", on).apply()
 

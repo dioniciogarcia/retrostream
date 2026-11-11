@@ -78,10 +78,10 @@ internal object SaveBackups {
                 if (zip == null) { cb(false, T.t("Este juego aún no tiene partidas guardadas.")); return@post }
                 drive.backupChannel { chat, err ->
                     if (err != null) { zip.delete(); cb(false, err); return@backupChannel }
-                    drive.uploadBackup(chat, zip, caption(e)) { _, err2 ->
+                    drive.uploadBackup(chat, zip, caption(e)) { id, err2 ->
                         zip.delete()
                         if (err2 != null) { cb(false, err2); return@uploadBackup }
-                        prefs(app).edit().putLong("done_${e.sha}", stamp).apply()
+                        prefs(app).edit().putLong("done_${e.sha}", stamp).putLong("seen_${e.sha}", id ?: 0L).apply()
                         if (prune) drive.listBackups(chat) { list, _ -> if (list != null) drive.pruneBackups(chat, list) }
                         cb(true, T.t("Copia guardada en Telegram"))
                     }
@@ -136,10 +136,34 @@ internal object SaveBackups {
                 }.getOrDefault(false)
                 main.post {
                     drive.releaseBackup(b)
-                    if (ok) prefs(app).edit().putLong("done_${b.sha}", manager(app, Entry(rootFor(app, console, b.sha), b.sha, b.title, console)).lastChange(console != Console.NDS)).apply()
+                    if (ok) prefs(app).edit().putLong("seen_${b.sha}", b.messageId).putLong("done_${b.sha}", manager(app, Entry(rootFor(app, console, b.sha), b.sha, b.title, console)).lastChange(console != Console.NDS)).apply()
                     cb(ok, if (ok) T.t("Partidas restauradas") else T.t("El archivo no es una copia válida de partidas."))
                 }
             }.start()
+        }
+    }
+
+    // ------------------------------------------------------------------ newest save before playing
+    /** The ROM fingerprint the player worked out for a game the last time it ran (null before the first time). */
+    @JvmStatic fun shaOf(ctx: Context, gameId: String): String? =
+        File(ctx.filesDir, "game_sha/" + gameId.replace(Regex("[^A-Za-z0-9._-]"), "_")).takeIf { it.isFile }?.readText()?.trim()?.ifEmpty { null }
+    @JvmStatic fun rememberSha(ctx: Context, gameId: String, sha: String) {
+        runCatching { File(ctx.filesDir, "game_sha").mkdirs(); File(ctx.filesDir, "game_sha/" + gameId.replace(Regex("[^A-Za-z0-9._-]"), "_")).writeText(sha) }
+    }
+    /**
+     * Checks Telegram for a backup of this game newer than what this device has (made on the TV or another phone)
+     * and restores it. [done] runs once, on the main thread, either way; [message] is null when nothing changed.
+     */
+    @JvmStatic fun pullNewest(ctx: Context, drive: TirsoDrive, console: Console, sha: String, restoring: () -> Boolean, done: (String?) -> Unit) {
+        val app = ctx.applicationContext
+        fetch(drive, sha) { list, _ ->
+            val b = list?.firstOrNull()
+            if (b == null || b.messageId == prefs(app).getLong("seen_$sha", 0L)) { done(null); return@fetch }
+            val e = Entry(rootFor(app, console, sha), sha, b.title, console)
+            // Progress made here and not backed up yet, newer than that backup: keep it.
+            if (changed(app, e) && manager(app, e).lastChange(resumable(e)) > b.date * 1000L) { done(null); return@fetch }
+            if (!restoring()) return@fetch   // too late: the game already started
+            restore(app, drive, b) { ok, msg -> done(if (ok) T.t("Se cargó tu partida más reciente de Telegram") else msg) }
         }
     }
 

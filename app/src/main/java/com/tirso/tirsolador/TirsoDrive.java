@@ -522,6 +522,75 @@ final class TirsoDrive {
         }},60_000L);
     }
 
+
+    // ------------------------------------------------------------------ screenshots (Telegram channel)
+    static final String SHOTS_TITLE="TD - RetroStream - Screenshots";
+    static final class Shot{String gameId="",title="",console="";long messageId;int date,thumbId,fullId;}
+    private TdApi.Chat findShotsChat(){
+        long saved=prefs.getLong("shotsChat_"+accountId,0);TdApi.Chat c=saved!=0?chats.get(saved):null;if(c!=null)return c;
+        for(TdApi.Chat chat:chats.values())if(TelegramCatalog.group(chat)&&norm(chat.title).equals(norm(SHOTS_TITLE)))return chat;
+        return null;
+    }
+    /** Finds this account's screenshots channel, creating it the first time. */
+    void shotsChannel(Done<Long> callback){
+        Done<Long> cb=once(callback,0L);
+        if(stage!=Stage.READY||accountId==0){cb.done(0L,T.t("Conecta TirsoDrive primero."));return;}
+        TdApi.Chat found=findShotsChat();
+        if(found!=null){prefs.edit().putLong("shotsChat_"+accountId,found.id).apply();cb.done(found.id,null);return;}
+        int token=generation;
+        loadList(new TdApi.ChatListMain(),0,token,()->loadList(new TdApi.ChatListArchive(),0,token,()->{
+            TdApi.Chat again=findShotsChat();
+            if(again!=null){prefs.edit().putLong("shotsChat_"+accountId,again.id).apply();cb.done(again.id,null);return;}
+            send(new TdApi.CreateNewSupergroupChat(SHOTS_TITLE,false,true,"RetroStream · capturas de pantalla de tus juegos",null,0,false),r->{
+                if(r instanceof TdApi.Chat){TdApi.Chat chat=(TdApi.Chat)r;chats.put(chat.id,chat);prefs.edit().putLong("shotsChat_"+accountId,chat.id).apply();cb.done(chat.id,null);}
+                else cb.done(0L,errorText(r));
+            });
+        }));
+    }
+    void uploadShot(long chat,File png,int w,int h,String caption,Done<Long> callback){
+        Done<Long> cb=once(callback,0L);
+        TdApi.InputMessagePhoto content=new TdApi.InputMessagePhoto(new TdApi.InputPhoto(new TdApi.InputFileLocal(png.getAbsolutePath()),null,null,new int[0],w,h),
+            new TdApi.FormattedText(caption,new TdApi.TextEntity[0]),false,null,false);
+        send(new TdApi.SendMessage(chat,null,null,null,null,content),r->{
+            if(r instanceof TdApi.Message)pendingUploads.put(((TdApi.Message)r).id,cb);else cb.done(0L,errorText(r));
+        });
+    }
+    /** The screenshots of one game (by its id), newest first. */
+    void listShots(String gameId,Done<List<Shot>> callback){
+        Done<List<Shot>> cb=once(callback,null);
+        shotsChannel((chat,err)->{
+            if(chat==0){cb.done(null,err);return;}
+            pageShots(chat,0,gameId,new ArrayList<>(),0,cb);
+        });
+    }
+    private void pageShots(long chat,long from,String gameId,List<Shot> out,int pages,Done<List<Shot>> cb){
+        send(new TdApi.SearchChatMessages(chat,null,"",null,from,0,100,new TdApi.SearchMessagesFilterPhoto()),r->{
+            if(!(r instanceof TdApi.FoundChatMessages)){cb.done(out.isEmpty()?null:out,out.isEmpty()?errorText(r):null);return;}
+            TdApi.FoundChatMessages page=(TdApi.FoundChatMessages)r;
+            for(TdApi.Message m:page.messages){
+                if(!(m.content instanceof TdApi.MessagePhoto))continue;TdApi.MessagePhoto p=(TdApi.MessagePhoto)m.content;
+                if(p.caption==null||!p.caption.text.startsWith("#RSSHOT")||p.photo==null||p.photo.sizes.length==0)continue;
+                Shot s=new Shot();
+                for(String line:p.caption.text.split("\n")){int i=line.indexOf(':');if(i<0)continue;String k=line.substring(0,i),v=line.substring(i+1).trim();
+                    if(k.equals("id"))s.gameId=v;else if(k.equals("title"))s.title=v;else if(k.equals("console"))s.console=v;}
+                if(!s.gameId.equals(gameId))continue;
+                TdApi.PhotoSize small=p.photo.sizes[0],big=p.photo.sizes[p.photo.sizes.length-1];
+                for(TdApi.PhotoSize z:p.photo.sizes)if(z.width>=320){small=z;break;}
+                s.messageId=m.id;s.date=m.date;s.thumbId=small.photo.id;s.fullId=big.photo.id;out.add(s);
+            }
+            if(page.messages.length==0||page.nextFromMessageId==0||pages>=30)cb.done(out,null);
+            else pageShots(chat,page.nextFromMessageId,gameId,out,pages+1,cb);
+        });
+    }
+    /** Downloads a picture (thumbnail or full) and returns its local path. */
+    void downloadPicture(int fileId,Done<String> callback){
+        Done<String> cb=once(callback,null);
+        send(new TdApi.DownloadFile(fileId,8,0,0,true),r->{
+            if(r instanceof TdApi.File&&((TdApi.File)r).local.isDownloadingCompleted)cb.done(((TdApi.File)r).local.path,null);
+            else cb.done(null,errorText(r));
+        });
+    }
+
     // ------------------------------------------------------------------ save backups (Telegram channel)
     static final String BACKUP_TITLE="TD - RetroStream - Save file back-ups";
     static final int KEEP_BACKUPS=10;

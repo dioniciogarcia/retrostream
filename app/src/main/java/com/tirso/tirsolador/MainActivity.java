@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         library = new Library(this); artwork = new Artwork(this); controllers = new ControllerProfiles(this);
         if (BuildConfig.PHONE && PhoneGames.scanOn(this) && !PhoneGames.folders(this).isEmpty() && PhoneGames.canReadFolders()) scanFolders(false);
+        if (getIntent() != null && getIntent().hasExtra("play_game")) getWindow().getDecorView().post(this::playFromShortcut);
         drive=TirsoDrive.get(this);
         inputManager=(android.hardware.input.InputManager)getSystemService(INPUT_SERVICE);
         inputListener=new android.hardware.input.InputManager.InputDeviceListener(){
@@ -779,7 +780,71 @@ public class MainActivity extends Activity {
         TextView star = tv(library.favorite(game) ? "★" : "☆", 40, gba ? ink : text, fHead); star.setGravity(Gravity.CENTER);
         focusableWith(star, "panel_fav", f -> { GradientDrawable g = round(gba ? ov(0x14FFFFFF) : ov(0x14FFFFFF), 26); if (f) g.setStroke(px(5), focusRing()); return g; }, () -> { library.toggleFavorite(game); libraryFocus = "game_" + game.id; lastFocus = "panel_fav"; render(); });
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(px(92), px(92)); sp.leftMargin = px(12); actions.addView(star, sp);
+        TextView more = tv("⋯", 40, gba ? ink : text, fHead); more.setGravity(Gravity.CENTER); more.setContentDescription(T.t("Más opciones"));
+        focusableWith(more, "panel_more", f -> { GradientDrawable g = round(ov(0x14FFFFFF), 26); if (f) g.setStroke(px(5), focusRing()); return g; }, () -> gameMore(game));
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(px(92), px(92)); mp.leftMargin = px(12); actions.addView(more, mp);
         infoPanel.addView(actions);
+    }
+    // ------------------------------------------------------------------ more options: screenshots, home screen shortcut
+    private void gameMore(Game game) {
+        java.util.List<String> items = new java.util.ArrayList<>(); items.add(T.t("Capturas de pantalla"));
+        boolean pin = android.os.Build.VERSION.SDK_INT >= 26 && getSystemService(android.content.pm.ShortcutManager.class) != null
+            && getSystemService(android.content.pm.ShortcutManager.class).isRequestPinShortcutSupported();
+        if (pin) items.add(T.t("Añadir a la pantalla de inicio"));
+        new AlertDialog.Builder(this).setTitle(game.title).setItems(items.toArray(new String[0]), (d, w) -> { if (w == 0) showShots(game); else pinShortcut(game); }).show();
+    }
+    private void pinShortcut(Game game) {
+        if (android.os.Build.VERSION.SDK_INT < 26) return;
+        android.content.pm.ShortcutManager sm = getSystemService(android.content.pm.ShortcutManager.class);
+        android.graphics.drawable.Icon icon = null;
+        try { java.io.File f = artwork.cachedCover(game); if (f != null) { android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeFile(f.getPath());
+            if (b != null) { int s = Math.min(b.getWidth(), b.getHeight()); android.graphics.Bitmap sq = android.graphics.Bitmap.createBitmap(b, (b.getWidth() - s) / 2, (b.getHeight() - s) / 2, s, s);
+                icon = android.graphics.drawable.Icon.createWithAdaptiveBitmap(android.graphics.Bitmap.createScaledBitmap(sq, 432, 432, true)); } } } catch (Exception ignored) { }
+        if (icon == null) icon = android.graphics.drawable.Icon.createWithResource(this, R.drawable.app_icon);
+        Intent open = new Intent(this, MainActivity.class).setAction(Intent.ACTION_VIEW).putExtra("play_game", game.id).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        android.content.pm.ShortcutInfo info = new android.content.pm.ShortcutInfo.Builder(this, "game_" + Integer.toHexString(game.id.hashCode()))
+            .setShortLabel(game.title.length() > 24 ? game.title.substring(0, 24) : game.title).setLongLabel(game.title).setIcon(icon).setIntent(open).build();
+        sm.requestPinShortcut(info, null);
+    }
+    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); playFromShortcut(); }
+    /** A home screen shortcut opens its game straight away. */
+    private void playFromShortcut() {
+        String id = getIntent() == null ? null : getIntent().getStringExtra("play_game");
+        if (id == null) return;
+        getIntent().removeExtra("play_game");
+        for (Game g : library.games) if (g.id.equals(id)) { console = g.console; page = "library"; render(); startWhenReady(g, 0); return; }
+        Toast.makeText(this, T.t("Ese juego ya no está en tu biblioteca."), Toast.LENGTH_LONG).show();
+    }
+    /** Telegram games wait (up to ~20 s) for the Telegram connection before starting. */
+    private void startWhenReady(Game g, int tries) {
+        if (g.telegramAccount == 0 || drive.ready() || tries > 40) { startPlay(g); return; }
+        root.postDelayed(() -> startWhenReady(g, tries + 1), 500);
+    }
+    private void showShots(Game game) {
+        LinearLayout grid = vertical(); grid.setPadding(dp(8), dp(8), dp(8), dp(8));
+        TextView status = tv(T.t("Cargando capturas…"), 26, 0xFF8C93A8, fBody); grid.addView(status);
+        ScrollView sv = new ScrollView(this); sv.addView(grid);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(T.t("Capturas · ") + game.title).setView(sv).setNegativeButton(T.t("Cerrar"), null).create();
+        dialog.show();
+        if (!drive.ready()) { status.setText(T.t("Conecta TirsoDrive para ver las capturas.")); return; }
+        drive.listShots(game.id, (list, err) -> {
+            if (!dialog.isShowing()) return;
+            if (list == null || list.isEmpty()) { status.setText(err != null ? err : T.t("Aún no hay capturas de este juego. En el juego: menú > Captura de pantalla, o Select + R1.")); return; }
+            status.setText(list.size() + T.t(" capturas"));
+            LinearLayout row = null; int i = 0;
+            for (TirsoDrive.Shot s : list) {
+                if (i++ % 2 == 0) { row = horizontal(); grid.addView(row); }
+                ImageView iv = new ImageView(this); iv.setScaleType(ImageView.ScaleType.CENTER_CROP); iv.setBackgroundColor(0xFF1A1E2B);
+                iv.setFocusable(true); iv.setClickable(true);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(110), 1); lp.setMargins(dp(4), dp(4), dp(4), dp(4)); row.addView(iv, lp);
+                drive.downloadPicture(s.thumbId, (path, e) -> { if (path != null) iv.setImageBitmap(android.graphics.BitmapFactory.decodeFile(path)); });
+                iv.setOnClickListener(v -> drive.downloadPicture(s.fullId, (path, e) -> {
+                    if (path == null) return; ImageView big = new ImageView(this); big.setAdjustViewBounds(true); big.setImageBitmap(android.graphics.BitmapFactory.decodeFile(path));
+                    new AlertDialog.Builder(this).setView(big).setPositiveButton(T.t("Cerrar"), null).show();
+                }));
+            }
+            if (row != null && row.getChildCount() == 1) row.addView(new View(this), new LinearLayout.LayoutParams(0, dp(110), 1));
+        });
     }
     private void showFullInfo(Game game) {
         Toast.makeText(this, T.t("Cargando información…"), Toast.LENGTH_SHORT).show();
@@ -934,7 +999,18 @@ public class MainActivity extends Activity {
         Intent intent=new Intent(this,Console.ownProcess(selected.console)?GameActivityN64.class:GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
         if(parts!=null)intent.putExtra("parts",parts);
         drive.playing(selected);
-        startActivity(intent);
+        launchWithNewestSave(intent,selected);
+    }
+    /** Before a game starts: if Telegram has a newer save of it (from the TV or another phone), it is restored first. */
+    private void launchWithNewestSave(Intent intent,Game game){
+        String sha=SaveBackups.shaOf(this,game.id);
+        if(sha==null||!drive.ready()){startActivity(intent);return;}
+        final boolean[] state={false,false};   // started, restoring
+        Runnable go=()->{if(state[0])return;state[0]=true;startActivity(intent);};
+        root.postDelayed(()->{if(!state[1])go.run();},7000);
+        Toast.makeText(this,T.t("Buscando tu partida más reciente…"),Toast.LENGTH_SHORT).show();
+        SaveBackups.pullNewest(this,drive,game.console,sha,()->{if(state[0])return false;state[1]=true;return true;},
+            msg->{if(msg!=null)Toast.makeText(this,msg,Toast.LENGTH_LONG).show();go.run();return kotlin.Unit.INSTANCE;});
     }
     private void search() {
         EditText input = new EditText(this); input.setSingleLine(true); input.setText(query); input.setHint(T.t("Nombre del juego"));
@@ -1165,6 +1241,8 @@ public class MainActivity extends Activity {
                     .setMessage(T.t("Se borra del teléfono; sigue en Telegram.")).setPositiveButton(T.t("Borrar"), (d, w) -> { deleteKept(k); render(); }).setNegativeButton(T.t("Cancelar"), null).show());
             }
         }
+        phoneSection(T.t("RENDIMIENTO"));
+        phoneRow(T.t("Modo de rendimiento: ") + (PhoneGames.perfMax(this) ? T.t("Máximo") : T.t("Equilibrado")), PhoneGames.perfMax(this) ? T.t("Toda la potencia del teléfono") : T.t("Más frío y estable en sesiones largas"), "perf_mode", () -> { PhoneGames.perfMax(this, !PhoneGames.perfMax(this)); render(); });
         phoneSection(T.t("PANTALLA"));
         phoneRow(T.t("Bloquear en horizontal: ") + onOff(PhoneGames.lockLandscape(this)), T.t("La app no gira al inclinar el teléfono"), "lock_landscape", () -> { PhoneGames.lockLandscape(this, !PhoneGames.lockLandscape(this)); render(); });
     }
@@ -1582,6 +1660,7 @@ public class MainActivity extends Activity {
     @Override protected void onResume(){
         super.onResume();
         if(BuildConfig.PHONE&&page!=null&&page.equals("phone")&&root!=null)render();   // back from the file access setting
+        if(drive!=null)Screenshots.uploadPending(this,drive);
         if(drive!=null)drive.inMenu();
         // Saves changed while playing are copied to the Telegram channel in the background.
         if(drive!=null&&drive.ready()&&page!=null&&!page.equals("welcome"))SaveBackups.uploadAll(this,drive,p->kotlin.Unit.INSTANCE,(ok,msg)->kotlin.Unit.INSTANCE);
