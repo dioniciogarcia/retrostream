@@ -205,13 +205,17 @@ open class GameActivity : AppCompatActivity() {
         val sheet = File(ws, ArchiveContent.base(name))
         cue.copyTo(sheet, overwrite = true)
         val arr = org.json.JSONArray(json)
+        var first: File? = null
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val track = File(o.getString("path")).canonicalFile
             if (!track.path.startsWith(root) || !track.isFile) throw java.io.IOException("Disc track missing")
             val link = File(ws, ArchiveContent.base(o.getString("name")))
             runCatching { android.system.Os.symlink(track.path, link.path) }.onFailure { track.copyTo(link, overwrite = true) }
+            first = first ?: link
         }
+        // ARMSX2 doesn't read .cue sheets: it reads the disc's data track (.bin) directly.
+        if (console == Console.PS2) return first ?: sheet
         return sheet
     }
 
