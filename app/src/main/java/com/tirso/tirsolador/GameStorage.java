@@ -26,17 +26,17 @@ final class GameStorage {
         workspace=java.nio.file.Files.createTempDirectory(context.getCacheDir().toPath(),"play-").toFile();
         File prepared;
         try{prepared=ArchiveContent.prepare(input,name,console,workspace);
-            if(prepared.length()<1||prepared.length()>ArchiveContent.LIMIT)throw new IOException("Tamaño de ROM no válido");
+            if(prepared.length()<1||prepared.length()>ArchiveContent.LIMIT)throw new IOException(T.t("Tamaño de ROM no válido"));
         }catch(Exception e){ArchiveContent.removeTree(workspace);throw e;}
         rom=prepared;digest=hash(rom);dir=new File(context.getFilesDir(),"saves/"+CoreRegistry.key(console)+"/"+digest);
-        if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("No se puede crear la carpeta de guardado");
+        if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException(T.t("No se puede crear la carpeta de guardado"));
     }
     void cleanup(){ArchiveContent.removeTree(workspace);}
     File battery(){return new File(dir,"battery.sav");}
     File stateFile(){return new File(dir,"slot1.tss");}
     static void copy(InputStream in,OutputStream out,long limit) throws IOException {
         byte[] b=new byte[65536];long total=0;int n;
-        while((n=in.read(b))!=-1){total+=n;if(total>limit)throw new IOException("Archivo demasiado grande");out.write(b,0,n);}
+        while((n=in.read(b))!=-1){total+=n;if(total>limit)throw new IOException(T.t("Archivo demasiado grande"));out.write(b,0,n);}
     }
     static byte[] read(File f,int limit)throws IOException{try(InputStream in=new FileInputStream(f)){return read(in,limit);}}
     static byte[] read(InputStream in,int limit)throws IOException{ByteArrayOutputStream out=new ByteArrayOutputStream();copy(in,out,limit);return out.toByteArray();}
@@ -58,9 +58,9 @@ final class GameStorage {
     }
     byte[] unwrapState(byte[] bytes)throws Exception{
         DataInputStream in=new DataInputStream(new ByteArrayInputStream(bytes));
-        if(!in.readUTF().equals("TIRSO-DS-STATE-1")||!in.readUTF().equals(digest)||!in.readUTF().equals(revision))throw new IOException("El estado pertenece a otro juego o versión del núcleo");
-        String checksum=in.readUTF();int n=in.readInt();if(n<16||n>MAX_STATE||n!=in.available())throw new IOException("Estado incompleto");
-        byte[] result=new byte[n];in.readFully(result);if(!hash(result).equals(checksum))throw new IOException("Estado dañado");return result;
+        if(!in.readUTF().equals("TIRSO-DS-STATE-1")||!in.readUTF().equals(digest)||!in.readUTF().equals(revision))throw new IOException(T.t("El estado pertenece a otro juego o versión del núcleo"));
+        String checksum=in.readUTF();int n=in.readInt();if(n<16||n>MAX_STATE||n!=in.available())throw new IOException(T.t("Estado incompleto"));
+        byte[] result=new byte[n];in.readFully(result);if(!hash(result).equals(checksum))throw new IOException(T.t("Estado dañado"));return result;
     }
     void saveState(byte[] bytes)throws Exception{saveStateFile(stateFile(),bytes);}
     void saveBackupState(byte[] bytes)throws Exception{saveStateFile(new File(dir,"backup-session.tss"),bytes);}
@@ -74,15 +74,15 @@ final class GameStorage {
     byte[] loadBackupState()throws Exception{File f=new File(dir,"backup-session.tss");return f.exists()?loadStateFile(f):null;}
     private byte[] loadStateFile(File target)throws Exception{
         try(DataInputStream in=new DataInputStream(new FileInputStream(target))){
-            if(!in.readUTF().equals("TIRSO-DS-STATE-1")||!in.readUTF().equals(digest)||!in.readUTF().equals(revision))throw new IOException("El estado pertenece a otro juego o versión del núcleo");
-            String checksum=in.readUTF();int n=in.readInt();if(n<16||n>MAX_STATE||n!=in.available())throw new IOException("Estado incompleto");
-            byte[] bytes=new byte[n];in.readFully(bytes);if(!hash(bytes).equals(checksum))throw new IOException("Estado dañado");return bytes;
+            if(!in.readUTF().equals("TIRSO-DS-STATE-1")||!in.readUTF().equals(digest)||!in.readUTF().equals(revision))throw new IOException(T.t("El estado pertenece a otro juego o versión del núcleo"));
+            String checksum=in.readUTF();int n=in.readInt();if(n<16||n>MAX_STATE||n!=in.available())throw new IOException(T.t("Estado incompleto"));
+            byte[] bytes=new byte[n];in.readFully(bytes);if(!hash(bytes).equals(checksum))throw new IOException(T.t("Estado dañado"));return bytes;
         }
     }
     void backup(OutputStream stream)throws Exception{
         Map<String,File> files=new LinkedHashMap<>();
         collect(dir,files);
-        if(files.isEmpty())throw new IOException("Aún no hay partidas ni estados para respaldar");
+        if(files.isEmpty())throw new IOException(T.t("Aún no hay partidas ni estados para respaldar"));
         JSONObject hashes=new JSONObject();for(Map.Entry<String,File>e:files.entrySet())hashes.put(e.getKey(),hash(e.getValue()));
         JSONObject manifest=new JSONObject().put("schema",1).put("rom",digest).put("core",revision).put("files",hashes);
         try(ZipOutputStream out=new ZipOutputStream(stream)){
@@ -96,18 +96,18 @@ final class GameStorage {
         Map<String,byte[]> files=new LinkedHashMap<>();byte[] meta=null;int count=0;long total=0;
         try(ZipInputStream in=new ZipInputStream(stream)){
             ZipEntry e;while((e=in.getNextEntry())!=null){
-                String name=e.getName();if(++count>257||e.isDirectory()||!safe(name))throw new IOException("Formato de respaldo no válido");
-                if(files.containsKey(name)||(name.equals("manifest.json")&&meta!=null))throw new IOException("Archivo duplicado en respaldo");
+                String name=e.getName();if(++count>257||e.isDirectory()||!safe(name))throw new IOException(T.t("Formato de respaldo no válido"));
+                if(files.containsKey(name)||(name.equals("manifest.json")&&meta!=null))throw new IOException(T.t("Archivo duplicado en respaldo"));
                 byte[] b=read(in,name.equals("manifest.json")?262144:name.equals("battery.sav")?MAX_SAVE:MAX_STATE+1024);
-                total+=b.length;if(total>128L*1024*1024)throw new IOException("Respaldo demasiado grande");
+                total+=b.length;if(total>128L*1024*1024)throw new IOException(T.t("Respaldo demasiado grande"));
                 if(name.equals("manifest.json"))meta=b;else files.put(name,b);
             }
         }
-        if(meta==null||files.isEmpty())throw new IOException("Respaldo incompleto");
+        if(meta==null||files.isEmpty())throw new IOException(T.t("Respaldo incompleto"));
         JSONObject manifest=new JSONObject(new String(meta,StandardCharsets.UTF_8));JSONObject hashes=manifest.getJSONObject("files");
-        if(manifest.getInt("schema")!=1||!digest.equals(manifest.getString("rom"))||!revision.equals(manifest.getString("core"))||hashes.length()!=files.size())throw new IOException("El respaldo no pertenece a este juego o versión del núcleo");
+        if(manifest.getInt("schema")!=1||!digest.equals(manifest.getString("rom"))||!revision.equals(manifest.getString("core"))||hashes.length()!=files.size())throw new IOException(T.t("El respaldo no pertenece a este juego o versión del núcleo"));
         for(Map.Entry<String,byte[]>e:files.entrySet()){
-            if(!hash(e.getValue()).equals(hashes.getString(e.getKey())))throw new IOException("Respaldo dañado");
+            if(!hash(e.getValue()).equals(hashes.getString(e.getKey())))throw new IOException(T.t("Respaldo dañado"));
             if(e.getKey().endsWith(".tss"))unwrapState(e.getValue());
         }
         Map<String,File> old=new LinkedHashMap<>();boolean preserve=false;
@@ -116,9 +116,9 @@ final class GameStorage {
                 File f=new File(dir,name),saved=null;
                 if(f.exists()){saved=File.createTempFile("restore-old-",".bak",dir.getParentFile());old.put(name,saved);copyAtomic(f,saved);}else old.put(name,null);
             }
-            try{for(Map.Entry<String,byte[]>e:files.entrySet()){File target=new File(dir,e.getKey());File parent=target.getParentFile();if(!parent.isDirectory()&&!parent.mkdirs())throw new IOException("No se pudo crear la carpeta del respaldo");write(target,e.getValue());}}
+            try{for(Map.Entry<String,byte[]>e:files.entrySet()){File target=new File(dir,e.getKey());File parent=target.getParentFile();if(!parent.isDirectory()&&!parent.mkdirs())throw new IOException(T.t("No se pudo crear la carpeta del respaldo"));write(target,e.getValue());}}
             catch(Exception x){
-                for(Map.Entry<String,File>e:old.entrySet())try{File f=new File(dir,e.getKey());if(e.getValue()==null){if(f.exists()&&!f.delete())throw new IOException("No se pudo revertir la restauración");}else copyAtomic(e.getValue(),f);}
+                for(Map.Entry<String,File>e:old.entrySet())try{File f=new File(dir,e.getKey());if(e.getValue()==null){if(f.exists()&&!f.delete())throw new IOException(T.t("No se pudo revertir la restauración"));}else copyAtomic(e.getValue(),f);}
                 catch(IOException rollback){preserve=true;x.addSuppressed(rollback);}throw x;
             }
         }finally{if(!preserve)for(File f:old.values())if(f!=null)f.delete();}
@@ -130,11 +130,11 @@ final class GameStorage {
     private void collect(File folder,Map<String,File> files)throws Exception{
         File[] children=folder.listFiles();if(children==null)return;
         for(File f:children){String path=dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar,'/');
-            if(!safe(path)||!f.getCanonicalPath().startsWith(dir.getCanonicalPath()+File.separator))throw new IOException("Ruta de guardado no válida");
+            if(!safe(path)||!f.getCanonicalPath().startsWith(dir.getCanonicalPath()+File.separator))throw new IOException(T.t("Ruta de guardado no válida"));
             if(f.isDirectory()){collect(f,files);continue;}
             if(f.getName().endsWith(".tmp")||f.getName().endsWith(".new")||f.getName().endsWith(".bak"))continue;
-            if(f.length()>MAX_STATE+1024||files.size()>=256)throw new IOException("Los guardados superan el límite del respaldo");files.put(path,f);
+            if(f.length()>MAX_STATE+1024||files.size()>=256)throw new IOException(T.t("Los guardados superan el límite del respaldo"));files.put(path,f);
         }
-        long size=0;for(File f:files.values())size+=f.length();if(size>128L*1024*1024)throw new IOException("Respaldo demasiado grande");
+        long size=0;for(File f:files.values())size+=f.length();if(size>128L*1024*1024)throw new IOException(T.t("Respaldo demasiado grande"));
     }
 }

@@ -32,7 +32,7 @@ final class Artwork {
     }
     void load(Game game, ImageView view) {
         String url = url(game); view.setTag(url);
-        Bitmap cached = memory.get(url); if (cached != null) { view.setImageBitmap(cached); return; }
+        Bitmap cached = memory.get(url); if (cached != null) { view.setImageBitmap(cached); reveal(view); return; }
         pool.execute(() -> {
             HttpURLConnection connection = null;
             try {
@@ -62,10 +62,17 @@ final class Artwork {
                     if (files != null) for (File f : files) size += f.length();
                     if (size < 64L * 1024 * 1024) try (FileOutputStream out = new FileOutputStream(file)) { out.write(bytes); }
                 }
-                ui.post(() -> { if (url.equals(view.getTag())) view.setImageBitmap(bitmap); });
+                ui.post(() -> { if (url.equals(view.getTag())) { view.setImageBitmap(bitmap); reveal(view); } });
             } catch (Exception ignored) { /* Placeholder remains usable offline. */ }
             finally { if (connection != null) connection.disconnect(); }
         });
+    }
+    /** Once the cover is showing, hide the title placeholder behind it so the text can't show through. */
+    private static void reveal(ImageView view) {
+        if (view.getParent() instanceof android.widget.FrameLayout) {
+            android.widget.FrameLayout frame = (android.widget.FrameLayout) view.getParent();
+            for (int i = 0; i < frame.getChildCount(); i++) if (frame.getChildAt(i) != view) frame.getChildAt(i).setVisibility(android.view.View.INVISIBLE);
+        }
     }
     void close() { pool.shutdownNow(); ui.removeCallbacksAndMessages(null); memory.evictAll(); }
 }

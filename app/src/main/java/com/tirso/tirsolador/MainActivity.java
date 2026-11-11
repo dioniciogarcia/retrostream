@@ -54,6 +54,7 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        T.init(this);
         TemporaryRoms.sweep(this);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -147,19 +148,19 @@ public class MainActivity extends Activity {
         setContentView(root);
         content=null;activeScroll=null;
         LinearLayout header = horizontal();
-        if(!page.equals("home")) header.addView(icon("back","Volver","nav_back",this::onBackPressed));
-        TextView title=label(page.equals("welcome")?"TirsoDrive":page.equals("library")?(favorites?"Favoritos":console==null?"Biblioteca":console.title):"",18,text,true);
+        if(!page.equals("home")) header.addView(icon("back",T.t("Volver"),"nav_back",this::onBackPressed));
+        TextView title=label(page.equals("welcome")?"TirsoDrive":page.equals("library")?(favorites?T.t("Favoritos"):console==null?T.t("Biblioteca"):console.title):"",18,text,true);
         header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
         if(page.equals("library")) {
-            header.addView(icon("search","Buscar juegos","search",this::search));
-            header.addView(icon("refresh","Refrescar catálogo","refresh",this::refreshCatalog));
-            header.addView(icon("sort","Ordenar juegos: "+(library.descending()?"Z a A":"A a Z"),"sort",this::sortGames));
+            header.addView(icon("search",T.t("Buscar juegos"),"search",this::search));
+            header.addView(icon("refresh",T.t("Refrescar catálogo"),"refresh",this::refreshCatalog));
+            header.addView(icon("sort",T.t("Ordenar juegos: ")+(library.descending()?"Z a A":"A a Z"),"sort",this::sortGames));
         }
-        if(!page.equals("welcome"))header.addView(icon("star","Favoritos","nav_favorites", () -> {
+        if(!page.equals("welcome"))header.addView(icon("star",T.t("Favoritos"),"nav_favorites", () -> {
             console = null; favorites = true; query = ""; libraryFocus="";libraryScroll=0;route("library");
         }));
-        if(!page.equals("welcome"))header.addView(icon("settings","Ajustes","nav_settings", () -> route("settings")));
-        else header.addView(button(library.dark()?"Modo claro":"Modo oscuro","welcome_color",()->{library.dark(!library.dark());render();}));
+        if(!page.equals("welcome"))header.addView(icon("settings",T.t("Ajustes"),"nav_settings", () -> route("settings")));
+        else header.addView(button(library.dark()?T.t("Modo claro"):T.t("Modo oscuro"),"welcome_color",()->{library.dark(!library.dark());render();}));
         root.addView(header);
         body = vertical(); root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
         if(page.equals("welcome"))welcome();
@@ -183,7 +184,7 @@ public class MainActivity extends Activity {
     }
     private void connectScreen(){page="welcome";lastFocus="";drive.enterConnection();render();}
     private void welcome(){
-        heading(drive.stage==TirsoDrive.Stage.READY?"Tu biblioteca, conectada":"Tu biblioteca retro, conectada",drive.status);
+        heading(drive.stage==TirsoDrive.Stage.READY?T.t("Tu biblioteca, conectada"):T.t("Tu biblioteca retro, conectada"),drive.status);
         if(!drive.error.isEmpty())body.addView(label(drive.error,13,library.dark()?0xFFFFADB5:0xFFB0263D,false));
         if(drive.stage==TirsoDrive.Stage.READY){
             content=scrollContent();
@@ -191,64 +192,64 @@ public class MainActivity extends Activity {
                 TirsoDrive.Source source=drive.sources.get(c);
                 content.addView(button(c.title+"  ·  "+(source.chatId==0?source.issue:source.title),"source_"+c.name(),()->chooseSource(c)));
             }
-            if(drive.discovering||drive.syncing)content.addView(button("Cancelar actualización","cancel_sync",drive::cancelSync));
+            if(drive.discovering||drive.syncing)content.addView(button(T.t("Cancelar actualización"),"cancel_sync",drive::cancelSync));
             else{
-                content.addView(button("Buscar grupos","discover_sources",drive::discover));
-                content.addView(button("Actualizar catálogo","sync_sources",drive::sync));
-                content.addView(button("Ir a mi biblioteca","open_connected_library",()->{drive.finishOnboarding();library=new Library(this);route("home");}));
+                content.addView(button(T.t("Buscar grupos"),"discover_sources",drive::discover));
+                content.addView(button(T.t("Actualizar catálogo"),"sync_sources",drive::sync));
+                content.addView(button(T.t("Ir a mi biblioteca"),"open_connected_library",()->{drive.finishOnboarding();library=new Library(this);route("home");}));
             }
-            content.addView(button("Cerrar sesión","logout",()->new AlertDialog.Builder(this).setTitle("Cerrar sesión de Telegram")
-                .setMessage("Se quitará la biblioteca sincronizada de esta cuenta en la TV. Podrás volver a conectar.")
-                .setPositiveButton("Cerrar sesión",(d,w)->drive.logout()).setNegativeButton("Cancelar",null).show()));return;
+            content.addView(button(T.t("Cerrar sesión"),"logout",()->new AlertDialog.Builder(this).setTitle(T.t("Cerrar sesión de Telegram"))
+                .setMessage(T.t("Se quitará la biblioteca sincronizada de esta cuenta en la TV. Podrás volver a conectar."))
+                .setPositiveButton(T.t("Cerrar sesión"),(d,w)->drive.logout()).setNegativeButton(T.t("Cancelar"),null).show()));return;
         }
         content=scrollContent();
         LinearLayout columns=horizontal();columns.setGravity(Gravity.TOP);
         LinearLayout instructions=vertical();instructions.setPadding(0,dp(10),dp(20),0);
-        instructions.addView(label("1  Conectar    2  Encontrar consolas    3  Biblioteca",12,accent,true));
-        instructions.addView(label("Abre Telegram en tu teléfono y entra en Ajustes → Dispositivos → Vincular dispositivo.",17,text,false));
-        instructions.addView(label("Después buscaremos tus grupos TD - ROMs, incluidos los archivados, y asignaremos cada uno a su consola.",14,muted,false));
+        instructions.addView(label(T.t("1  Conectar    2  Encontrar consolas    3  Biblioteca"),12,accent,true));
+        instructions.addView(label(T.t("Abre Telegram en tu teléfono y entra en Ajustes → Dispositivos → Vincular dispositivo."),17,text,false));
+        instructions.addView(label(T.t("Después buscaremos tus grupos TD - ROMs, incluidos los archivados, y asignaremos cada uno a su consola."),14,muted,false));
         if(drive.stage==TirsoDrive.Stage.CONFIG){
-            instructions.addView(button("Configurar TirsoDrive","configure_credentials",this::configureCredentials));
-            instructions.addView(label("Configuración inicial de la aplicación. Tu sesión de Telegram se autoriza después con el QR.",12,muted,false));
-        }else if(drive.stage==TirsoDrive.Stage.PASSWORD)instructions.addView(button("Introducir contraseña","auth_password",()->authInput(true)));
-        else if(drive.stage==TirsoDrive.Stage.CODE)instructions.addView(button("Introducir código","auth_code",()->authInput(false)));
-        else instructions.addView(button("Reintentar conexión","retry_connection",drive::retry));
-        if(!drive.error.isEmpty()&&drive.stage!=TirsoDrive.Stage.CONFIG)instructions.addView(button("Revisar configuración","repair_credentials",this::configureCredentials));
-        instructions.addView(button("Continuar sin conexión","continue_offline",()->{drive.skip();route("home");}));
+            instructions.addView(button(T.t("Configurar TirsoDrive"),"configure_credentials",this::configureCredentials));
+            instructions.addView(label(T.t("Configuración inicial de la aplicación. Tu sesión de Telegram se autoriza después con el QR."),12,muted,false));
+        }else if(drive.stage==TirsoDrive.Stage.PASSWORD)instructions.addView(button(T.t("Introducir contraseña"),"auth_password",()->authInput(true)));
+        else if(drive.stage==TirsoDrive.Stage.CODE)instructions.addView(button(T.t("Introducir código"),"auth_code",()->authInput(false)));
+        else instructions.addView(button(T.t("Reintentar conexión"),"retry_connection",drive::retry));
+        if(!drive.error.isEmpty()&&drive.stage!=TirsoDrive.Stage.CONFIG)instructions.addView(button(T.t("Revisar configuración"),"repair_credentials",this::configureCredentials));
+        instructions.addView(button(T.t("Continuar sin conexión"),"continue_offline",()->{drive.skip();route("home");}));
         columns.addView(instructions,new LinearLayout.LayoutParams(0,-2,1));
         if(drive.stage==TirsoDrive.Stage.QR&&!drive.qrLink.isEmpty()){
             try{
                 if(!drive.qrLink.equals(renderedQr)){qrBitmap=QrCode.encode(drive.qrLink,480);renderedQr=drive.qrLink;}
-                ImageView qr=new ImageView(this);qr.setImageBitmap(qrBitmap);qr.setContentDescription("Código QR para vincular Telegram");
+                ImageView qr=new ImageView(this);qr.setImageBitmap(qrBitmap);qr.setContentDescription(T.t("Código QR para vincular Telegram"));
                 qr.setScaleType(ImageView.ScaleType.FIT_CENTER);qr.setBackgroundColor(Color.WHITE);
                 columns.addView(qr,new LinearLayout.LayoutParams(dp(230),dp(230)));
-            }catch(Exception e){columns.addView(label("No se pudo dibujar el QR. Reintenta la conexión.",14,muted,false));}
+            }catch(Exception e){columns.addView(label(T.t("No se pudo dibujar el QR. Reintenta la conexión."),14,muted,false));}
         }
         content.addView(columns);
     }
     private void configureCredentials(){
-        EditText hash=new EditText(this);hash.setSingleLine(true);hash.setHint("API hash de TirsoDrive");
+        EditText hash=new EditText(this);hash.setSingleLine(true);hash.setHint(T.t("API hash de TirsoDrive"));
         hash.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        new AlertDialog.Builder(this).setTitle("Configurar TirsoDrive")
-            .setMessage("API ID: "+BuildConfig.TELEGRAM_API_ID+". Introduce el API hash una sola vez; se guarda cifrado en esta TV.")
-            .setView(hash).setPositiveButton("Guardar",(d,w)->{String value=hash.getText().toString().trim();hash.setText("");drive.configureHash(value);})
-            .setNegativeButton("Cancelar",(d,w)->hash.setText("")).show();
+        new AlertDialog.Builder(this).setTitle(T.t("Configurar TirsoDrive"))
+            .setMessage("API ID: "+BuildConfig.TELEGRAM_API_ID+T.t(". Introduce el API hash una sola vez; se guarda cifrado en esta TV."))
+            .setView(hash).setPositiveButton(T.t("Guardar"),(d,w)->{String value=hash.getText().toString().trim();hash.setText("");drive.configureHash(value);})
+            .setNegativeButton(T.t("Cancelar"),(d,w)->hash.setText("")).show();
     }
     private void authInput(boolean password){
         EditText input=new EditText(this);input.setSingleLine(true);
         input.setInputType(password?android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD:android.text.InputType.TYPE_CLASS_NUMBER);
-        new AlertDialog.Builder(this).setTitle(password?"Verificación en dos pasos":"Código de Telegram").setView(input)
-            .setPositiveButton("Continuar",(d,w)->{String value=input.getText().toString();input.setText("");if(password)drive.password(value);else drive.code(value);})
-            .setNegativeButton("Cancelar",(d,w)->input.setText("")).show();
+        new AlertDialog.Builder(this).setTitle(password?T.t("Verificación en dos pasos"):T.t("Código de Telegram")).setView(input)
+            .setPositiveButton(T.t("Continuar"),(d,w)->{String value=input.getText().toString();input.setText("");if(password)drive.password(value);else drive.code(value);})
+            .setNegativeButton(T.t("Cancelar"),(d,w)->input.setText("")).show();
     }
     private void chooseSource(Console console){
         if(drive.syncing||drive.discovering)return;
         java.util.List<org.drinkless.tdlib.TdApi.Chat> choices=drive.choices(console);
-        String[] labels=new String[choices.size()+1];labels[0]="Sin grupo asignado";
+        String[] labels=new String[choices.size()+1];labels[0]=T.t("Sin grupo asignado");
         for(int i=0;i<choices.size();i++)labels[i+1]=choices.get(i).title+" · ID "+choices.get(i).id;
         new AlertDialog.Builder(this).setTitle(console.title).setItems(labels,(d,w)->{
             if(w==0)drive.unbind(console);else drive.bind(console,choices.get(w-1).id);
-        }).setNegativeButton("Cancelar",null).show();
+        }).setNegativeButton(T.t("Cancelar"),null).show();
     }
     private void heading(String title, String subtitle) {
         body.addView(label(title, 28, text, true)); body.addView(label(subtitle, 12, muted, false));
@@ -265,13 +266,13 @@ public class MainActivity extends Activity {
         if (id != 0) image.setImageResource(id);
         image.setPadding(dp(14), dp(9), dp(14), dp(9)); return image;
     }
-    private String gameCount(int count) { return count+ (count==1?" juego":" juegos"); }
+    private String gameCount(int count) { return count+ (count==1?T.t(" juego"):T.t(" juegos")); }
     private void home() {
         java.util.ArrayList<Console> visible=new java.util.ArrayList<>();
         for(Console c:Console.values())if(library.visible(c))visible.add(c);
         if(visible.isEmpty()) {
-            content=scrollContent();content.addView(label("No hay consolas visibles",20,text,true));
-            content.addView(button("Elegir consolas","empty_settings",()->route("settings")));return;
+            content=scrollContent();content.addView(label(T.t("No hay consolas visibles"),20,text,true));
+            content.addView(button(T.t("Elegir consolas"),"empty_settings",()->route("settings")));return;
         }
         if(library.theme().equals("Consola completa")){heroHome(visible);return;}
         content=vertical();content.setPadding(0,dp(10),0,0);body.addView(content,new LinearLayout.LayoutParams(-1,-1));
@@ -285,7 +286,7 @@ public class MainActivity extends Activity {
             TextView name = label(gameCount(library.count(c)), 11, 0xFF526177, true);
             name.setPadding(0,dp(1),0,0);
             name.setGravity(Gravity.CENTER); tile.addView(name);
-            tile.setContentDescription(c.title+", "+library.count(c)+" juegos");
+            tile.setContentDescription(c.title+", "+library.count(c)+T.t(" juegos"));
             focusable(tile, "console_" + c.name(), library.dark()?0xFFDCE2ED:Color.WHITE, () -> openConsole(c));
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,-1,1); p.setMargins(dp(6),dp(6),dp(6),dp(6));
             row.addView(tile, p); index++;
@@ -310,11 +311,11 @@ public class MainActivity extends Activity {
         if(lastFocus.isEmpty())lastFocus="hero_console";
         content=vertical();body.addView(content,new LinearLayout.LayoutParams(-1,-1));
         LinearLayout row=horizontal();content.addView(row,new LinearLayout.LayoutParams(-1,0,1));
-        row.addView(icon("back","Consola anterior","hero_prev",()->moveHero(-1)));
+        row.addView(icon("back",T.t("Consola anterior"),"hero_prev",()->moveHero(-1)));
         LinearLayout hero=vertical();hero.setGravity(Gravity.CENTER);hero.setPadding(dp(34),dp(34),dp(34),dp(20));
         hero.addView(logo(current),new LinearLayout.LayoutParams(-1,0,1));
         TextView count=label(gameCount(library.count(current)),13,0xFF526177,false);count.setGravity(Gravity.CENTER);hero.addView(count);
-        hero.setContentDescription(current.title+", "+library.count(current)+" juegos. Abrir biblioteca");
+        hero.setContentDescription(current.title+", "+library.count(current)+T.t(" juegos. Abrir biblioteca"));
         focusable(hero,"hero_console",library.dark()?0xFFDCE2ED:Color.WHITE,()->openConsole(current));
         hero.setOnKeyListener((v,key,e)->{
             if(e.getAction()!=KeyEvent.ACTION_DOWN)return false;
@@ -322,20 +323,20 @@ public class MainActivity extends Activity {
             if(key==KeyEvent.KEYCODE_DPAD_RIGHT){moveHero(1);return true;}return false;
         });
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-1,1);p.setMargins(dp(16),dp(14),dp(16),dp(8));row.addView(hero,p);
-        row.addView(icon("next","Consola siguiente","hero_next",()->moveHero(1)));
+        row.addView(icon("next",T.t("Consola siguiente"),"hero_next",()->moveHero(1)));
     }
     private String catalogMessage(){
-        if(drive.stage!=TirsoDrive.Stage.READY)return "Conecta TirsoDrive para actualizar tu colección";
-        if(drive.syncing||drive.discovering)return "Actualizando tu colección…";
+        if(drive.stage!=TirsoDrive.Stage.READY)return T.t("Conecta TirsoDrive para actualizar tu colección");
+        if(drive.syncing||drive.discovering)return T.t("Actualizando tu colección…");
         if(!drive.error.isEmpty())return drive.error;
-        if(console!=null&&drive.sources.get(console).chatId==0)return "Vincula "+TelegramCatalog.expectedTitle(console)+" en TirsoDrive";
-        return "Actualizada automáticamente";
+        if(console!=null&&drive.sources.get(console).chatId==0)return T.t("Vincula ")+TelegramCatalog.expectedTitle(console)+T.t(" en TirsoDrive");
+        return T.t("Actualizada automáticamente");
     }
     private void libraryScreen() {
         List<Game> games = library.filtered(console, favorites, query);
         LinearLayout summary=horizontal();
-        summary.addView(label(games.size()+" juegos  ·  "+(library.descending()?"Z – A":"A – Z")+(query.isEmpty()?"":"  ·  "+query),12,muted,false),new LinearLayout.LayoutParams(0,-2,1));
-        if(!query.isEmpty())summary.addView(button("Limpiar","clear",()->{query="";libraryScroll=0;lastFocus="";render();}));
+        summary.addView(label(games.size()+T.t(" juegos  ·  ")+(library.descending()?"Z – A":"A – Z")+(query.isEmpty()?"":"  ·  "+query),12,muted,false),new LinearLayout.LayoutParams(0,-2,1));
+        if(!query.isEmpty())summary.addView(button(T.t("Limpiar"),"clear",()->{query="";libraryScroll=0;lastFocus="";render();}));
         body.addView(summary);
         catalogStatus=label(catalogMessage(),11,muted,false);body.addView(catalogStatus);
         int columns=getResources().getConfiguration().screenWidthDp>=800?6:5;
@@ -357,9 +358,9 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(135),1); p.setMargins(dp(5),dp(5),dp(5),dp(5));
             row.addView(tile, p); index++;
         }
-        if (index == 0) grid.addView(label(favorites ? "Guarda juegos desde su ficha para verlos aquí." : "No hay juegos que coincidan.", 18, muted, false));
+        if (index == 0) grid.addView(label(favorites ? T.t("Guarda juegos desde su ficha para verlos aquí.") : T.t("No hay juegos que coincidan."), 18, muted, false));
         else while (index++ % columns != 0) row.addView(new View(this),new LinearLayout.LayoutParams(0,dp(135),1));
-        if(games.size()>visibleGames)grid.addView(button("Mostrar más juegos","load_more",()->{
+        if(games.size()>visibleGames)grid.addView(button(T.t("Mostrar más juegos"),"load_more",()->{
             int next=visibleGames;visibleGames+=60;lastFocus="game_"+games.get(next).id;render();
         }));
     }
@@ -367,18 +368,18 @@ public class MainActivity extends Activity {
         if(drive.stage==TirsoDrive.Stage.READY){
             boolean assigned=false;for(TirsoDrive.Source s:drive.sources.values())if(s.chatId!=0)assigned=true;
             if(!assigned){connectScreen();return;}
-            if(console!=null&&!favorites)drive.refresh(console);else drive.sync();Toast.makeText(this,drive.syncing?"Actualizando colección…":drive.status,Toast.LENGTH_SHORT).show();
+            if(console!=null&&!favorites)drive.refresh(console);else drive.sync();Toast.makeText(this,drive.syncing?T.t("Actualizando colección…"):drive.status,Toast.LENGTH_SHORT).show();
         }
         else connectScreen();
     }
     private void sortGames() {
-        new AlertDialog.Builder(this).setTitle("Orden alfabético")
-            .setSingleChoiceItems(new String[]{"Título: A → Z","Título: Z → A"},library.descending()?1:0,(dialog,which)->{
+        new AlertDialog.Builder(this).setTitle(T.t("Orden alfabético"))
+            .setSingleChoiceItems(new String[]{T.t("Título: A → Z"),T.t("Título: Z → A")},library.descending()?1:0,(dialog,which)->{
                 library.descending(which==1);libraryScroll=0;lastFocus="sort";dialog.dismiss();render();
-            }).setNegativeButton("Cancelar",null).show();
+            }).setNegativeButton(T.t("Cancelar"),null).show();
     }
     private void detail() {
-        heading(selected.console.title, library.demo ? "Ficha de muestra · Sin archivo de juego" : "Información del catálogo");
+        heading(selected.console.title, library.demo ? T.t("Ficha de muestra · Sin archivo de juego") : T.t("Información del catálogo"));
         content = scrollContent(); LinearLayout columns = horizontal(); columns.setGravity(Gravity.TOP);
         ImageView cover = new ImageView(this); cover.setScaleType(ImageView.ScaleType.FIT_CENTER); cover.setContentDescription(selected.title);
         columns.addView(cover, new LinearLayout.LayoutParams(dp(215), dp(245))); artwork.load(selected, cover);
@@ -388,10 +389,10 @@ public class MainActivity extends Activity {
         if(selected.telegramAccount!=0){
             downloadLabel=label("",13,muted,false);info.addView(downloadLabel);
             playProgress=new android.widget.ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);playProgress.setMax(100);playProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(accent));info.addView(playProgress,new LinearLayout.LayoutParams(-1,dp(5)));
-            downloadButton=button("Jugar","download_game",this::playSelected);info.addView(downloadButton);updateDownload();
+            downloadButton=button(T.t("Jugar"),"download_game",this::playSelected);info.addView(downloadButton);updateDownload();
         }
-        info.addView(button(library.favorite(selected) ? "★ Quitar de favoritos" : "☆ Guardar en favoritos", "favorite_toggle", () -> { library.toggleFavorite(selected); render(); }));
-        info.addView(button("Volver a la biblioteca", "back_library", this::backToLibrary));
+        info.addView(button(library.favorite(selected) ? T.t("★ Quitar de favoritos") : T.t("☆ Guardar en favoritos"), "favorite_toggle", () -> { library.toggleFavorite(selected); render(); }));
+        info.addView(button(T.t("Volver a la biblioteca"), "back_library", this::backToLibrary));
         columns.addView(info, new LinearLayout.LayoutParams(0, -2, 1)); content.addView(columns);
     }
     private void updateDownload(){
@@ -399,24 +400,24 @@ public class MainActivity extends Activity {
         org.drinkless.tdlib.TdApi.File file=drive.file(selected);
         String size=android.text.format.Formatter.formatFileSize(this,selected.fileSize);
         if(file!=null&&file.local.isDownloadingCompleted){
-            downloadLabel.setText("Listo para jugar · "+size);downloadButton.setText("Jugar");downloadButton.setEnabled(true);if(playProgress!=null)playProgress.setVisibility(View.GONE);
+            downloadLabel.setText(T.t("Listo para jugar · ")+size);downloadButton.setText(T.t("Jugar"));downloadButton.setEnabled(true);if(playProgress!=null)playProgress.setVisibility(View.GONE);
             if(pendingPlay.equals(selected.id)&&page.equals("detail")){pendingPlay="";playDownloaded(file.local.path);}
         }
-        else if(cachedRom(selected)!=null){downloadLabel.setText("Listo para jugar · "+size);downloadButton.setText("Jugar");downloadButton.setEnabled(true);if(playProgress!=null)playProgress.setVisibility(View.GONE);}
+        else if(cachedRom(selected)!=null){downloadLabel.setText(T.t("Listo para jugar · ")+size);downloadButton.setText(T.t("Jugar"));downloadButton.setEnabled(true);if(playProgress!=null)playProgress.setVisibility(View.GONE);}
         else if(file!=null&&file.local.isDownloadingActive){
             int percent=(int)Math.min(100,file.local.downloadedSize*100/Math.max(1,Math.max(file.size,file.expectedSize)));
-            downloadLabel.setText("Preparando tu juego · "+percent+"%");downloadButton.setText("Jugar");downloadButton.setEnabled(false);if(playProgress!=null){playProgress.setVisibility(View.VISIBLE);playProgress.setIndeterminate(false);playProgress.setProgress(percent);}
-        }else if(pendingPlay.equals(selected.id)&&drive.error.isEmpty()){downloadLabel.setText("Preparando tu juego…");downloadButton.setEnabled(false);if(playProgress!=null){playProgress.setVisibility(View.VISIBLE);playProgress.setIndeterminate(true);}}else{pendingPlay="";downloadLabel.setText(size+" · "+(drive.owns(selected)?"Desde tu colección TirsoDrive":"Conecta TirsoDrive para jugar"));downloadButton.setText("Jugar");downloadButton.setEnabled(true);if(playProgress!=null)playProgress.setVisibility(View.GONE);}
+            downloadLabel.setText(T.t("Preparando tu juego · ")+percent+"%");downloadButton.setText(T.t("Jugar"));downloadButton.setEnabled(false);if(playProgress!=null){playProgress.setVisibility(View.VISIBLE);playProgress.setIndeterminate(false);playProgress.setProgress(percent);}
+        }else if(pendingPlay.equals(selected.id)&&drive.error.isEmpty()){downloadLabel.setText(T.t("Preparando tu juego…"));downloadButton.setEnabled(false);if(playProgress!=null){playProgress.setVisibility(View.VISIBLE);playProgress.setIndeterminate(true);}}else{pendingPlay="";downloadLabel.setText(size+" · "+(drive.owns(selected)?T.t("Desde tu colección TirsoDrive"):T.t("Conecta TirsoDrive para jugar")));downloadButton.setText(T.t("Jugar"));downloadButton.setEnabled(true);if(playProgress!=null)playProgress.setVisibility(View.GONE);}
         if(!drive.error.isEmpty())downloadLabel.setText(drive.error);
     }
     private void playSelected(){
         if(selected==null)return;
-        if(TemporaryRoms.busy()){String id=selected.id;downloadLabel.setText("Preparando la sesión…");root.postDelayed(()->{if(page.equals("detail")&&selected.id.equals(id))playSelected();},120);return;}
+        if(TemporaryRoms.busy()){String id=selected.id;downloadLabel.setText(T.t("Preparando la sesión…"));root.postDelayed(()->{if(page.equals("detail")&&selected.id.equals(id))playSelected();},120);return;}
         org.drinkless.tdlib.TdApi.File file=drive.file(selected);
         if(file!=null&&file.local.isDownloadingCompleted){playDownloaded(file.local.path);return;}
         String cached=cachedRom(selected);if(cached!=null){playDownloaded(cached);return;}
         if(!drive.owns(selected)){connectScreen();return;}
-        pendingPlay=selected.id;downloadLabel.setText("Preparando tu juego…");drive.download(selected);updateDownload();
+        pendingPlay=selected.id;downloadLabel.setText(T.t("Preparando tu juego…"));drive.download(selected);updateDownload();
     }
     private String cachedRom(Game game){
         String path=getSharedPreferences("downloaded_roms",MODE_PRIVATE).getString(game.id,null);
@@ -430,22 +431,27 @@ public class MainActivity extends Activity {
         startActivity(intent);
     }
     private void search() {
-        EditText input = new EditText(this); input.setSingleLine(true); input.setText(query); input.setHint("Nombre del juego");
-        new AlertDialog.Builder(this).setTitle("Buscar juego").setView(input)
-                .setPositiveButton("Buscar", (d,w) -> { query = input.getText().toString().trim();libraryScroll=0;lastFocus="search";render(); })
-                .setNegativeButton("Cancelar", null).show();
+        EditText input = new EditText(this); input.setSingleLine(true); input.setText(query); input.setHint(T.t("Nombre del juego"));
+        new AlertDialog.Builder(this).setTitle(T.t("Buscar juego")).setView(input)
+                .setPositiveButton(T.t("Buscar"), (d,w) -> { query = input.getText().toString().trim();libraryScroll=0;lastFocus="search";render(); })
+                .setNegativeButton(T.t("Cancelar"), null).show();
     }
     private void settings() {
-        heading("Ajustes", "A tu manera"); content = scrollContent();content.setClipChildren(false);
-        settingsSection("Apariencia");LinearLayout appearance=horizontal();content.addView(appearance);
-        settingTile(appearance,"Color",library.dark()?"Oscuro":"Claro","color_mode",()->{library.dark(!library.dark());render();});
-        settingTile(appearance,"Diseño",library.theme(),"visual_theme",()->{
+        heading(T.t("Ajustes"), T.t("A tu manera")); content = scrollContent();content.setClipChildren(false);
+        settingsSection(T.t("Apariencia"));LinearLayout appearance=horizontal();content.addView(appearance);
+        settingTile(appearance,T.t("Color"),library.dark()?T.t("Oscuro"):T.t("Claro"),"color_mode",()->{library.dark(!library.dark());render();});
+        settingTile(appearance,T.t("Diseño"),T.t(library.theme()),"visual_theme",()->{
             String[] themes = {"Moderno", "GBA clásico", "Nintendo rojo", "Retro naranja", "Consola completa"};
+            String[] shown = new String[themes.length];for(int i=0;i<themes.length;i++)shown[i]=T.t(themes[i]);
             int current=java.util.Arrays.asList(themes).indexOf(library.theme());
-            new AlertDialog.Builder(this).setTitle("Tema visual").setSingleChoiceItems(themes,current,(d,w)->{library.theme(themes[w]);d.dismiss();render();}).show();
+            new AlertDialog.Builder(this).setTitle(T.t("Tema visual")).setSingleChoiceItems(shown,current,(d,w)->{library.theme(themes[w]);d.dismiss();render();}).show();
         });
-        LinearLayout section=horizontal();TextView sectionTitle=label("Consolas visibles",19,text,true);section.addView(sectionTitle,new LinearLayout.LayoutParams(0,-2,1));
-        section.addView(button("Mostrar todas","show_all",()->{for(Console c:Console.values())library.visible(c,true);render();}));content.addView(section);
+        settingTile(appearance,"Idioma / Language",T.english()?"English":"Español","language",()->{
+            String[] codes={"es","en"};String[] names={"Español","English"};
+            new AlertDialog.Builder(this).setTitle("Idioma / Language").setSingleChoiceItems(names,T.english()?1:0,(d,w)->{T.set(this,codes[w]);d.dismiss();recreate();}).show();
+        });
+        LinearLayout section=horizontal();TextView sectionTitle=label(T.t("Consolas visibles"),19,text,true);section.addView(sectionTitle,new LinearLayout.LayoutParams(0,-2,1));
+        section.addView(button(T.t("Mostrar todas"),"show_all",()->{for(Console c:Console.values())library.visible(c,true);render();}));content.addView(section);
         LinearLayout row=null;int n=0;
         for(Console c:Console.values()){
             if(n++%3==0){row=horizontal();row.setClipChildren(false);content.addView(row);}
@@ -459,46 +465,46 @@ public class MainActivity extends Activity {
             focusable(card,"visible_"+c.name(),surface,()->{library.visible(c,!library.visible(c));lastFocus="visible_"+c.name();render();});
             LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(112),1);p.setMargins(dp(5),dp(5),dp(5),dp(5));row.addView(card,p);
         }
-        settingsSection("Tu biblioteca");LinearLayout connection=horizontal();content.addView(connection);
-        settingTile(connection,"TirsoDrive",drive.stage==TirsoDrive.Stage.READY?"Conectado · gestionar grupos":"Vincular colección","telegram",this::connectScreen);
-        settingTile(connection,"Mandos","Perfiles independientes","controllers",this::controllers);
+        settingsSection(T.t("Tu biblioteca"));LinearLayout connection=horizontal();content.addView(connection);
+        settingTile(connection,"TirsoDrive",drive.stage==TirsoDrive.Stage.READY?T.t("Conectado · gestionar grupos"):T.t("Vincular colección"),"telegram",this::connectScreen);
+        settingTile(connection,T.t("Mandos"),T.t("Perfiles independientes"),"controllers",this::controllers);
         LinearLayout system=horizontal();content.addView(system);
-        settingTile(system,"Archivos del sistema","BIOS y archivos compartidos","system_files",this::importSystemFile);
-        settingTile(system,"Tirsolador",BuildConfig.VERSION_NAME,"about",()->message("Tirsolador "+BuildConfig.VERSION_NAME,"Nueve consolas integradas. Las ROMs se preparan al pulsar Jugar y se eliminan al salir. Tus partidas y estados permanecen en la TV.\n\nMAME: ROMs compatibles con MAME 2003-Plus; ciertos juegos requieren BIOS o archivos parent. Puedes añadirlos en Archivos del sistema.\n\nCódigo y licencias de los núcleos incluidos en la release y en los avisos de esta aplicación."));
+        settingTile(system,T.t("Archivos del sistema"),T.t("BIOS y archivos compartidos"),"system_files",this::importSystemFile);
+        settingTile(system,"RetroStream",BuildConfig.VERSION_NAME,"about",()->message("RetroStream "+BuildConfig.VERSION_NAME,T.t("Nueve consolas integradas. Las ROMs se preparan al pulsar Jugar y se eliminan al salir. Tus partidas y estados permanecen en la TV.\n\nMAME: ROMs compatibles con MAME 2003-Plus; ciertos juegos requieren BIOS o archivos parent. Puedes añadirlos en Archivos del sistema.\n\nCódigo y licencias de los núcleos incluidos en la release y en los avisos de esta aplicación.")));
         LinearLayout updates=horizontal();content.addView(updates);
-        settingTile(updates,"Actualizaciones","Buscar e instalar la última versión","updates",this::checkUpdates);
-        content.addView(button("Licencias y créditos","licenses",this::licenses));
+        settingTile(updates,T.t("Actualizaciones"),T.t("Buscar e instalar la última versión"),"updates",this::checkUpdates);
+        content.addView(button(T.t("Licencias y créditos"),"licenses",this::licenses));
     }
     private void checkUpdates(){
-        Toast.makeText(this,"Buscando actualizaciones…",Toast.LENGTH_SHORT).show();
+        Toast.makeText(this,T.t("Buscando actualizaciones…"),Toast.LENGTH_SHORT).show();
         new Thread(()->{
             try{
                 Updater.Info info=Updater.check();
                 runOnUiThread(()->{
-                    if(info.build<=BuildConfig.VERSION_CODE){message("Actualizaciones","Ya tienes la última versión (build "+BuildConfig.VERSION_CODE+").");return;}
-                    new AlertDialog.Builder(this).setTitle("Nueva versión disponible")
-                        .setMessage("Build "+info.build+" · "+(info.size/(1024*1024))+" MB\n\n"+info.notes+"\n\nTus partidas y la sesión de Telegram se conservan.")
-                        .setPositiveButton("Actualizar ahora",(d,w)->startUpdate(info)).setNegativeButton("Más tarde",null).show();
+                    if(info.build<=BuildConfig.VERSION_CODE){message(T.t("Actualizaciones"),T.t("Ya tienes la última versión (build ")+BuildConfig.VERSION_CODE+").");return;}
+                    new AlertDialog.Builder(this).setTitle(T.t("Nueva versión disponible"))
+                        .setMessage("Build "+info.build+" · "+(info.size/(1024*1024))+" MB\n\n"+info.notes+T.t("\n\nTus partidas y la sesión de Telegram se conservan."))
+                        .setPositiveButton(T.t("Actualizar ahora"),(d,w)->startUpdate(info)).setNegativeButton(T.t("Más tarde"),null).show();
                 });
-            }catch(Exception e){runOnUiThread(()->message("Actualizaciones","No se pudo comprobar: "+e.getMessage()));}
+            }catch(Exception e){runOnUiThread(()->message(T.t("Actualizaciones"),T.t("No se pudo comprobar: ")+e.getMessage()));}
         },"update-check").start();
     }
     private void startUpdate(Updater.Info info){
         if(!getPackageManager().canRequestPackageInstalls()){
-            new AlertDialog.Builder(this).setTitle("Permiso necesario").setMessage("Android pide permiso una sola vez para que Tirsolador pueda instalar su propia actualización. Activa «Permitir de esta fuente» y vuelve a pulsar Actualizar.")
-                .setPositiveButton("Abrir ajustes",(d,w)->{try{startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,android.net.Uri.parse("package:"+getPackageName())));}catch(Exception e){message("Permiso necesario","Abre Ajustes de Android → Aplicaciones → Tirsolador → Instalar apps desconocidas y permítelo.");}})
-                .setNegativeButton("Cancelar",null).show();
+            new AlertDialog.Builder(this).setTitle(T.t("Permiso necesario")).setMessage(T.t("Android pide permiso una sola vez para que RetroStream pueda instalar su propia actualización. Activa «Permitir de esta fuente» y vuelve a pulsar Actualizar."))
+                .setPositiveButton(T.t("Abrir ajustes"),(d,w)->{try{startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,android.net.Uri.parse("package:"+getPackageName())));}catch(Exception e){message(T.t("Permiso necesario"),T.t("Abre Ajustes de Android → Aplicaciones → RetroStream → Instalar apps desconocidas y permítelo."));}})
+                .setNegativeButton(T.t("Cancelar"),null).show();
             return;
         }
         android.widget.ProgressBar bar=new android.widget.ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(100);
         LinearLayout box=vertical();box.setPadding(dp(24),dp(16),dp(24),dp(8));box.addView(bar);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Descargando actualización…").setView(box).setCancelable(false).show();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(T.t("Descargando actualización…")).setView(box).setCancelable(false).show();
         new Thread(()->{
             try{
                 java.io.File apk=Updater.download(this,info,(done,total)->{int percent=(int)(done*100/Math.max(1,total));runOnUiThread(()->bar.setProgress(percent));});
-                runOnUiThread(()->{dialog.dismiss();Toast.makeText(this,"Instalando…",Toast.LENGTH_LONG).show();});
+                runOnUiThread(()->{dialog.dismiss();Toast.makeText(this,T.t("Instalando…"),Toast.LENGTH_LONG).show();});
                 Updater.install(this,apk);
-            }catch(Exception e){runOnUiThread(()->{dialog.dismiss();message("Actualizaciones",e.getMessage());});}
+            }catch(Exception e){runOnUiThread(()->{dialog.dismiss();message(T.t("Actualizaciones"),e.getMessage());});}
         },"update-download").start();
     }
     private void settingsSection(String title){TextView view=label(title,19,text,true);view.setPadding(dp(5),dp(18),0,dp(8));content.addView(view);}
@@ -506,24 +512,24 @@ public class MainActivity extends Activity {
         LinearLayout card=vertical();card.setPadding(dp(20),dp(14),dp(20),dp(14));card.addView(label(title,16,text,true));TextView subtitle=label(value,12,muted,false);subtitle.setSingleLine(true);subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);card.addView(subtitle);
         focusable(card,tag,surface,action);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(84),1);p.setMargins(dp(5),dp(5),dp(5),dp(5));row.addView(card,p);
     }
-    private void licenses(){try{String[] files=getAssets().list("licenses");new AlertDialog.Builder(this).setTitle("Licencias y créditos").setItems(files,(d,w)->{
-        try(InputStream in=getAssets().open("licenses/"+files[w])){message(files[w],new String(GameStorage.read(in,1024*1024),StandardCharsets.UTF_8));}catch(Exception e){message("Licencias","No se pudo abrir este aviso");}
-    }).show();}catch(Exception e){message("Licencias","Los avisos están disponibles en el código fuente de esta release");}}
+    private void licenses(){try{String[] files=getAssets().list("licenses");new AlertDialog.Builder(this).setTitle(T.t("Licencias y créditos")).setItems(files,(d,w)->{
+        try(InputStream in=getAssets().open("licenses/"+files[w])){message(files[w],new String(GameStorage.read(in,1024*1024),StandardCharsets.UTF_8));}catch(Exception e){message(T.t("Licencias"),T.t("No se pudo abrir este aviso"));}
+    }).show();}catch(Exception e){message(T.t("Licencias"),T.t("Los avisos están disponibles en el código fuente de esta release"));}}
     private void importSystemFile(){
-        new AlertDialog.Builder(this).setTitle("Archivos del sistema").setMessage("Añade disksys.rom para Famicom Disk System o archivos ZIP de BIOS/parent para MAME. Conserva sus nombres originales. Usa archivos de los que dispongas legítimamente.")
-            .setPositiveButton("Elegir archivo",(d,w)->{try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),31);}catch(android.content.ActivityNotFoundException e){message("Archivos del sistema","Esta TV necesita un selector de documentos compatible para importar archivos.");}}).setNegativeButton("Cancelar",null).show();
+        new AlertDialog.Builder(this).setTitle(T.t("Archivos del sistema")).setMessage(T.t("Añade disksys.rom para Famicom Disk System o archivos ZIP de BIOS/parent para MAME. Conserva sus nombres originales. Usa archivos de los que dispongas legítimamente."))
+            .setPositiveButton(T.t("Elegir archivo"),(d,w)->{try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),31);}catch(android.content.ActivityNotFoundException e){message(T.t("Archivos del sistema"),T.t("Esta TV necesita un selector de documentos compatible para importar archivos."));}}).setNegativeButton(T.t("Cancelar"),null).show();
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);if(request!=31||result!=RESULT_OK||data==null||data.getData()==null)return;
         android.net.Uri uri=data.getData();new Thread(()->{try{
             String filename=null;try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst())filename=cursor.getString(0);}
-            if(filename==null||(!filename.equalsIgnoreCase("disksys.rom")&&!filename.toLowerCase(java.util.Locale.ROOT).matches("[a-z0-9_+.\\-]+\\.zip")))throw new java.io.IOException("Selecciona disksys.rom o un ZIP con su nombre original");
-            java.io.File folder=new java.io.File(getFilesDir(),"bios");if(!folder.isDirectory()&&!folder.mkdirs())throw new java.io.IOException("No se pudo crear la carpeta del sistema");
+            if(filename==null||(!filename.equalsIgnoreCase("disksys.rom")&&!filename.toLowerCase(java.util.Locale.ROOT).matches("[a-z0-9_+.\\-]+\\.zip")))throw new java.io.IOException(T.t("Selecciona disksys.rom o un ZIP con su nombre original"));
+            java.io.File folder=new java.io.File(getFilesDir(),"bios");if(!folder.isDirectory()&&!folder.mkdirs())throw new java.io.IOException(T.t("No se pudo crear la carpeta del sistema"));
             java.io.File temp=java.io.File.createTempFile("system-",".tmp",getCacheDir());try{
-                try(InputStream in=getContentResolver().openInputStream(uri);java.io.OutputStream out=new java.io.FileOutputStream(temp)){if(in==null)throw new java.io.IOException("No se pudo abrir el archivo");GameStorage.copy(in,out,64L*1024*1024);}
+                try(InputStream in=getContentResolver().openInputStream(uri);java.io.OutputStream out=new java.io.FileOutputStream(temp)){if(in==null)throw new java.io.IOException(T.t("No se pudo abrir el archivo"));GameStorage.copy(in,out,64L*1024*1024);}
                 GameStorage.copyAtomic(temp,new java.io.File(folder,filename.toLowerCase(java.util.Locale.ROOT)));
-            }finally{temp.delete();}runOnUiThread(()->Toast.makeText(this,"Archivo del sistema añadido",Toast.LENGTH_LONG).show());
-        }catch(Exception e){runOnUiThread(()->message("Archivos del sistema",e.getMessage()));}},"system-import").start();
+            }finally{temp.delete();}runOnUiThread(()->Toast.makeText(this,T.t("Archivo del sistema añadido"),Toast.LENGTH_LONG).show());
+        }catch(Exception e){runOnUiThread(()->message(T.t("Archivos del sistema"),e.getMessage()));}},"system-import").start();
     }
     private void controllers() {
         java.util.ArrayList<InputDevice> devices=new java.util.ArrayList<>();
@@ -532,27 +538,27 @@ public class MainActivity extends Activity {
             if (device != null && ((device.getSources() & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
                     || (device.getSources() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK)) devices.add(device);
         }
-        if(devices.isEmpty()){message("Perfiles de controles","No se detectaron mandos. Vincula uno por Bluetooth o USB desde los ajustes de Android TV.");return;}
+        if(devices.isEmpty()){message(T.t("Perfiles de controles"),T.t("No se detectaron mandos. Vincula uno por Bluetooth o USB desde los ajustes de Android TV."));return;}
         String[] names=new String[devices.size()];
         for(int i=0;i<names.length;i++)names[i]=ControllerProfiles.model(devices.get(i))+" · "+devices.get(i).getName();
-        new AlertDialog.Builder(this).setTitle("Perfil por control").setItems(names,(d,w)->controllerProfile(devices.get(w))).show();
+        new AlertDialog.Builder(this).setTitle(T.t("Perfil por control")).setItems(names,(d,w)->controllerProfile(devices.get(w))).show();
     }
     private void controllerProfile(InputDevice device) {
-        float[] values={.20f,.40f,.60f};String[] choices={"Zona muerta: baja (20%)","Zona muerta: media (40%)","Zona muerta: alta (60%)"};
+        float[] values={.20f,.40f,.60f};String[] choices={T.t("Zona muerta: baja (20%)"),T.t("Zona muerta: media (40%)"),T.t("Zona muerta: alta (60%)")};
         int choice=0;float current=controllers.deadzone(device);for(int i=0;i<values.length;i++)if(Math.abs(values[i]-current)<.05f)choice=i;
         new AlertDialog.Builder(this).setTitle(ControllerProfiles.model(device))
             .setSingleChoiceItems(choices,choice,(dialog,which)->{
-                controllers.deadzone(device,values[which]);Toast.makeText(this,"Perfil guardado para este dispositivo",Toast.LENGTH_SHORT).show();
+                controllers.deadzone(device,values[which]);Toast.makeText(this,T.t("Perfil guardado para este dispositivo"),Toast.LENGTH_SHORT).show();
             })
-            .setNeutralButton("Diagnóstico",(d,w)->{
+            .setNeutralButton(T.t("Diagnóstico"),(d,w)->{
                 ControllerProfiles.State s=controllers.state(device.getId());
-                message("Entradas independientes",String.format(java.util.Locale.ROOT,
-                    "ID: %04x:%04x\nD-pad teclas: %d, %d\nD-pad HAT: %d, %d\nStick izquierdo: %.2f, %.2f\nStick derecho: %.2f, %.2f\n\nCada origen mantiene su estado separado. Los núcleos usan perfiles independientes por control y por jugador, sin mezclar D-pad y joystick.",
+                message(T.t("Entradas independientes"),String.format(java.util.Locale.ROOT,
+                    T.t("ID: %04x:%04x\nD-pad teclas: %d, %d\nD-pad HAT: %d, %d\nStick izquierdo: %.2f, %.2f\nStick derecho: %.2f, %.2f\n\nCada origen mantiene su estado separado. Los núcleos usan perfiles independientes por control y por jugador, sin mezclar D-pad y joystick."),
                     device.getVendorId(),device.getProductId(),s.keyX,s.keyY,s.hatX,s.hatY,s.leftX,s.leftY,s.rightX,s.rightY));
-            }).setNegativeButton("Jugador",(d,w)->new AlertDialog.Builder(this).setTitle("Asignar mando")
-                .setSingleChoiceItems(new String[]{"Automático","Jugador 1","Jugador 2","Jugador 3","Jugador 4"},controllers.player(device)+1,(x,which)->{controllers.player(device,which-1);x.dismiss();}).show()).setPositiveButton("Listo",null).show();
+            }).setNegativeButton(T.t("Jugador"),(d,w)->new AlertDialog.Builder(this).setTitle(T.t("Asignar mando"))
+                .setSingleChoiceItems(new String[]{T.t("Automático"),T.t("Jugador 1"),T.t("Jugador 2"),T.t("Jugador 3"),T.t("Jugador 4")},controllers.player(device)+1,(x,which)->{controllers.player(device,which-1);x.dismiss();}).show()).setPositiveButton(T.t("Listo"),null).show();
     }
-    private void message(String title, String body) { new AlertDialog.Builder(this).setTitle(title).setMessage(body).setPositiveButton("Entendido", null).show(); }
+    private void message(String title, String body) { new AlertDialog.Builder(this).setTitle(title).setMessage(body).setPositiveButton(T.t("Entendido"), null).show(); }
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
         if(controllers.key(event,true))return true;
         if (keyCode == KeyEvent.KEYCODE_BUTTON_B) { onBackPressed(); return true; }
@@ -583,8 +589,8 @@ public class MainActivity extends Activity {
         if(page.equals("welcome")){drive.skip();route("home");return;}
         if (page.equals("detail")) backToLibrary();
         else if (!page.equals("home")) route("home");
-        else new AlertDialog.Builder(this).setTitle("Salir de Tirsolador")
-                    .setPositiveButton("Salir", (d,w) -> finish()).setNegativeButton("Cancelar", null).show();
+        else new AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
+                    .setPositiveButton(T.t("Salir"), (d,w) -> finish()).setNegativeButton(T.t("Cancelar"), null).show();
     }
     @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artwork.close(); super.onDestroy(); }
     @Override protected void onPause(){cancelPending();super.onPause();}

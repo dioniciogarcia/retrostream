@@ -1,4 +1,4 @@
-name: Build APK (fork)
+name: Build RetroStream APK
 # Simple build for this fork: no friend-owned signing key, no old-release upgrade test.
 on:
   push:
@@ -50,11 +50,11 @@ jobs:
       - name: Package APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/Retrostream.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/RetroStream.apk
           sha256sum dist/*.apk > dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Retrostream-APK
+          name: RetroStream-APK
           path: dist/*
       - name: Publish release
         if: github.ref == 'refs/heads/main'
@@ -63,6 +63,6 @@ jobs:
         run: |
           BUILD=$((100 + GITHUB_RUN_NUMBER))
           SUM=$(cut -d' ' -f1 dist/SHA256SUMS.txt)
-          printf 'Automatic build of the latest commit. Download Retrostream.apk.\n\nbuild:%s\n\n<!-- checksums -->\n%s  Retrostream.apk\n' "$BUILD" "$SUM" > notes.md
+          printf 'Automatic build of the latest commit. Download RetroStream.apk.\n\nbuild:%s\n\n<!-- checksums -->\n%s  RetroStream.apk\n' "$BUILD" "$SUM" > notes.md
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest dist/* --title "Retrostream (latest build)" --notes-file notes.md
+          gh release create latest dist/* --title "RetroStream (latest build)" --notes-file notes.md

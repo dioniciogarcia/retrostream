@@ -3,7 +3,7 @@ set -euo pipefail
 adb root
 adb wait-for-device
 adb install old/*.apk
-PKG=com.tirso.tirsolador.preview
+PKG=com.tirso.retrostream
 adb shell am start -W -n "$PKG/com.tirso.tirsolador.MainActivity"
 OLD_UID=$(adb shell stat -c %u /data/user/0/$PKG | tr -d '\r\n')
 adb shell "mkdir -p /data/user/0/$PKG/files; echo preserved > /data/user/0/$PKG/files/upgrade-marker; chown $OLD_UID:$OLD_UID /data/user/0/$PKG/files/upgrade-marker"

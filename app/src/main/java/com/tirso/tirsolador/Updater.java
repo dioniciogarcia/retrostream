@@ -24,7 +24,7 @@ final class Updater {
     static final String REPO = "dioniciogarcia/retrostream";
     static final String API = "https://api.github.com/repos/" + REPO + "/releases/tags/latest";
     static final String ALLOWED_PREFIX = "https://github.com/" + REPO + "/releases/download/";
-    static final String ASSET = "Retrostream.apk";
+    static final String ASSET = "RetroStream.apk";
     static final String ACTION = "com.tirso.tirsolador.UPDATE_STATUS";
 
     interface Progress { void update(long done, long total); }
@@ -41,19 +41,19 @@ final class Updater {
         c.setConnectTimeout(20000);
         c.setReadTimeout(20000);
         c.setRequestProperty("Accept", "application/vnd.github+json");
-        c.setRequestProperty("User-Agent", "Retrostream/" + BuildConfig.VERSION_NAME);
+        c.setRequestProperty("User-Agent", "RetroStream/" + BuildConfig.VERSION_NAME);
         try {
             int code = c.getResponseCode();
-            if (code == 404) throw new IOException("Todavía no hay una versión publicada en GitHub");
-            if (code == 403 || code == 429) throw new IOException("GitHub limita las consultas por ahora; inténtalo en unos minutos");
-            if (code != 200) throw new IOException("GitHub respondió con el error " + code);
+            if (code == 404) throw new IOException(T.t("Todavía no hay una versión publicada en GitHub"));
+            if (code == 403 || code == 429) throw new IOException(T.t("GitHub limita las consultas por ahora; inténtalo en unos minutos"));
+            if (code != 200) throw new IOException(T.t("GitHub respondió con el error ") + code);
             String body;
             try (InputStream in = c.getInputStream()) { body = new String(readAll(in, 4 * 1024 * 1024), StandardCharsets.UTF_8); }
             JSONObject release = new JSONObject(body);
             String notes = release.optString("body", "");
             Info info = new Info();
             Matcher b = Pattern.compile("build:(\\d+)").matcher(notes);
-            if (!b.find()) throw new IOException("La versión publicada no indica su número de build");
+            if (!b.find()) throw new IOException(T.t("La versión publicada no indica su número de build"));
             info.build = Integer.parseInt(b.group(1));
             Matcher s = Pattern.compile("([0-9a-fA-F]{64})\\s+\\*?" + Pattern.quote(ASSET)).matcher(notes);
             if (s.find()) info.sha = s.group(1).toLowerCase(java.util.Locale.ROOT);
@@ -63,28 +63,28 @@ final class Updater {
                 JSONObject a = assets.getJSONObject(i);
                 if (ASSET.equals(a.optString("name"))) { info.url = a.optString("browser_download_url"); info.size = a.optLong("size"); }
             }
-            if (info.url.isEmpty()) throw new IOException("La versión publicada no incluye el APK");
-            if (info.sha.isEmpty()) throw new IOException("La versión publicada no incluye su suma de verificación");
+            if (info.url.isEmpty()) throw new IOException(T.t("La versión publicada no incluye el APK"));
+            if (info.sha.isEmpty()) throw new IOException(T.t("La versión publicada no incluye su suma de verificación"));
             return info;
         } catch (org.json.JSONException e) {
-            throw new IOException("Respuesta de GitHub no válida");
+            throw new IOException(T.t("Respuesta de GitHub no válida"));
         } finally { c.disconnect(); }
     }
 
     /** Downloads the APK and verifies it. Returns the verified file. */
     static File download(Context context, Info info, Progress progress) throws IOException {
-        if (!info.url.startsWith(ALLOWED_PREFIX)) throw new IOException("Dirección de descarga no permitida");
+        if (!info.url.startsWith(ALLOWED_PREFIX)) throw new IOException(T.t("Dirección de descarga no permitida"));
         File dir = new File(context.getCacheDir(), "update");
-        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("No se pudo crear la carpeta temporal");
+        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException(T.t("No se pudo crear la carpeta temporal"));
         File target = new File(dir, ASSET);
         File temp = new File(dir, ASSET + ".part");
-        if (dir.getUsableSpace() < info.size * 2 + 50L * 1024 * 1024) throw new IOException("No hay espacio libre suficiente para la actualización");
+        if (dir.getUsableSpace() < info.size * 2 + 50L * 1024 * 1024) throw new IOException(T.t("No hay espacio libre suficiente para la actualización"));
         HttpURLConnection c = (HttpURLConnection) new URL(info.url).openConnection();
         c.setConnectTimeout(30000);
         c.setReadTimeout(60000);
-        c.setRequestProperty("User-Agent", "Retrostream/" + BuildConfig.VERSION_NAME);
+        c.setRequestProperty("User-Agent", "RetroStream/" + BuildConfig.VERSION_NAME);
         try {
-            if (c.getResponseCode() != 200) throw new IOException("La descarga falló (error " + c.getResponseCode() + ")");
+            if (c.getResponseCode() != 200) throw new IOException(T.t("La descarga falló (error ") + c.getResponseCode() + ")");
             MessageDigest digest;
             try { digest = MessageDigest.getInstance("SHA-256"); } catch (Exception e) { throw new IOException("SHA-256 no disponible"); }
             long done = 0;
@@ -95,16 +95,16 @@ final class Updater {
                     out.write(buffer, 0, n);
                     digest.update(buffer, 0, n);
                     done += n;
-                    if (done > info.size + 1024) throw new IOException("El archivo es más grande de lo esperado");
+                    if (done > info.size + 1024) throw new IOException(T.t("El archivo es más grande de lo esperado"));
                     if (progress != null) progress.update(done, info.size);
                 }
             }
-            if (done != info.size) throw new IOException("Descarga incompleta; vuelve a intentarlo");
+            if (done != info.size) throw new IOException(T.t("Descarga incompleta; vuelve a intentarlo"));
             StringBuilder hex = new StringBuilder();
             for (byte x : digest.digest()) hex.append(String.format("%02x", x));
-            if (!hex.toString().equals(info.sha)) throw new IOException("La suma de verificación no coincide; no se instalará");
-            if (target.exists() && !target.delete()) throw new IOException("No se pudo reemplazar la descarga anterior");
-            if (!temp.renameTo(target)) throw new IOException("No se pudo guardar la descarga");
+            if (!hex.toString().equals(info.sha)) throw new IOException(T.t("La suma de verificación no coincide; no se instalará"));
+            if (target.exists() && !target.delete()) throw new IOException(T.t("No se pudo reemplazar la descarga anterior"));
+            if (!temp.renameTo(target)) throw new IOException(T.t("No se pudo guardar la descarga"));
             return target;
         } catch (IOException e) {
             temp.delete();
@@ -119,7 +119,7 @@ final class Updater {
         params.setAppPackageName(context.getPackageName());
         int id = installer.createSession(params);
         try (PackageInstaller.Session session = installer.openSession(id)) {
-            try (InputStream in = new FileInputStream(apk); OutputStream out = session.openWrite("Retrostream.apk", 0, apk.length())) {
+            try (InputStream in = new FileInputStream(apk); OutputStream out = session.openWrite("RetroStream.apk", 0, apk.length())) {
                 byte[] buffer = new byte[64 * 1024];
                 int n;
                 while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
@@ -137,7 +137,7 @@ final class Updater {
         int n;
         while ((n = in.read(buffer)) > 0) {
             out.write(buffer, 0, n);
-            if (out.size() > max) throw new IOException("Respuesta demasiado grande");
+            if (out.size() > max) throw new IOException(T.t("Respuesta demasiado grande"));
         }
         return out.toByteArray();
     }

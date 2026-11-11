@@ -61,7 +61,7 @@ final class TelegramCatalog {
         String filename=document.fileName;
         String stem=filename.substring(0,filename.lastIndexOf('.')).trim();int inner=stem.lastIndexOf('.');if(inner>0&&supported(console,stem)&&!stem.toLowerCase(java.util.Locale.ROOT).endsWith(".zip")&&!stem.toLowerCase(java.util.Locale.ROOT).endsWith(".7z"))stem=stem.substring(0,inner).trim();if(stem.isEmpty())return null;
         return new Game("tg:"+account+":"+message.chatId+":"+message.id,stem,console,
-            "Biblioteca de "+console.title+" · "+filename,stem,account,message.chatId,message.id,
+            T.t("Biblioteca de ")+console.title+" · "+filename,stem,account,message.chatId,message.id,
             document.document.id,filename,Math.max(document.document.size,document.document.expectedSize));
     }
 }

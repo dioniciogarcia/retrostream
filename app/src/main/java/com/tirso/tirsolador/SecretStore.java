@@ -31,11 +31,11 @@ final class SecretStore {
         Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key());
         String iv=Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP);
         String encrypted=Base64.encodeToString(cipher.doFinal(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)),Base64.NO_WRAP);
-        if(!prefs.edit().putString(name,iv+":"+encrypted).commit())throw new java.io.IOException("No se pudo guardar la configuración");
+        if(!prefs.edit().putString(name,iv+":"+encrypted).commit())throw new java.io.IOException(T.t("No se pudo guardar la configuración"));
     }
     synchronized String get(String name) throws Exception {
         String value=prefs.getString(name,"");if(value.isEmpty())return "";
-        String[] pieces=value.split(":",2);if(pieces.length!=2)throw new java.security.GeneralSecurityException("Configuración inválida");
+        String[] pieces=value.split(":",2);if(pieces.length!=2)throw new java.security.GeneralSecurityException(T.t("Configuración inválida"));
         Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),new GCMParameterSpec(128,Base64.decode(pieces[0],Base64.NO_WRAP)));
         return new String(cipher.doFinal(Base64.decode(pieces[1],Base64.NO_WRAP)),java.nio.charset.StandardCharsets.UTF_8);
     }

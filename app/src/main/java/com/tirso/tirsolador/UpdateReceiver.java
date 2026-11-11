@@ -19,7 +19,7 @@ public class UpdateReceiver extends BroadcastReceiver {
             }
         } else if (status != PackageInstaller.STATUS_SUCCESS) {
             String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
-            Toast.makeText(context, "No se pudo actualizar" + (message == null ? "" : ": " + message), Toast.LENGTH_LONG).show();
+            Toast.makeText(context, T.t("No se pudo actualizar") + (message == null ? "" : ": " + message), Toast.LENGTH_LONG).show();
         }
     }
 }

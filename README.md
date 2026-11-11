@@ -1,4 +1,4 @@
-# Tirsolador
+# RetroStream
 
 Aplicación nativa para Android TV: biblioteca de Telegram/TirsoDrive y emulación dentro del mismo APK. Android 8 o posterior; ARM de 32/64 bits y x86 de 32/64 bits.
 

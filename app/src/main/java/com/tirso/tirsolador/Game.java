@@ -20,12 +20,12 @@ public final class Game {
     static Game fromJson(JSONObject j) throws JSONException {
         String id = j.getString("id"), title = j.getString("title");
         if (id.trim().isEmpty() || title.trim().isEmpty() || id.length() > 200 || title.length() > 300)
-            throw new JSONException("ID o título inválido");
+            throw new JSONException(T.t("ID o título inválido"));
         try {
             return new Game(id, title, Console.valueOf(j.getString("console")),
-                    j.optString("description", "Sin descripción"), j.optString("coverName", title),
+                    j.optString("description", T.t("Sin descripción")), j.optString("coverName", title),
                     j.optLong("telegramAccount"),j.optLong("chatId"),j.optLong("messageId"),j.optInt("fileId"),j.optString("fileName"),j.optLong("fileSize"));
-        } catch (IllegalArgumentException e) { throw new JSONException("Consola desconocida"); }
+        } catch (IllegalArgumentException e) { throw new JSONException(T.t("Consola desconocida")); }
     }
     JSONObject toJson() throws JSONException {
         return new JSONObject().put("id", id).put("title", title).put("console", console.name())

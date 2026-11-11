@@ -34,20 +34,20 @@ public final class Library {
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
         byte[] buf = new byte[8192]; int n;
         while ((n = in.read(buf)) != -1) {
-            if (out.size() + n > max) throw new java.io.IOException("Archivo demasiado grande");
+            if (out.size() + n > max) throw new java.io.IOException(T.t("Archivo demasiado grande"));
             out.write(buf, 0, n);
         }
         return out.toByteArray();
     }
     static List<Game> parse(String json) throws JSONException {
         JSONObject root = new JSONObject(json);
-        if (root.getInt("schemaVersion") != 1) throw new JSONException("Versión de catálogo no compatible");
+        if (root.getInt("schemaVersion") != 1) throw new JSONException(T.t("Versión de catálogo no compatible"));
         JSONArray a = root.getJSONArray("games");
-        if (a.length() > 50000) throw new JSONException("Máximo 50000 juegos");
+        if (a.length() > 50000) throw new JSONException(T.t("Máximo 50000 juegos"));
         List<Game> parsed = new ArrayList<>(); Set<String> ids = new HashSet<>();
         for (int i = 0; i < a.length(); i++) {
             Game g = Game.fromJson(a.getJSONObject(i));
-            if (!ids.add(g.id)) throw new JSONException("ID duplicado: " + g.id);
+            if (!ids.add(g.id)) throw new JSONException(T.t("ID duplicado: ") + g.id);
             parsed.add(g);
         }
         java.util.Collections.sort(parsed, (aGame, bGame) -> aGame.title.compareToIgnoreCase(bGame.title));
