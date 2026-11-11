@@ -6,8 +6,9 @@ android {
         applicationId 'com.tirso.tirsolador.preview'
         minSdk 26
         targetSdk 35
-        versionCode 6
-        versionName '1.0.1'
+        def tirsoBuild = providers.gradleProperty('tirsoBuild').orElse('0').get().toInteger()
+        versionCode tirsoBuild > 0 ? tirsoBuild : 6
+        versionName tirsoBuild > 0 ? "1.0.1.${tirsoBuild}" : '1.0.1'
         ndk { abiFilters(*providers.gradleProperty('tirsoAbis').orElse('armeabi-v7a,arm64-v8a,x86,x86_64').get().split(',')) }
         externalNativeBuild { cmake { arguments '-DCMAKE_BUILD_TYPE=Release'; cppFlags '-O2' } }
         buildConfigField 'int', 'TELEGRAM_API_ID', '38798734'

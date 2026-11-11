@@ -40,12 +40,13 @@ jobs:
           key: retrostream-signing-key-v1
       - name: Prepare signing key
         env:
+          TIRSO_SIGNING_KEY_B64: ${{ secrets.TIRSO_SIGNING_KEY_B64 }}
           TIRSO_ALLOW_EPHEMERAL_KEY: '1'
         run: bash tools/prepare_preview_key.sh
       - name: Build release APK
         env:
           TIRSO_TELEGRAM_API_HASH: ${{ secrets.TIRSO_TELEGRAM_API_HASH }}
-        run: gradle --no-daemon :app:assembleRelease
+        run: gradle --no-daemon :app:assembleRelease -PtirsoBuild=$((100 + GITHUB_RUN_NUMBER))
       - name: Package APK
         run: |
           mkdir -p dist
@@ -60,5 +61,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          BUILD=$((100 + GITHUB_RUN_NUMBER))
+          SUM=$(cut -d' ' -f1 dist/SHA256SUMS.txt)
+          printf 'Automatic build of the latest commit. Download Retrostream.apk.\n\nbuild:%s\n\n<!-- checksums -->\n%s  Retrostream.apk\n' "$BUILD" "$SUM" > notes.md
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest dist/* --title "Retrostream (latest build)" --notes "Automatic build of the latest commit. Download Retrostream.apk."
+          gh release create latest dist/* --title "Retrostream (latest build)" --notes-file notes.md

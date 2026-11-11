@@ -465,7 +465,41 @@ public class MainActivity extends Activity {
         LinearLayout system=horizontal();content.addView(system);
         settingTile(system,"Archivos del sistema","BIOS y archivos compartidos","system_files",this::importSystemFile);
         settingTile(system,"Tirsolador",BuildConfig.VERSION_NAME,"about",()->message("Tirsolador "+BuildConfig.VERSION_NAME,"Nueve consolas integradas. Las ROMs se preparan al pulsar Jugar y se eliminan al salir. Tus partidas y estados permanecen en la TV.\n\nMAME: ROMs compatibles con MAME 2003-Plus; ciertos juegos requieren BIOS o archivos parent. Puedes añadirlos en Archivos del sistema.\n\nCódigo y licencias de los núcleos incluidos en la release y en los avisos de esta aplicación."));
+        LinearLayout updates=horizontal();content.addView(updates);
+        settingTile(updates,"Actualizaciones","Buscar e instalar la última versión","updates",this::checkUpdates);
         content.addView(button("Licencias y créditos","licenses",this::licenses));
+    }
+    private void checkUpdates(){
+        Toast.makeText(this,"Buscando actualizaciones…",Toast.LENGTH_SHORT).show();
+        new Thread(()->{
+            try{
+                Updater.Info info=Updater.check();
+                runOnUiThread(()->{
+                    if(info.build<=BuildConfig.VERSION_CODE){message("Actualizaciones","Ya tienes la última versión (build "+BuildConfig.VERSION_CODE+").");return;}
+                    new AlertDialog.Builder(this).setTitle("Nueva versión disponible")
+                        .setMessage("Build "+info.build+" · "+(info.size/(1024*1024))+" MB\n\n"+info.notes+"\n\nTus partidas y la sesión de Telegram se conservan.")
+                        .setPositiveButton("Actualizar ahora",(d,w)->startUpdate(info)).setNegativeButton("Más tarde",null).show();
+                });
+            }catch(Exception e){runOnUiThread(()->message("Actualizaciones","No se pudo comprobar: "+e.getMessage()));}
+        },"update-check").start();
+    }
+    private void startUpdate(Updater.Info info){
+        if(!getPackageManager().canRequestPackageInstalls()){
+            new AlertDialog.Builder(this).setTitle("Permiso necesario").setMessage("Android pide permiso una sola vez para que Tirsolador pueda instalar su propia actualización. Activa «Permitir de esta fuente» y vuelve a pulsar Actualizar.")
+                .setPositiveButton("Abrir ajustes",(d,w)->{try{startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,android.net.Uri.parse("package:"+getPackageName())));}catch(Exception e){message("Permiso necesario","Abre Ajustes de Android → Aplicaciones → Tirsolador → Instalar apps desconocidas y permítelo.");}})
+                .setNegativeButton("Cancelar",null).show();
+            return;
+        }
+        android.widget.ProgressBar bar=new android.widget.ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(100);
+        LinearLayout box=vertical();box.setPadding(dp(24),dp(16),dp(24),dp(8));box.addView(bar);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Descargando actualización…").setView(box).setCancelable(false).show();
+        new Thread(()->{
+            try{
+                java.io.File apk=Updater.download(this,info,(done,total)->{int percent=(int)(done*100/Math.max(1,total));runOnUiThread(()->bar.setProgress(percent));});
+                runOnUiThread(()->{dialog.dismiss();Toast.makeText(this,"Instalando…",Toast.LENGTH_LONG).show();});
+                Updater.install(this,apk);
+            }catch(Exception e){runOnUiThread(()->{dialog.dismiss();message("Actualizaciones",e.getMessage());});}
+        },"update-download").start();
     }
     private void settingsSection(String title){TextView view=label(title,19,text,true);view.setPadding(dp(5),dp(18),0,dp(8));content.addView(view);}
     private void settingTile(LinearLayout row,String title,String value,String tag,Runnable action){
