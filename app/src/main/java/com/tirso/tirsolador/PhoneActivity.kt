@@ -239,8 +239,10 @@ class PhoneActivity : Activity() {
     private fun header(title: String, back: Boolean, history: Boolean = false): View {
         val row = horizontal(); row.setPadding(dp(14), dp(10), dp(8), dp(6))
         if (back) row.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
-        row.addView(tv(title, if (style == "tiles") 22f else 20f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(dp(6), 0, dp(4), 0) },
-            LinearLayout.LayoutParams(-2, -2).apply { weight = 0f })
+        row.addView(tv(title, if (style == "tiles") 22f else 20f, p.text, bold = true).apply {
+            setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(dp(6), 0, dp(4), 0)
+            maxWidth = resources.displayMetrics.widthPixels - dp(if (back) 260 else 220) },
+            LinearLayout.LayoutParams(-2, -2))
         row.addView(icon("search", T.t("Buscar juegos"), "h_search") { search() })
         row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         row.addView(icon("star", T.t("Favoritos"), "h_fav") { console = null; source = "fav"; go("library") })
@@ -390,10 +392,11 @@ class PhoneActivity : Activity() {
         val col = vertical(); col.setPadding(0, 0, 0, dp(18))
         col.addView(header(T.t("Inicio"), false))
         col.addView(continueCard(last, false), LinearLayout.LayoutParams(-1, dp(220)).apply { setMargins(dp(14), dp(4), dp(14), 0) })
+        recentBlock(col, dp(104), dp(140))
         col.addView(section(T.t("Consolas")).apply { setPadding(dp(18), dp(18), 0, dp(6)) })
         col.addView(consoleRow(dp(120), dp(84)))
-        recentBlock(col, dp(104), dp(140))
         friendsBlock(col)
+        suggestedBlock(col)
         root.addView(scroll(col))
     }
 
@@ -476,6 +479,36 @@ class PhoneActivity : Activity() {
         parent.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) })
     }
 
+    /** Upright only: a few games to try, picked at random from the library (new picks each day, unplayed first). */
+    private fun suggestedBlock(parent: LinearLayout) {
+        val played = recent().map { it.first.id }.toSet()
+        val pool = library.games.filter { library.visible(it.console) && it.id !in played }
+        if (pool.isEmpty()) return
+        val day = System.currentTimeMillis() / 86_400_000L
+        val picks = pool.shuffled(java.util.Random(day)).take(9)
+        parent.addView(section(T.t("Juegos sugeridos")).apply { setPadding(dp(18), dp(18), 0, dp(6)) })
+        val grid = vertical(); grid.setPadding(dp(12), 0, dp(12), 0)
+        var row: LinearLayout? = null
+        picks.forEachIndexed { i, g ->
+            if (i % 3 == 0) { row = horizontal(); row!!.gravity = Gravity.TOP; grid.addView(row, LinearLayout.LayoutParams(-1, -2)) }
+            val cell = vertical()
+            val art = FrameLayout(this); art.background = round(0xFFF2EEE4.toInt(), 10f); art.clipToOutline = true
+            art.addView(tv(g.title, 11f, 0xFF2B2B2B.toInt(), bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(4), dp(4), dp(4)) }, FrameLayout.LayoutParams(-1, -1))
+            val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.CENTER_CROP; art.addView(iv, FrameLayout.LayoutParams(-1, -1))
+            artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles")
+            val tag = tv(g.console.name, 9f, Color.WHITE, bold = true).apply { setPadding(dp(5), dp(2), dp(5), dp(2)); background = round(g.console.color, 6f) }
+            art.addView(tag, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(5), dp(5), 0, 0) })
+            cell.addView(art, LinearLayout.LayoutParams(-1, dp(140)))
+            cell.addView(tv(g.title, 11f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(5), dp(2), 0) })
+            control(cell, "sugg_${g.id}", Color.TRANSPARENT, 12f, false) { selected = g; console = g.console; go("detail") }
+            cell.setOnLongClickListener { selected = g; gameMore(g); true }
+            row!!.addView(cell, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(8)) })
+        }
+        val rest = picks.size % 3
+        if (rest != 0) repeat(3 - rest) { row!!.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(dp(4), 0, dp(4), 0) }) }
+        parent.addView(grid)
+    }
+
     /** Friends who are online or playing (only when the friends group is set up). */
     private fun friendsBlock(parent: LinearLayout) {
         if (drive.friendsChat() == 0L) return
@@ -500,6 +533,11 @@ class PhoneActivity : Activity() {
     }
 
     // ------------------------------------------------------------------ library
+    /** Short console names for the narrow header (upright). */
+    private fun shortName(c: Console) = if (landscape) c.title else when (c) {
+        Console.GBA -> "GBA"; Console.GBC -> "GBC"; Console.MD -> "Mega Drive"; Console.GC -> "GameCube"; Console.NDS -> "DS"
+        Console.PSP -> "PSP"; Console.PS2 -> "PS2"; Console.N64 -> "N64"; Console.SNES -> "SNES"; Console.NES -> "NES"; else -> c.title
+    }
     private fun gamesShown(): List<Game> {
         val fav = source == "fav"
         val all = library.filtered(console, fav, query)
@@ -511,7 +549,7 @@ class PhoneActivity : Activity() {
     }
     private fun libraryPage() {
         val c = console
-        val title = when { source == "fav" -> T.t("Favoritos"); c == null -> T.t("Biblioteca"); else -> c.title } + if (query.isNotEmpty()) " · \"$query\"" else ""
+        val title = when { source == "fav" -> T.t("Favoritos"); c == null -> T.t("Biblioteca"); else -> shortName(c) } + if (query.isNotEmpty()) " · \"$query\"" else ""
         val outer = vertical()
         outer.addView(header(title, true))
         val base = if (source == "fav") library.filtered(c, true, query) else library.filtered(c, false, query)

@@ -38,6 +38,7 @@ final class TEn {
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
+        m.put("Juegos sugeridos", "Suggested games");
         m.put("Inicia sesión con Telegram", "Sign in with Telegram");
         m.put("Escribe el código que Telegram envió a tu app de Telegram.", "Type the code Telegram sent to your Telegram app.");
         m.put("Código", "Code");
