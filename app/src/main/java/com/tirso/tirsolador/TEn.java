@@ -3,6 +3,9 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("Cargando información…", "Loading information…");
+        m.put("Más información", "More information");
+        m.put("Sin descripción disponible", "No description available");
         m.put(" copias", " backups");
         m.put(" juegos se restaurarán con su copia más reciente. Se reemplazarán las partidas actuales de esos juegos.", " games will be restored from their latest backup. Current saves for those games will be replaced.");
         m.put("Actualizar lista", "Refresh list");
