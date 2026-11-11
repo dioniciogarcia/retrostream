@@ -84,7 +84,6 @@ public class MainActivity extends Activity {
             for (Game g : library.games) if (g.id.equals(state.getString("game"))) selected = g;
         }
         if(!drive.onboarded()&&!drive.skipped())page="welcome";
-        if (android.os.Build.VERSION.SDK_INT >= 30) getWindow().setPreferMinimalPostProcessing(true);
         render();
         scrape();
         driveListener=catalog->{

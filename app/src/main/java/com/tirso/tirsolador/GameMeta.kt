@@ -17,9 +17,9 @@ import java.util.zip.ZipInputStream
  * storage so the app never has to look anything up again when it opens.
  */
 internal object GameMeta {
-    private const val VERSION = 2
+    private const val VERSION = 3
     private const val DB_URL = "https://github.com/OpenVGDB/OpenVGDB/releases/latest/download/openvgdb.zip"
-    const val CREDITS = "Description: OpenVGDB · Pictures: libretro thumbnails"
+    const val CREDITS = "Description: OpenVGDB, Wikipedia · Pictures: libretro thumbnails"
     private val SYSTEM = mapOf(
         Console.N64 to 23, Console.GBA to 20, Console.GBC to 21, Console.GB to 19, Console.NDS to 24,
         Console.SNES to 26, Console.NES to 25, Console.MD to 33, Console.MAME to 2,
@@ -53,11 +53,21 @@ internal object GameMeta {
     }
 
     // ------------------------------------------------------------------ names
+    private val REGIONS = "USA|Europe|Japan|World|Korea|Australia|Asia|Germany|France|Spain|Italy|Brazil|China|Netherlands|Sweden|Canada|Russia|UK"
+    private val TRAIL_LANG = Regex("(\\s+[A-Za-z]{2}(,[A-Za-z]{2})+)+$")
+    private val TRAIL_REGION = Regex("(\\s+($REGIONS))+$", RegexOption.IGNORE_CASE)
+    /** Some dumps end in "Europe En,Fr,De" instead of "(Europe) (En,Fr,De)": take those tails off. */
+    private fun tails(s: String): String {
+        var t = s.trim()
+        t = TRAIL_LANG.replace(t, "").trim()
+        t = TRAIL_REGION.replace(t, "").trim()
+        return t.ifEmpty { s }
+    }
     private fun fix(s: String) = s.replace(Regex("(?<=[A-Za-z])_s\\b"), "'s").replace('_', ' ')
 
     /** "Mario_Kart_64 (Europe)" -> "Mario Kart 64"; "Legend of Zelda, The (U) [!]" -> "The Legend of Zelda". */
     @JvmStatic fun clean(stem: String): String {
-        var s = fix(stem).replace(Regex("\\s*[(\\[][^)\\]]*[)\\]]"), "")
+        var s = tails(fix(stem).replace(Regex("\\s*[(\\[][^)\\]]*[)\\]]"), ""))
         s = Regex("^(.*), (The|A|An)$").replace(s.trim()) { "${it.groupValues[2]} ${it.groupValues[1]}" }
         s = s.replace(Regex("\\s+"), " ").trim(' ', '-', '.')
         return s.ifBlank { stem }
@@ -65,17 +75,19 @@ internal object GameMeta {
 
     private fun ascii(s: String) = Normalizer.normalize(s, Normalizer.Form.NFKD).replace(Regex("[^\\p{ASCII}]"), "").lowercase().replace("&", "and")
     private fun key(s: String): String {
-        var t = ascii(s).replace(Regex("[(\\[].*?[)\\]]"), "").trim()
+        var t = tails(ascii(s).replace(Regex("[(\\[].*?[)\\]]"), "").trim())
         t = Regex("^(.*), (the|a|an)$").replace(t) { "${it.groupValues[2]} ${it.groupValues[1]}" }
         t = t.replace(Regex("^(the|a|an) "), "")
         return t.replace(Regex("[^a-z0-9]"), "")
     }
     private fun words(s: String): Set<String> =
-        Regex("[a-z0-9]+").findAll(ascii(s).replace(Regex("[(\\[].*?[)\\]]"), "")).map { it.value }.filter { it !in setOf("the", "a", "an", "of") }.toSet()
+        Regex("[a-z0-9]+").findAll(tails(ascii(s).replace(Regex("[(\\[].*?[)\\]]"), ""))).map { it.value }.filter { it !in setOf("the", "a", "an", "of") }.toSet()
 
     private fun regionOf(stem: String): String {
         val t = Regex("[(\\[]([^)\\]]*)[)\\]]").findAll(stem).joinToString(" ") { it.groupValues[1] }.lowercase()
+        val tail = TRAIL_REGION.find(Regex("[(\\[][^)\\]]*[)\\]]").replace(stem, "").trim().let { TRAIL_LANG.replace(it, "").trim() })?.value?.lowercase().orEmpty()
         return when {
+            "usa" in tail -> "USA"; "europe" in tail -> "Europe"; "japan" in tail -> "Japan"; "world" in tail -> "World"
             Regex("\\busa\\b|\\bu\\b|\\bus\\b").containsMatchIn(t) -> "USA"
             "europe" in t || Regex("\\be\\b").containsMatchIn(t) -> "Europe"
             "japan" in t || Regex("\\bj\\b").containsMatchIn(t) -> "Japan"
@@ -195,6 +207,34 @@ internal object GameMeta {
         return o
     }
 
+    private fun platform(c: Console) = when (c) {
+        Console.N64 -> "Nintendo 64"; Console.NDS -> "Nintendo DS"; Console.GBA -> "Game Boy Advance"; Console.GBC -> "Game Boy Color"
+        Console.GB -> "Game Boy"; Console.SNES -> "Super Nintendo"; Console.NES -> "Nintendo Entertainment System"; Console.MD -> "Mega Drive"; else -> "arcade"
+    }
+
+    /** Wikipedia's intro for a game the database doesn't know (null when nothing convincing is found). */
+    private fun wiki(title: String, console: Console): String? = runCatching {
+        val q = java.net.URLEncoder.encode("$title ${platform(console)} video game", "UTF-8")
+        val url = "https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=$q&gsrlimit=4&prop=extracts&exintro=1&explaintext=1&exsentences=4&exlimit=4"
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 8000; c.readTimeout = 8000; c.setRequestProperty("User-Agent", "RetroStream/1.0 (Android TV retro game launcher)")
+        if (c.responseCode != 200) return@runCatching null
+        val json = JSONObject(c.inputStream.use { it.readBytes().decodeToString() })
+        val pages = json.optJSONObject("query")?.optJSONObject("pages") ?: return@runCatching null
+        val want = words(title)
+        var best: Pair<Int, String>? = null
+        for (k in pages.keys()) {
+            val p = pages.getJSONObject(k)
+            val name = p.optString("title").replace(Regex("\\s*\\([^)]*\\)"), "")
+            val extract = p.optString("extract").trim()
+            val have = words(name)
+            if (want.isEmpty() || have.isEmpty() || extract.length < 60 || !extract.contains("game", true)) continue
+            val j = want.intersect(have).size.toDouble() / want.union(have).size
+            if (j >= 0.6 && (best == null || p.optInt("index") < best.first)) best = p.optInt("index") to extract
+        }
+        best?.second
+    }.getOrNull()
+
     private fun database(ctx: Context): File? {
         val db = File(ctx.filesDir, "openvgdb.sqlite")
         if (db.isFile && db.length() > 1_000_000) return db
@@ -234,7 +274,9 @@ internal object GameMeta {
                         val idx = index(db, sid)
                         for (g in list) {
                             val stem = stemOf(g)
-                            val e = entry(g, stem, runCatching { match(idx, stem) }.getOrNull())
+                            val row = runCatching { match(idx, stem) }.getOrNull()
+                            val e = entry(g, stem, row)
+                            if ((row == null || row.desc.isBlank()) && console != Console.MAME) wiki(e.optString("t"), console)?.let { e.put("d", it) }
                             synchronized(this) { cache.put(g.id, e) }
                         }
                         save(app)
