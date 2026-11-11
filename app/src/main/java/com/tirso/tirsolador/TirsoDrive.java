@@ -109,7 +109,13 @@ final class TirsoDrive {
         else if(failure.message.contains("PASSWORD_HASH_INVALID"))error=T.t("La contraseña de verificación adicional no es correcta.");
         else if(failure.message.contains("PHONE_CODE_INVALID"))error=T.t("El código no es correcto. Comprueba el último código recibido.");
         else if(failure.message.startsWith("FLOOD_WAIT"))error=T.t("Telegram solicita esperar antes de reintentar.");
-        else error=T.t("No se pudo completar la solicitud a Telegram (código ")+failure.code+").";
+        else if(failure.message.contains("PHONE_NUMBER_INVALID"))error=T.t("Telegram no reconoce ese número. Escríbelo con el código de país, por ejemplo +1 809 555 0123.");
+        else if(failure.message.contains("PHONE_NUMBER_BANNED"))error=T.t("Telegram ha bloqueado ese número.");
+        else if(failure.message.contains("PHONE_NUMBER_FLOOD")||failure.message.contains("PHONE_PASSWORD_FLOOD"))error=T.t("Demasiados intentos con ese número. Espera unas horas o usa el código QR.");
+        else if(failure.message.contains("UPDATE_APP_TO_LOGIN"))error=T.t("Telegram no permite iniciar sesión con número en esta app. Usa el código QR desde Telegram en otro teléfono, tablet o la TV.");
+        else error=T.t("No se pudo completar la solicitud a Telegram (código ")+failure.code+"): "+failure.message;
+        // Phone app: back to the "phone number / QR" choice so you can try again.
+        if(BuildConfig.PHONE&&phoneAttempt){phoneAttempt=false;stage=Stage.PHONE;status=T.t("Inicia sesión con tu número de Telegram");}
         publish(false);
     }
     void retry(){if(client==null){start();return;}error="";send(new TdApi.GetAuthorizationState(),this::authorization);}
@@ -152,7 +158,7 @@ final class TirsoDrive {
         }else if(object instanceof TdApi.AuthorizationStateWaitOtherDeviceConfirmation){
             stage=Stage.QR;status=T.t("Escanea el QR desde Telegram en tu teléfono");qrLink=((TdApi.AuthorizationStateWaitOtherDeviceConfirmation)object).link;
         }else if(object instanceof TdApi.AuthorizationStateWaitPassword){stage=Stage.PASSWORD;qrLink="";status=T.t("Tu cuenta requiere la contraseña de verificación en dos pasos");
-        }else if(object instanceof TdApi.AuthorizationStateWaitCode){stage=Stage.CODE;qrLink="";status=T.t("Telegram solicita un código de verificación");
+        }else if(object instanceof TdApi.AuthorizationStateWaitCode){phoneAttempt=false;stage=Stage.CODE;qrLink="";status=T.t("Telegram solicita un código de verificación");
         }else if(object instanceof TdApi.AuthorizationStateReady){
             stage=Stage.READY;qrLink="";status=T.t("Sesión conectada");
             if(accountId==0)send(new TdApi.GetMe(),me->{
@@ -174,7 +180,8 @@ final class TirsoDrive {
     }
     void password(String password){error="";checked(new TdApi.CheckAuthenticationPassword(password));}
     /** Signs in with a phone number: Telegram then sends a code to your Telegram app. */
-    void phoneNumber(String number){error="";stage=Stage.CONNECTING;status=T.t("Enviando el código…");publish(false);checked(new TdApi.SetAuthenticationPhoneNumber(number.replaceAll("[^0-9+]",""),null));}
+    private boolean phoneAttempt;
+    void phoneNumber(String number){error="";phoneAttempt=true;stage=Stage.CONNECTING;status=T.t("Enviando el código…");publish(false);checked(new TdApi.SetAuthenticationPhoneNumber(number.replaceAll("[^0-9+]",""),null));}
     /** Switches to the QR code (scan it from Telegram on another phone). */
     void useQr(){error="";qrRequested=true;stage=Stage.CONNECTING;status=T.t("Generando código QR…");publish(false);checked(new TdApi.RequestQrCodeAuthentication(new long[0]));}
     void code(String code){error="";checked(new TdApi.CheckAuthenticationCode(code));}

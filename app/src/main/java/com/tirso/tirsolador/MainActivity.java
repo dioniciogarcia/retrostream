@@ -422,10 +422,19 @@ public class MainActivity extends Activity {
             .setNegativeButton(T.t("Cancelar"),(d,w)->hash.setText("")).show();
     }
     private void phoneInput(){
-        EditText input=new EditText(this);input.setSingleLine(true);input.setInputType(android.text.InputType.TYPE_CLASS_PHONE);input.setHint("+1 809 555 0123");
-        new AlertDialog.Builder(this).setTitle(T.t("Tu número de Telegram")).setMessage(T.t("Con el código de país, por ejemplo +1 para República Dominicana."))
-            .setView(input).setPositiveButton(T.t("Enviar código"),(d,w)->{String v=input.getText().toString().trim();if(!v.isEmpty())drive.phoneNumber(v.startsWith("+")?v:"+"+v);})
-            .setNegativeButton(T.t("Cancelar"),null).show();
+        android.content.SharedPreferences ui=getSharedPreferences("ui",MODE_PRIVATE);
+        LinearLayout box=horizontal();box.setPadding(dp(20),dp(8),dp(20),0);
+        EditText code=new EditText(this);code.setSingleLine(true);code.setInputType(android.text.InputType.TYPE_CLASS_PHONE);code.setText(ui.getString("phone_cc","+1"));
+        EditText number=new EditText(this);number.setSingleLine(true);number.setInputType(android.text.InputType.TYPE_CLASS_PHONE);number.setHint("809 555 0123");
+        box.addView(code,new LinearLayout.LayoutParams(dp(80),-2));box.addView(number,new LinearLayout.LayoutParams(0,-2,1));
+        new AlertDialog.Builder(this).setTitle(T.t("Tu número de Telegram")).setMessage(T.t("Código de país y número, por ejemplo +1 y 809 555 0123."))
+            .setView(box).setPositiveButton(T.t("Enviar código"),(d,w)->{
+                String cc=code.getText().toString().replaceAll("[^0-9]","");String n=number.getText().toString().replaceAll("[^0-9]","");
+                if(n.isEmpty())return;
+                String full=number.getText().toString().trim().startsWith("+")?"+"+n:"+"+(cc.isEmpty()?"1":cc)+n;
+                ui.edit().putString("phone_cc","+"+(cc.isEmpty()?"1":cc)).apply();drive.phoneNumber(full);
+            }).setNegativeButton(T.t("Cancelar"),null).show();
+        number.requestFocus();
     }
     private void authInput(boolean password){
         EditText input=new EditText(this);input.setSingleLine(true);

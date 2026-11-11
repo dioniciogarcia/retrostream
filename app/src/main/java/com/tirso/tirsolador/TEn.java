@@ -38,6 +38,11 @@ final class TEn {
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
+        m.put("Telegram no reconoce ese número. Escríbelo con el código de país, por ejemplo +1 809 555 0123.", "Telegram doesn't recognize that number. Include the country code, for example +1 809 555 0123.");
+        m.put("Telegram ha bloqueado ese número.", "Telegram has blocked that number.");
+        m.put("Demasiados intentos con ese número. Espera unas horas o usa el código QR.", "Too many tries with that number. Wait a few hours or use the QR code.");
+        m.put("Telegram no permite iniciar sesión con número en esta app. Usa el código QR desde Telegram en otro teléfono, tablet o la TV.", "Telegram doesn't allow phone-number sign-in for this app. Use the QR code with Telegram on another phone or tablet.");
+        m.put("Código de país y número, por ejemplo +1 y 809 555 0123.", "Country code and number, for example +1 and 809 555 0123.");
         m.put("Inicia sesión con tu número de Telegram", "Sign in with your Telegram number");
         m.put("Enviando el código…", "Sending the code…");
         m.put("Introducir número de teléfono", "Enter phone number");
