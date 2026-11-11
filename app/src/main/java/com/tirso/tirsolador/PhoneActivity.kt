@@ -868,23 +868,43 @@ class PhoneActivity : Activity() {
             when (w) { 0 -> showShots(g); 1 -> pinShortcut(g); else -> { library.toggleFavorite(g); render() } }
         }.show()
     }
+    /** Home screen shortcut: the game's logo on white (box cover if there is no logo); opens straight into the game. */
     private fun pinShortcut(g: Game) {
         val sm = getSystemService(android.content.pm.ShortcutManager::class.java) ?: return
         if (!sm.isRequestPinShortcutSupported) { toast(T.t("Tu pantalla de inicio no admite accesos directos.")); return }
-        var icon: android.graphics.drawable.Icon? = null
-        runCatching {
-            artwork.cachedCover(g)?.let { f ->
-                val b = android.graphics.BitmapFactory.decodeFile(f.path)
-                if (b != null) { val s = minOf(b.width, b.height); val sq = android.graphics.Bitmap.createBitmap(b, (b.width - s) / 2, (b.height - s) / 2, s, s)
-                    icon = android.graphics.drawable.Icon.createWithAdaptiveBitmap(android.graphics.Bitmap.createScaledBitmap(sq, 432, 432, true)) }
+        Toast.makeText(this, T.t("Preparando el icono…"), Toast.LENGTH_SHORT).show()
+        Thread {
+            val bmp = runCatching { shortcutIcon(g) }.getOrNull()
+            runOnUiThread {
+                val open = Intent(this, PhoneActivity::class.java).setAction(Intent.ACTION_VIEW).putExtra("play_game", g.id)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                val icon = if (bmp != null) android.graphics.drawable.Icon.createWithAdaptiveBitmap(bmp) else android.graphics.drawable.Icon.createWithResource(this, R.drawable.app_icon)
+                val info = android.content.pm.ShortcutInfo.Builder(this, "game_" + Integer.toHexString(g.id.hashCode()))
+                    .setShortLabel(g.title.take(24)).setLongLabel(g.title).setIcon(icon).setIntent(open).build()
+                sm.requestPinShortcut(info, null)
             }
+        }.start()
+    }
+    /** 432 px adaptive icon: logo centered on white inside the safe area, or the cover filling it. */
+    private fun shortcutIcon(g: Game): android.graphics.Bitmap? {
+        val size = 432
+        val out = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+        val logo = Artwork(applicationContext).snapshot(g, "Named_Logos")
+        if (logo != null) {
+            canvas.drawColor(Color.WHITE)
+            val box = size * 0.58f   // adaptive icons keep the middle ~66% visible
+            val scale = minOf(box / logo.width, box / logo.height)
+            val w = logo.width * scale; val h = logo.height * scale
+            canvas.drawBitmap(logo, null, android.graphics.RectF((size - w) / 2, (size - h) / 2, (size + w) / 2, (size + h) / 2), paint)
+            return out
         }
-        val open = Intent(this, PhoneActivity::class.java).setAction(Intent.ACTION_VIEW).putExtra("play_game", g.id)
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val info = android.content.pm.ShortcutInfo.Builder(this, "game_" + Integer.toHexString(g.id.hashCode()))
-            .setShortLabel(g.title.take(24)).setLongLabel(g.title)
-            .setIcon(icon ?: android.graphics.drawable.Icon.createWithResource(this, R.drawable.app_icon)).setIntent(open).build()
-        sm.requestPinShortcut(info, null)
+        val f = artwork.cachedCover(g) ?: return null
+        val b = android.graphics.BitmapFactory.decodeFile(f.path) ?: return null
+        val s = minOf(b.width, b.height)
+        canvas.drawBitmap(b, android.graphics.Rect((b.width - s) / 2, (b.height - s) / 2, (b.width + s) / 2, (b.height + s) / 2), android.graphics.Rect(0, 0, size, size), paint)
+        return out
     }
     private fun showShots(g: Game) {
         val grid = vertical(); grid.setPadding(dp(8), dp(8), dp(8), dp(8))

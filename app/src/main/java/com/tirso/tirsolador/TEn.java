@@ -38,6 +38,7 @@ final class TEn {
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
+        m.put("Preparando el icono…", "Preparing the icon…");
         m.put("PANTALLA DE INICIO", "HOME SCREEN");
         m.put("INICIO", "HOME");
         m.put("Pantalla de inicio", "Home screen");
