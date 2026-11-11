@@ -545,7 +545,20 @@ public class MainActivity extends Activity {
         settingTile(system,"RetroStream",BuildConfig.VERSION_NAME,"about",()->message("RetroStream "+BuildConfig.VERSION_NAME,T.t("Nueve consolas integradas. Las ROMs se preparan al pulsar Jugar y se eliminan al salir. Tus partidas y estados permanecen en la TV.\n\nMAME: ROMs compatibles con MAME 2003-Plus; ciertos juegos requieren BIOS o archivos parent. Puedes añadirlos en Archivos del sistema.\n\nCódigo y licencias de los núcleos incluidos en la release y en los avisos de esta aplicación.")));
         LinearLayout updates=horizontal();content.addView(updates);
         settingTile(updates,T.t("Actualizaciones"),T.t("Buscar e instalar la última versión"),"updates",this::checkUpdates);
+        settingTile(updates,T.t("Informe de problemas"),T.t("Qué registró Android si un juego falla"),"crash_report",this::crashReport);
         content.addView(button(T.t("Licencias y créditos"),"licenses",this::licenses));
+    }
+    private void crashReport(){
+        Toast.makeText(this,T.t("Preparando informe…"),Toast.LENGTH_SHORT).show();
+        new Thread(()->{
+            String report=CrashReport.build(this);
+            runOnUiThread(()->{
+                String preview=report.length()>1800?report.substring(0,1800)+"\n…":report;
+                new AlertDialog.Builder(this).setTitle(T.t("Informe de problemas")).setMessage(preview)
+                    .setPositiveButton(T.t("Guardar en Descargas"),(d,w)->{String where=CrashReport.save(this,report);Toast.makeText(this,where==null?T.t("No se pudo guardar el informe"):T.t("Guardado en ")+where,Toast.LENGTH_LONG).show();})
+                    .setNegativeButton(T.t("Cerrar"),null).show();
+            });
+        },"crash-report").start();
     }
     private void checkUpdates(){
         Toast.makeText(this,T.t("Buscando actualizaciones…"),Toast.LENGTH_SHORT).show();

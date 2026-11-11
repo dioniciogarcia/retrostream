@@ -120,6 +120,13 @@ final class TEn {
         m.put("Consola completa", "Big Console");
         m.put("Mosaico", "Color Tiles");
         m.put("Abrir", "Open");
+        m.put("Informe de problemas", "Problem report");
+        m.put("Qué registró Android si un juego falla", "What Android recorded if a game fails");
+        m.put("Preparando informe…", "Preparing report…");
+        m.put("Guardar en Descargas", "Save to Downloads");
+        m.put("No se pudo guardar el informe", "Could not save the report");
+        m.put("Guardado en ", "Saved to ");
+        m.put("Cerrar", "Close");
         m.put("Consola anterior", "Previous console");
         m.put(" juegos. Abrir biblioteca", " games. Open library");
         m.put("Consola siguiente", "Next console");
