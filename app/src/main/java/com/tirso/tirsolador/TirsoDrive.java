@@ -118,6 +118,11 @@ final class TirsoDrive {
         else if(object instanceof TdApi.UpdateNewChat){TdApi.Chat c=((TdApi.UpdateNewChat)object).chat;chats.put(c.id,c);}
         else if(object instanceof TdApi.UpdateChatTitle){TdApi.UpdateChatTitle u=(TdApi.UpdateChatTitle)object;TdApi.Chat c=chats.get(u.chatId);if(c!=null)c.title=u.title;}
         else if(object instanceof TdApi.UpdateFile)fileUpdated(((TdApi.UpdateFile)object).file);
+        else if(object instanceof TdApi.UpdateMessageSendSucceeded){
+            TdApi.UpdateMessageSendSucceeded u=(TdApi.UpdateMessageSendSucceeded)object;Done<Long> d=pendingUploads.remove(u.oldMessageId);if(d!=null)d.done(u.message.id,null);
+        }else if(object instanceof TdApi.UpdateMessageSendFailed){
+            TdApi.UpdateMessageSendFailed u=(TdApi.UpdateMessageSendFailed)object;Done<Long> d=pendingUploads.remove(u.oldMessageId);if(d!=null)d.done(0L,errorText(u.error));
+        }
     }
     private void authorization(TdApi.Object object){
         if(object instanceof TdApi.Error){fail((TdApi.Error)object);return;}
@@ -319,4 +324,99 @@ final class TirsoDrive {
         deletingFiles.add(fileId);files.remove(fileId);requestedDownloads.remove(fileId);watchedFiles.remove(fileId);
         send(new TdApi.DeleteFile(fileId),result->{deletingFiles.remove(fileId);Game next=playAfterDelete.remove(fileId);publish(false);if(next!=null)download(next);});
     });}
+
+    // ------------------------------------------------------------------ save backups (Telegram channel)
+    static final String BACKUP_TITLE="TD - RetroStream - Save file back-ups";
+    static final int KEEP_BACKUPS=10;
+    interface Done<V>{void done(V value,String error);}
+    static final class Backup{String sha="",title="",console="",fileName="";long messageId,size;int fileId,date;}
+    private final Map<Long,Done<Long>> pendingUploads=new HashMap<>();
+    private static String norm(String s){return s==null?"":s.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]","");}
+    private TdApi.Chat findBackupChat(){
+        long saved=prefs.getLong("backupChat_"+accountId,0);
+        TdApi.Chat c=saved!=0?chats.get(saved):null;if(c!=null)return c;
+        for(TdApi.Chat chat:chats.values())if(TelegramCatalog.group(chat)&&norm(chat.title).equals(norm(BACKUP_TITLE)))return chat;
+        return null;
+    }
+    private String errorText(TdApi.Object r){
+        if(r instanceof TdApi.Error)return T.t("Telegram respondió: ")+((TdApi.Error)r).message;
+        return T.t("Telegram no devolvió una respuesta válida.");
+    }
+    private <V> Done<V> once(Done<V> cb,V empty){
+        final boolean[] fired={false};
+        Done<V> wrapped=(v,e)->{if(fired[0])return;fired[0]=true;cb.done(v,e);};
+        main.postDelayed(()->wrapped.done(empty,T.t("Telegram tardó demasiado en responder. Inténtalo de nuevo.")),90000);
+        return wrapped;
+    }
+    /** Finds this account's save-backup channel, creating it the first time. */
+    void backupChannel(Done<Long> callback){
+        Done<Long> cb=once(callback,0L);
+        if(stage!=Stage.READY||accountId==0){cb.done(0L,T.t("Conecta TirsoDrive para usar las copias de partidas en Telegram."));return;}
+        TdApi.Chat found=findBackupChat();
+        if(found!=null){prefs.edit().putLong("backupChat_"+accountId,found.id).apply();cb.done(found.id,null);return;}
+        int token=generation;
+        loadList(new TdApi.ChatListMain(),0,token,()->loadList(new TdApi.ChatListArchive(),0,token,()->{
+            TdApi.Chat again=findBackupChat();
+            if(again!=null){prefs.edit().putLong("backupChat_"+accountId,again.id).apply();cb.done(again.id,null);return;}
+            send(new TdApi.CreateNewSupergroupChat(BACKUP_TITLE,false,true,"RetroStream · copias automáticas de partidas guardadas",null,0,false),r->{
+                if(r instanceof TdApi.Chat){TdApi.Chat chat=(TdApi.Chat)r;chats.put(chat.id,chat);prefs.edit().putLong("backupChat_"+accountId,chat.id).apply();cb.done(chat.id,null);}
+                else cb.done(0L,errorText(r));
+            });
+        }));
+    }
+    void uploadBackup(long chat,File zip,String caption,Done<Long> callback){
+        Done<Long> cb=once(callback,0L);
+        TdApi.InputMessageDocument content=new TdApi.InputMessageDocument(
+            new TdApi.InputDocument(new TdApi.InputFileLocal(zip.getAbsolutePath()),null,true),new TdApi.FormattedText(caption,new TdApi.TextEntity[0]));
+        send(new TdApi.SendMessage(chat,null,null,null,null,content),r->{
+            if(r instanceof TdApi.Message)pendingUploads.put(((TdApi.Message)r).id,cb);else cb.done(0L,errorText(r));
+        });
+    }
+    private Backup parseBackup(TdApi.Message m){
+        if(!(m.content instanceof TdApi.MessageDocument))return null;
+        TdApi.MessageDocument d=(TdApi.MessageDocument)m.content;
+        if(d.caption==null||d.document==null||d.document.document==null||!d.caption.text.startsWith("#RSSAVE"))return null;
+        Backup b=new Backup();
+        for(String line:d.caption.text.split("\n")){
+            int i=line.indexOf(':');if(i<0)continue;String k=line.substring(0,i),v=line.substring(i+1).trim();
+            if(k.equals("sha"))b.sha=v;else if(k.equals("title"))b.title=v;else if(k.equals("console"))b.console=v;
+        }
+        if(b.sha.isEmpty()||b.title.isEmpty())return null;
+        b.messageId=m.id;b.date=m.date;b.fileName=d.document.fileName;b.fileId=d.document.document.id;
+        b.size=Math.max(d.document.document.size,d.document.document.expectedSize);return b;
+    }
+    /** Every backup in the channel, newest first. */
+    void listBackups(long chat,Done<List<Backup>> callback){
+        Done<List<Backup>> cb=once(callback,null);
+        pageBackups(chat,0,new ArrayList<>(),new HashSet<>(),cb);
+    }
+    private void pageBackups(long chat,long cursor,List<Backup> out,Set<Long> seen,Done<List<Backup>> cb){
+        send(new TdApi.GetChatHistory(chat,cursor,0,100,false),r->{
+            if(!(r instanceof TdApi.Messages)){cb.done(null,errorText(r));return;}
+            TdApi.Messages page=(TdApi.Messages)r;int added=0;long oldest=cursor;
+            for(TdApi.Message m:page.messages){oldest=m.id;if(!seen.add(m.id))continue;added++;Backup b=parseBackup(m);if(b!=null)out.add(b);}
+            if(page.messages.length==0||added==0||oldest==cursor||seen.size()>20000){out.sort((a,b)->Integer.compare(b.date,a.date));cb.done(out,null);}
+            else pageBackups(chat,oldest,out,seen,cb);
+        });
+    }
+    void downloadBackup(Backup b,Done<File> callback){
+        Done<File> cb=once(callback,null);
+        send(new TdApi.DownloadFile(b.fileId,32,0,0,true),r->{
+            if(r instanceof TdApi.File&&((TdApi.File)r).local.isDownloadingCompleted)cb.done(new File(((TdApi.File)r).local.path),null);
+            else cb.done(null,errorText(r));
+        });
+    }
+    void releaseBackup(Backup b){checked(new TdApi.DeleteFile(b.fileId));}
+    /** Keeps the newest [KEEP_BACKUPS] backups per game; older ones are removed from the channel. */
+    void pruneBackups(long chat,List<Backup> all){
+        Map<String,List<Long>> byGame=new HashMap<>();
+        for(Backup b:all){List<Long> l=byGame.get(b.sha);if(l==null){l=new ArrayList<>();byGame.put(b.sha,l);}l.add(b.messageId);}
+        List<Long> old=new ArrayList<>();
+        for(Backup b:all){List<Long> l=byGame.get(b.sha);}
+        Map<String,Integer> rank=new HashMap<>();
+        for(Backup b:all){int n=rank.containsKey(b.sha)?rank.get(b.sha):0;rank.put(b.sha,n+1);if(n>=KEEP_BACKUPS)old.add(b.messageId);}
+        if(old.isEmpty())return;long[] ids=new long[old.size()];for(int i=0;i<ids.length;i++)ids[i]=old.get(i);
+        checked(new TdApi.DeleteMessages(chat,ids,true));
+    }
+    boolean ready(){return stage==Stage.READY&&accountId!=0;}
 }

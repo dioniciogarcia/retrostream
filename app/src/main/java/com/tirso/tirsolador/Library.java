@@ -28,6 +28,10 @@ public final class Library {
                 }
             }
             games.addAll(parse(catalog));
+            if (!demo) {
+                for (int i = 0; i < games.size(); i++) games.set(i, GameMeta.apply(context, games.get(i)));
+                java.util.Collections.sort(games, (a, b) -> a.title.compareToIgnoreCase(b.title));
+            }
         } catch (Exception e) { games.clear(); }
     }
     static byte[] readLimited(InputStream in, int max) throws java.io.IOException {

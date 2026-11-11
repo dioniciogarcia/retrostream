@@ -121,12 +121,7 @@ class GameActivity : AppCompatActivity() {
         toast(if (micOn) "Microphone on" else "Microphone off")
     }
 
-    private val exportSaves = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        uri?.let { exportTo(it) }
-    }
-    private val importSaves = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { importFrom(it) }
-    }
+    private var romSha = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -180,8 +175,10 @@ class GameActivity : AppCompatActivity() {
         if (prepared.length() < 1 || prepared.length() > ArchiveContent.LIMIT) throw java.io.IOException("Invalid game size")
         val digest = GameStorage.hash(prepared)
         gameId = digest.take(16)
+        romSha = digest
         val system = File(filesDir, "bios").apply { mkdirs() }
         saves = SaveManager(File(filesDir, "saves/${Presets.key(console)}/$digest"), system)
+        SaveBackups.writeMeta(saves.root, gameTitle, console)
         if (console == Console.MAME) {
             // MAME looks for its BIOS / parent zips next to the game.
             system.listFiles { f -> f.name.endsWith(".zip") }?.forEach { f ->
@@ -730,8 +727,8 @@ class GameActivity : AppCompatActivity() {
         } else entries += "Show touch controls" to { padsWanted = true; padsLocked = false; updatePadsVisibility(); closeMenu() }
         if (isDolphin) entries += "Graphics: ${PICTURE_FIXES.getOrElse(pictureFix) { PICTURE_FIXES[0] }.name}" to { choosePictureFix() }
         else entries += "Screen filter: ${SCREEN_FILTERS.firstOrNull { it.first == screenFilter }?.second ?: "Original"}" to { chooseScreenFilter() }
-        entries += "Back up saves" to { menuOpen = false; resumeEmulation(); exportSaves.launch(backupName()) }
-        entries += "Restore saves" to { menuOpen = false; resumeEmulation(); importSaves.launch(arrayOf("application/zip", "application/octet-stream")) }
+        entries += "Back up saves" to { backUpToTelegram() }
+        entries += "Restore saves" to { restoreFromTelegram() }
         entries += "Restart game" to {
             confirm("Restart the game?", "Progress since your last in-game save will be lost.") {
                 saves.deleteAutoState()
@@ -753,11 +750,19 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun showGameInfo() {
-        val info = org.json.JSONObject().put("title", gameTitle).put("console", console.name.lowercase())
-            .put("description", intent.getStringExtra("description") ?: "")
-        val box = intent.getStringExtra("cover")?.let { Artwork.cacheFile(this, console, it) }
-            ?.takeIf { it.isFile }?.let { android.graphics.BitmapFactory.decodeFile(it.path) }
-        GameInfo.show(this, info, box) { closeMenu() }
+        val stored = intent.getStringExtra("meta")
+        val info = runCatching { org.json.JSONObject(stored ?: "{}") }.getOrDefault(org.json.JSONObject())
+        if (!info.has("title")) info.put("title", gameTitle)
+        if (!info.has("console")) info.put("console", console.name.lowercase())
+        if (info.optString("description").isBlank()) info.put("description", intent.getStringExtra("description") ?: "")
+        val game = Game(intent.getStringExtra("gameid") ?: gameTitle, gameTitle, console, "", intent.getStringExtra("cover") ?: gameTitle, 0, 0, 0, 0, intent.getStringExtra("filename") ?: "", 0)
+        Thread {
+            val art = Artwork(applicationContext)
+            val box = runCatching { art.cachedCover(game)?.let { android.graphics.BitmapFactory.decodeFile(it.path) } }.getOrNull()
+            val shots = listOfNotNull(runCatching { art.snapshot(game, "Named_Snaps") }.getOrNull(), runCatching { art.snapshot(game, "Named_Titles") }.getOrNull())
+            art.close()
+            runOnUiThread { if (!isFinishing) GameInfo.show(this, info, box, shots) { closeMenu() } else closeMenu() }
+        }.start()
     }
 
     private fun closeMenu() {
@@ -1089,66 +1094,51 @@ class GameActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
-        handleRestoreIntent(intent)
     }
 
-    /** Name of the automatic backup in Downloads/Tirso Saves (one file per game, replaced each time). */
-    private fun backupName() = "${safeName()}${if (config.consoleName.isNotBlank()) " (${config.consoleName})" else ""} - saves.zip"
+    private fun entry() = SaveBackups.Entry(saves.root, romSha, gameTitle, console)
 
-    private fun backupMeta() = mapOf("package" to packageName, "title" to config.title, "console" to config.consoleName)
-
-    /**
-     * Copies the saves to Downloads/Tirso Saves/<Game> (<Console>) - saves.zip whenever they changed, so they
-     * survive uninstalling and TirsoDrive (or you) can pick them up. The "where you left off" state is left
-     * out to keep the file small; in-game saves, memory cards and manual save states are included.
-     */
+    /** Sends the saves to the Telegram backup channel on its own when they changed (when TirsoDrive is connected). */
     private fun autoBackup() {
-        if (android.os.Build.VERSION.SDK_INT < 29) return
-        val changed = runCatching { saves.lastChange() }.getOrDefault(0L)
-        if (changed == 0L || changed <= prefs.getLong("auto_backup_at_$gameId", 0L)) return
-        val app = applicationContext
-        val name = backupName()
-        val meta = backupMeta()
-        Thread {
-            runCatching {
-                val resolver = app.contentResolver
-                val coll = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
-                var uri = prefs.getString("auto_backup_uri_$gameId", null)?.let { Uri.parse(it) }
-                val out = uri?.let { runCatching { resolver.openOutputStream(it, "wt") }.getOrNull() }
-                    ?: run {
-                        val values = android.content.ContentValues().apply {
-                            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
-                            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/zip")
-                            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/Tirso Saves")
-                        }
-                        uri = resolver.insert(coll, values)
-                        uri?.let { resolver.openOutputStream(it, "wt") }
-                    }
-                out?.use { saves.exportZip(it, meta, withAutoState = false) } ?: error("no output")
-                prefs.edit().putLong("auto_backup_at_$gameId", changed).putString("auto_backup_uri_$gameId", uri.toString()).apply()
-            }.onFailure { Log.w("Tirso", "Automatic save backup failed", it) }
-        }.start()
+        if (romSha.isEmpty()) return
+        val drive = TirsoDrive.get(this)
+        if (!drive.ready() || !SaveBackups.changed(this, entry())) return
+        SaveBackups.upload(this, drive, entry(), true) { ok, _ -> if (!ok) Log.w("Tirso", "Automatic save backup failed") }
     }
 
-    /**
-     * Restores a backup another app (TirsoDrive) hands over:
-     * Intent("com.tirso.action.RESTORE_SAVES") with the zip as data and read permission granted.
-     */
-    private fun handleRestoreIntent(intent: android.content.Intent?) {
-        if (intent?.action != RESTORE_ACTION) return
-        val uri = intent.data ?: return
-        intent.action = null
-        val forPackage = runCatching { contentResolver.openInputStream(uri)?.use { saves.backupPackage(it) } }.getOrNull().orEmpty()
-        val other = forPackage.isNotBlank() && forPackage != packageName
-        pauseEmulation(); menuOpen = true
-        AlertDialog.Builder(this)
-            .setTitle(tr("Restore saves?"))
-            .setMessage((if (other) "This backup was made for another game ($forPackage). " else "") +
-                "Your current saves for ${config.title} will be replaced, and the game will close so you can reopen it.")
-            .setPositiveButton(tr("Restore")) { _, _ -> importFrom(uri) }
-            .setNegativeButton(tr("Cancel")) { _, _ -> closeMenu() }
-            .setOnCancelListener { closeMenu() }
-            .show()
+    private fun backUpToTelegram() {
+        val drive = TirsoDrive.get(this)
+        if (!drive.ready()) { toast("Connect TirsoDrive on the home screen to back up to Telegram"); closeMenu(); return }
+        runCatching { persist() }
+        closeMenu()
+        toast("Backing up to Telegram…")
+        SaveBackups.upload(this, drive, entry(), true) { _, msg -> toast(msg) }
+    }
+
+    private fun restoreFromTelegram() {
+        val drive = TirsoDrive.get(this)
+        if (!drive.ready()) { toast("Connect TirsoDrive on the home screen to restore from Telegram"); closeMenu(); return }
+        toast("Looking in Telegram…")
+        SaveBackups.fetch(drive, romSha) { list, err ->
+            if (list == null) { toast(err ?: "Couldn't read the backup channel"); closeMenu(); return@fetch }
+            if (list.isEmpty()) { toast("No backup of this game in Telegram yet"); closeMenu(); return@fetch }
+            val labels = list.mapIndexed { i, b -> (if (i == 0) tr("Latest") + " · " else "") + SaveBackups.describe(this, b) }.toTypedArray()
+            AlertDialog.Builder(this)
+                .setTitle(tr("Restore saves from Telegram"))
+                .setItems(labels) { _, which ->
+                    val b = list[which]
+                    confirm("Restore this backup?", "Your current saves for $gameTitle will be replaced, and the game will close so you can reopen it.") {
+                        toast("Restoring…")
+                        SaveBackups.restore(this, drive, b) { ok, msg ->
+                            toast(msg)
+                            if (ok) { retroView = null; finish() } else closeMenu()
+                        }
+                    }
+                }
+                .setNegativeButton(tr("Cancel")) { _, _ -> closeMenu() }
+                .setOnCancelListener { closeMenu() }
+                .show()
+        }
     }
 
     /** Called while the emulator is paused: native calls run on this thread. */
@@ -1164,20 +1154,6 @@ class GameActivity : AppCompatActivity() {
         }
         runCatching { saves.writeSram(view.serializeSRAM(useEmulationThread = false)) }
         if (config.autoResume) runCatching { saves.writeAutoState(view.serializeState(useEmulationThread = false)) }
-    }
-
-    private fun exportTo(uri: Uri) {
-        val ok = runCatching { contentResolver.openOutputStream(uri)?.use { saves.exportZip(it, backupMeta()) } }.isSuccess
-        toast(if (ok) "Saves backed up" else "Backup failed")
-    }
-
-    private fun importFrom(uri: Uri) {
-        val ok = runCatching { contentResolver.openInputStream(uri)?.use { saves.importZip(it) } ?: false }.getOrDefault(false)
-        if (ok) {
-            Toast.makeText(this, tr("Saves restored. Reopen the game to use them."), Toast.LENGTH_LONG).show()
-            retroView = null
-            finish()
-        } else toast("That file isn't a save backup for this game")
     }
 
     // ------------------------------------------------------------------ helpers

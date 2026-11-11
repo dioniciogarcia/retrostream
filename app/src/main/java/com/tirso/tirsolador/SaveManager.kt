@@ -17,7 +17,7 @@ import java.util.zip.ZipOutputStream
  *   states/slotN.state  manual save states 1-3
  * The game file itself lives elsewhere and is never mixed with saves.
  */
-class SaveManager(root: File, val systemDir: File) {
+class SaveManager(val root: File, val systemDir: File) {
     val savesDir = File(root, "saves").apply { mkdirs() }
     private val statesDir = File(root, "states").apply { mkdirs() }
     init {

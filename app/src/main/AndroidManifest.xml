@@ -8,7 +8,7 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
-    <application android:label="RetroStream" android:theme="@style/AppTheme"
+    <application android:label="RetroStream" android:appCategory="game" android:theme="@style/AppTheme"
         android:icon="@drawable/app_icon" android:banner="@drawable/tv_banner"
         android:allowBackup="false" android:extractNativeLibs="true" android:supportsRtl="true" android:usesCleartextTraffic="false">
         <activity android:name=".GameActivity" android:exported="false" android:screenOrientation="sensorLandscape" android:theme="@style/Theme.RetroStreamGame"

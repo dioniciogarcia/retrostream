@@ -48,7 +48,7 @@ object GameInfo {
     )
     private val MONTHS = arrayOf("", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
-    fun show(activity: Activity, info: JSONObject, boxArt: Bitmap?, onClose: () -> Unit) {
+    fun show(activity: Activity, info: JSONObject, boxArt: Bitmap?, shots: List<Bitmap>, onClose: () -> Unit) {
         val dp = { v: Float -> TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, activity.resources.displayMetrics).toInt() }
         val landscape = activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
@@ -130,7 +130,6 @@ object GameInfo {
             if (description.isNotBlank()) BODY else MUTED).apply { setLineSpacing(0f, 1.25f) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(14f) })
 
-        val shots = emptyList<Bitmap>()
         if (shots.isNotEmpty()) {
             body.addView(text(tr("SCREENSHOTS"), 11f, MUTED, bold = true).apply { letterSpacing = 0.08f },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16f) })
