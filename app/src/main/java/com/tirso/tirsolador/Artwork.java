@@ -114,32 +114,58 @@ final class Artwork {
     private void download(Game game, ImageView view, String tag, int maxDim, String... kinds) {
         try {
             if (!tag.equals(view.getTag())) return;
-            byte[] bytes = null;
-            search:
-            for (String kind : kinds) {
-                if (skipKind(game, kind)) continue;
-                for (String name : GameMeta.coverNames(appContext, game)) {
-                    String url = urlFor(game.console, name, kind);
-                    String hash = hashOf(url);
-                    File file = new File(directory, hash + ".png"), miss = new File(directory, hash + ".miss");
-                    if (file.isFile()) { try (InputStream in = new java.io.FileInputStream(file)) { bytes = Library.readLimited(in, 4_000_000); } break search; }
-                    if (miss.exists()) continue;
-                    HttpURLConnection connection = null;
-                    try {
-                        connection = (HttpURLConnection) new java.net.URL(url).openConnection();
-                        connection.setConnectTimeout(6000); connection.setReadTimeout(6000);
-                        connection.setInstanceFollowRedirects(false);
-                        int code = connection.getResponseCode();
-                        if (code == 404) { miss.createNewFile(); continue; }
-                        if (code != 200) return;
-                        try (InputStream in = connection.getInputStream()) { bytes = Library.readLimited(in, 4_000_000); }
-                    } finally { if (connection != null) connection.disconnect(); }
-                    try (FileOutputStream out = new FileOutputStream(file)) { out.write(bytes); }
-                    break search;
-                }
-            }
+            byte[] bytes = fetch(game, kinds);
             if (bytes != null) show(tag, view, bytes, maxDim);
         } catch (Exception ignored) { /* Placeholder remains usable offline. */ }
+    }
+    /** First picture libretro has for the game among the kinds (saved on the device); null when there is none. */
+    private byte[] fetch(Game game, String... kinds) throws Exception {
+        for (String kind : kinds) {
+            if (skipKind(game, kind)) continue;
+            for (String name : GameMeta.coverNames(appContext, game)) {
+                String url = urlFor(game.console, name, kind);
+                String hash = hashOf(url);
+                File file = new File(directory, hash + ".png"), miss = new File(directory, hash + ".miss");
+                if (file.isFile()) { try (InputStream in = new java.io.FileInputStream(file)) { return Library.readLimited(in, 4_000_000); } }
+                if (miss.exists()) continue;
+                HttpURLConnection connection = null; byte[] bytes;
+                try {
+                    connection = (HttpURLConnection) new java.net.URL(url).openConnection();
+                    connection.setConnectTimeout(6000); connection.setReadTimeout(6000);
+                    connection.setInstanceFollowRedirects(false);
+                    int code = connection.getResponseCode();
+                    if (code == 404) { miss.createNewFile(); continue; }
+                    if (code != 200) return null;
+                    try (InputStream in = connection.getInputStream()) { bytes = Library.readLimited(in, 4_000_000); }
+                } finally { if (connection != null) connection.disconnect(); }
+                try (FileOutputStream out = new FileOutputStream(file)) { out.write(bytes); }
+                return bytes;
+            }
+        }
+        return null;
+    }
+    interface Progress { void update(int done, int total, int found); }
+    /** Downloads the logo (or title screen / box cover when there is no logo) and the box cover of every game, saving them on the device. */
+    void prefetch(java.util.List<Game> games, java.util.concurrent.atomic.AtomicBoolean cancel, Progress progress, Runnable finished) {
+        new Thread(() -> {
+            ExecutorService workers = Executors.newFixedThreadPool(6);
+            java.util.concurrent.atomic.AtomicInteger done = new java.util.concurrent.atomic.AtomicInteger(), found = new java.util.concurrent.atomic.AtomicInteger();
+            final int total = games.size();
+            for (Game game : games) workers.execute(() -> {
+                if (!cancel.get()) {
+                    try {
+                        byte[] tile = fetch(game, "Named_Logos", "Named_Titles", "Named_Boxarts");
+                        byte[] box = fetch(game, "Named_Boxarts");
+                        if (tile != null || box != null) found.incrementAndGet();
+                    } catch (Exception ignored) { }
+                }
+                int d = done.incrementAndGet();
+                if (d % 5 == 0 || d == total) ui.post(() -> progress.update(d, total, found.get()));
+            });
+            workers.shutdown();
+            try { workers.awaitTermination(6, java.util.concurrent.TimeUnit.HOURS); } catch (InterruptedException ignored) { }
+            ui.post(finished);
+        }, "art-prefetch").start();
     }
     private void show(String tag, ImageView view, byte[] bytes, int maxDim) {
         BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inJustDecodeBounds = true;

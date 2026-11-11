@@ -47,6 +47,10 @@ final class IconView extends View {
             case "sort":
                 canvas.drawLine(4,5,17,5,paint);canvas.drawLine(4,11,13,11,paint);canvas.drawLine(4,17,9,17,paint);
                 canvas.drawLine(19,10,19,21,paint);p.moveTo(16,18);p.lineTo(19,21);p.lineTo(22,18);canvas.drawPath(p,paint);break;
+            case "history":
+                canvas.drawArc(new RectF(3,3,21,21), 120, 300, false, paint);
+                p.moveTo(3,4); p.lineTo(4.5f,9); p.lineTo(9,7); canvas.drawPath(p,paint);
+                canvas.drawLine(12,7.5f,12,12,paint); canvas.drawLine(12,12,15.5f,14,paint); break;
             case "next":
                 p.moveTo(9,5);p.lineTo(16,12);p.lineTo(9,19);canvas.drawPath(p,paint);break;
             default:

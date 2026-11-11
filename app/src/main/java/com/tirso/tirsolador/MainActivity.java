@@ -126,7 +126,7 @@ public class MainActivity extends Activity {
         switch (th) {
             case "gba":
                 if (dark) { background = 0xFF14142A; surface = 0xFF222240; text = 0xFFF1EFE9; muted = 0xFFA6A6C0; accent = 0xFF9D7BFF; ink = 0xFFF1EFE9; }
-                else { background = 0xFFF1EFE9; surface = Color.WHITE; text = ink; muted = 0xFF5A5A70; accent = 0xFF7A4DFF; ink = ink; }
+                else { ink = 0xFF1B1745; background = 0xFFF1EFE9; surface = Color.WHITE; text = ink; muted = 0xFF5A5A70; accent = 0xFF7A4DFF; }
                 strokeColor = ink; break;
             case "tiles":
                 if (dark) { background = 0xFF1C2447; surface = 0xFF2A3560; text = Color.WHITE; muted = 0xFFC8D1F5; accent = Color.WHITE; tilesRing = Color.WHITE; strokeColor = 0x33FFFFFF; }
@@ -134,7 +134,7 @@ public class MainActivity extends Activity {
                 ink = text; break;
             case "console":
                 if (dark) { background = 0xFF16161D; surface = 0xFF24242E; text = 0xFFF4F1EC; muted = 0xFFA0A0B0; accent = 0xFFFF5A4D; ink = 0xFFF4F1EC; }
-                else { background = 0xFFF4F1EC; surface = Color.WHITE; text = ink; muted = 0xFF6B6B7A; accent = 0xFFE5382B; ink = ink; }
+                else { ink = 0xFF16161D; background = 0xFFF4F1EC; surface = Color.WHITE; text = ink; muted = 0xFF6B6B7A; accent = 0xFFE5382B; }
                 strokeColor = ink; break;
             default:
                 if (dark) { background = 0xFF07101F; surface = ov(0x12FFFFFF); text = 0xFFF4F7FC; muted = 0xFF8FA3BF; accent = 0xFF2DE2C8; strokeColor = ov(0x1FFFFFFF); }
@@ -257,6 +257,7 @@ public class MainActivity extends Activity {
                 if (page.equals("library")) { h.addView(icon("sort", T.t("Ordenar juegos: ") + (library.descending() ? "Z a A" : "A a Z"), "sort", this::sortGames)); h.addView(icon("refresh", T.t("Refrescar catálogo"), "refresh", this::refreshCatalog)); }
                 h.addView(icon("search", T.t("Buscar juegos"), "search", this::search));
                 h.addView(icon("star", T.t("Favoritos"), "nav_favorites", this::openFavorites));
+                h.addView(icon("history", T.t("Historial de juego"), "nav_history", () -> route("history")));
                 h.addView(icon("settings", T.t("Ajustes"), "nav_settings", () -> route("settings")));
             }
             clock.setPadding(px(22), 0, 0, 0); h.addView(clock);
@@ -269,6 +270,7 @@ public class MainActivity extends Activity {
             if (!welcome) {
                 right.addView(icon("search", T.t("Buscar juegos"), "search", this::search));
                 right.addView(icon("star", T.t("Favoritos"), "nav_favorites", this::openFavorites));
+                right.addView(icon("history", T.t("Historial de juego"), "nav_history", () -> route("history")));
                 right.addView(icon("settings", T.t("Ajustes"), "nav_settings", () -> route("settings")));
             }
             h.addView(right, new LinearLayout.LayoutParams(0, -2, 1));
@@ -310,6 +312,8 @@ public class MainActivity extends Activity {
                 monoRight = library.filtered(console, favorites || mode == 1, query).size() + T.t(" JUEGOS"); break;
             case "settings": monoTitle = T.t("AJUSTES"); monoRight = ""; break;
             case "backups": monoTitle = T.t("COPIAS"); monoRight = ""; break;
+            case "history": monoTitle = T.t("HISTORIAL"); monoRight = ""; break;
+            case "artwork": monoTitle = T.t("IMÁGENES"); monoRight = ""; break;
             case "welcome": monoTitle = "TIRSODRIVE"; monoRight = ""; break;
             case "loading": monoTitle = T.t("CARGANDO"); monoRight = ""; break;
             default:
@@ -321,12 +325,13 @@ public class MainActivity extends Activity {
         if (page.equals("welcome")) welcome();
         else if (page.equals("settings")) settings();
         else if (page.equals("backups")) backupsScreen();
+        else if (page.equals("history")) historyScreen();
+        else if (page.equals("artwork")) artworkScreen();
         else if (page.equals("loading") && selected != null) loadingScreen();
         else if (page.equals("library")) libraryScreen();
         else home();
-        if (page.equals("home")) footer(new String[][]{{"A", T.t("Abrir")}, {"Y", T.t("Buscar")}, {"X", T.t("Favoritos")}, {"Menu", T.t("Ajustes")}}, T.t("Los juegos se descargan solo al jugar · ROM eliminada al salir"));
-        else if (page.equals("library")) footer(new String[][]{{"A", T.t("Jugar")}, {"B", T.t("Volver")}, {"Y", T.t("Buscar")}, {"X", T.t("Favorito")}}, T.t("Carátulas de libretro · guardadas en la TV"));
-        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
+        if (page.equals("library")) footer(new String[][]{{"A", T.t("Jugar")}, {"B", T.t("Volver")}, {"Y", T.t("Buscar")}, {"X", T.t("Favorito")}}, T.t("Carátulas de libretro · guardadas en la TV"));
+        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
         root.post(() -> {
             View target = lastFocus.isEmpty() ? null : root.findViewWithTag(lastFocus);
             if (target == null) target = firstContentFocusable(content == null ? body : content);
@@ -597,8 +602,11 @@ public class MainActivity extends Activity {
         else { TextView wm = tv(wordmark(current), 330, Color.WHITE, fWord); wm.setGravity(Gravity.CENTER); wm.setSingleLine(true); wm.setShadowLayer(px(2), 0, px(8), 0x33000000); hero.addView(wm, new LinearLayout.LayoutParams(-2, -2)); heroLogo = null; heroWord = wm; }
         TextView sub = tv(heroSubtitle(current), 46, brand(current), fMono); sub.setLetterSpacing(.06f); sub.setPadding(px(34), px(10), px(34), px(10)); sub.setBackgroundColor(Color.WHITE);
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-2, -2); sp.topMargin = px(10); hero.addView(sub, sp);
-        TextView info = tv(gameCount(library.count(current)) + " · " + (drive.sources.get(current) != null && drive.sources.get(current).chatId != 0 ? drive.sources.get(current).title : TelegramCatalog.expectedTitle(current)), 32, 0xE6FFFFFF, fBody);
-        info.setPadding(0, px(30), 0, 0); hero.addView(info);
+        LinearLayout info = horizontal(); info.setGravity(Gravity.CENTER_VERTICAL); info.setPadding(px(36), px(12), px(36), px(12));
+        GradientDrawable pill = round(0x47000000, 60); info.setBackground(pill);
+        TextView num = tv(String.valueOf(library.count(current)), 58, Color.WHITE, fHead); info.addView(num);
+        TextView unit = tv(T.t("JUEGOS"), 26, 0xCCFFFFFF, fMono); unit.setLetterSpacing(.18f); unit.setPadding(px(16), px(14), 0, 0); info.addView(unit);
+        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(-2, -2); infoLp.topMargin = px(34); hero.addView(info, infoLp);
         hero.setContentDescription(current.title + ", " + library.count(current) + T.t(" juegos. Abrir biblioteca"));
         focusableWith(hero, "hero_console", f -> heroBg(current, f), () -> openConsole(current));
         View.OnFocusChangeListener heroBase = hero.getOnFocusChangeListener();
@@ -900,10 +908,10 @@ public class MainActivity extends Activity {
         sCard(b, T.t("Archivos del sistema"), T.t("BIOS y archivos compartidos"), "SYS", 0xFF4DB36B, "system_files", this::importSystemFile);
         sSection(T.t("Juego")); LinearLayout c = sRow();
         String res = Presets.resolution(this);
-        sCard(c, T.t("Resolución"), T.t("high".equals(res) ? "Alta" : "low".equals(res) ? "Baja" : "Media") + " · N64", "RES", 0xFF2F6DF6, "resolution", () -> {
+        sCard(c, T.t("Resolución"), T.t("high".equals(res) ? "Alta" : "low".equals(res) ? "Baja" : "Media") + " · " + T.t("Todas las consolas"), "RES", 0xFF2F6DF6, "resolution", () -> {
             String cur = Presets.resolution(this); Presets.setResolution(this, "low".equals(cur) ? "medium" : "medium".equals(cur) ? "high" : "low"); lastFocus = "resolution"; render(); });
         sCard(c, T.t("Mandos"), T.t("Perfiles independientes"), "PAD", 0xFFFF4D73, "controllers", this::controllers);
-        sFiller(c, 1);
+        sCard(c, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "IMG", 0xFFFF9A2E, "artwork_dl", () -> route("artwork"));
         sSection(T.t("Consolas visibles"));
         LinearLayout row = null; int n = 0;
         for (Console cn : Console.values()) {
@@ -989,6 +997,108 @@ public class MainActivity extends Activity {
             if (olderCount > 1) row.addView(actionButton(T.t("Historial"), "bk_h_" + i, false, () -> showHistory(b)));
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(px(8), px(8), px(8), px(8)); content.addView(row, p);
         }
+    }
+
+    // ---------------------------------------------------------------- played history
+    private String dayLabel(long time) {
+        java.util.Calendar now = java.util.Calendar.getInstance(), then = java.util.Calendar.getInstance(); then.setTimeInMillis(time);
+        if (now.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR) && now.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR)) return T.t("Hoy");
+        now.add(java.util.Calendar.DAY_OF_YEAR, -1);
+        if (now.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR) && now.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR)) return T.t("Ayer");
+        return java.text.DateFormat.getDateInstance(java.text.DateFormat.LONG).format(new java.util.Date(time));
+    }
+    private void historyScreen() {
+        LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));
+        if (!mono) { TextView h = tv(T.t("Historial de juego"), 62, text, fHead); h.setPadding(px(10), px(10), 0, px(10)); col.addView(h); }
+        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
+        content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content); col.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        java.util.List<Object[]> plays = library.plays();
+        if (plays.isEmpty()) { content.addView(tv(T.t("Aún no has jugado a nada."), 32, muted, fBody)); return; }
+        TextView recentTitle = tv(T.t("Jugados recientemente"), 26, muted, fMono); recentTitle.setLetterSpacing(.14f); recentTitle.setPadding(px(6), px(6), 0, px(14)); content.addView(recentTitle);
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this); hs.setHorizontalScrollBarEnabled(false); hs.setClipChildren(false); hs.setClipToPadding(false);
+        LinearLayout strip = horizontal(); strip.setClipChildren(false); hs.addView(strip);
+        java.util.HashSet<String> seen = new java.util.HashSet<>(); int shown = 0;
+        for (Object[] play : plays) {
+            Game game = (Game) play[0]; if (!seen.add(game.id) || shown >= 8) continue;
+            LinearLayout cell = vertical(); cell.setPadding(px(7), px(7), px(7), px(7));
+            FrameLayout art = new FrameLayout(this); art.setBackground(round(Color.WHITE, 22));
+            TextView ph = tv(game.title, 26, 0xFF1A1A2E, fHead); ph.setGravity(Gravity.CENTER); ph.setPadding(px(16), px(12), px(16), px(12)); ph.setMaxLines(3); ph.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
+            ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER); image.setPadding(px(14), px(12), px(14), px(12));
+            art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(game, image, "Named_Logos", "Named_Titles", "Named_Boxarts");
+            cell.addView(art, new LinearLayout.LayoutParams(px(330), px(220)));
+            TextView when = tv(game.console.name() + " · " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(new java.util.Date((Long) play[1])), 22, muted, fMono); when.setPadding(px(6), px(10), 0, 0); cell.addView(when);
+            final int ringColor = focusRing(); final int idx = shown;
+            focusableWith(cell, "hist_recent_" + idx, f -> { GradientDrawable g = round(0, 28); if (f) g.setStroke(px(6), ringColor); return g; }, () -> startPlay(game));
+            strip.addView(cell, new LinearLayout.LayoutParams(-2, -2)); shown++;
+        }
+        content.addView(hs, new LinearLayout.LayoutParams(-1, -2));
+        String lastDay = "";
+        for (int i = 0; i < plays.size(); i++) {
+            Game game = (Game) plays.get(i)[0]; long time = (Long) plays.get(i)[1];
+            String day = dayLabel(time);
+            if (!day.equals(lastDay)) { lastDay = day; TextView d = tv(day.toUpperCase(java.util.Locale.ROOT), 26, muted, fMono); d.setLetterSpacing(.14f); d.setPadding(px(6), px(28), 0, px(12)); content.addView(d); }
+            LinearLayout row = horizontal(); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(px(22), px(14), px(26), px(14));
+            TextView badge = tv(game.console.name(), 22, Color.WHITE, fMono); badge.setPadding(px(14), px(6), px(14), px(6)); badge.setBackground(round(brand(game.console), 12)); row.addView(badge);
+            TextView name = tv(game.title, 30, text, fHead); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); name.setPadding(px(22), 0, px(12), 0); row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+            row.addView(tv(java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(new java.util.Date(time)), 26, muted, fMono));
+            final int ringColor = focusRing();
+            focusableWith(row, "hist_" + i, f -> { GradientDrawable g = round(th.equals("midnight") ? ov(0x14FFFFFF) : surface, 22); if (f) g.setStroke(px(5), ringColor); else if (!th.equals("midnight")) g.setStroke(px(2), strokeColor); return g; }, () -> startPlay(game));
+            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2); rp.setMargins(0, px(5), 0, px(5)); content.addView(row, rp);
+        }
+    }
+
+    // ---------------------------------------------------------------- download all artwork
+    private final java.util.Set<Console> artSel = new java.util.LinkedHashSet<>(); private boolean artInit, artRunning;
+    private java.util.concurrent.atomic.AtomicBoolean artCancel = new java.util.concurrent.atomic.AtomicBoolean();
+    private String artText = ""; private int artDone, artTotal; private TextView artStatusView; private android.widget.ProgressBar artBar;
+    private void artworkScreen() {
+        if (!artInit) { artInit = true; for (Console c : Console.values()) if (library.visible(c) && library.count(c) > 0) artSel.add(c); }
+        LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));
+        if (!mono) { TextView h = tv(T.t("Descargar imágenes"), 62, text, fHead); h.setPadding(px(10), px(10), 0, 0); col.addView(h); }
+        TextView sub = tv(T.t("Elige las consolas de las que descargar logos y carátulas. Se guardan en la TV."), 26, muted, fBody); sub.setPadding(px(10), px(8), 0, px(16)); col.addView(sub);
+        LinearLayout actions = horizontal(); actions.setPadding(px(2), 0, 0, px(8));
+        actions.addView(actionButton(T.t("Seleccionar todo"), "art_all", false, () -> { for (Console c : Console.values()) if (library.visible(c) && library.count(c) > 0) artSel.add(c); lastFocus = "art_all"; render(); }));
+        actions.addView(actionButton(T.t("Ninguna"), "art_none", false, () -> { artSel.clear(); lastFocus = "art_none"; render(); }));
+        col.addView(actions);
+        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
+        content = vertical(); content.setClipChildren(false); content.setPadding(0, px(6), 0, px(20)); scroll.addView(content); col.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        LinearLayout row = null; int n = 0, selectedGames = 0;
+        for (Console c : Console.values()) {
+            if (!library.visible(c)) continue;
+            boolean on = artSel.contains(c); int count = library.count(c); if (on) selectedGames += count;
+            if (n++ % 3 == 0) { row = horizontal(); content.addView(row, new LinearLayout.LayoutParams(-1, -2)); }
+            LinearLayout cell = horizontal(); cell.setGravity(Gravity.CENTER_VERTICAL); cell.setPadding(px(26), px(18), px(26), px(18));
+            TextView mark = tv(on ? "✓" : "", 34, Color.WHITE, fHead); mark.setGravity(Gravity.CENTER); mark.setBackground(round(on ? brand(c) : 0x33888888, 10)); cell.addView(mark, new LinearLayout.LayoutParams(px(50), px(50)));
+            TextView name = tv(c.name(), 32, text, fHead); name.setPadding(px(20), 0, 0, 0); cell.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+            cell.addView(tv(String.valueOf(count), 28, muted, fMono));
+            final int ringColor = focusRing();
+            focusableWith(cell, "art_" + c.name(), f -> { GradientDrawable g = round(th.equals("midnight") ? ov(0x14FFFFFF) : surface, 22); if (f) g.setStroke(px(5), ringColor); else g.setStroke(px(on ? 4 : 2), on ? brand(c) : strokeColor); return g; },
+                () -> { if (on) artSel.remove(c); else artSel.add(c); lastFocus = "art_" + c.name(); render(); });
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, -2, 1); cp.setMargins(px(8), px(8), px(8), px(8)); row.addView(cell, cp);
+        }
+        while (row != null && n++ % 3 != 0) row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        artStatusView = tv(artText, 26, accent, fBody); artStatusView.setPadding(px(10), px(22), 0, px(8)); content.addView(artStatusView);
+        artBar = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); artBar.setMax(Math.max(1, artTotal)); artBar.setProgress(artDone);
+        artBar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent)); artBar.setVisibility(artRunning ? View.VISIBLE : View.INVISIBLE);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, px(14)); bp.setMargins(px(10), 0, px(10), px(18)); content.addView(artBar, bp);
+        final int chosen = artSel.size();
+        TextView go = actionButton(artRunning ? T.t("Cancelar descarga") : T.t("Descargar imágenes de ") + chosen + T.t(" consolas"), "art_go", !artRunning, this::toggleArtworkDownload);
+        content.addView(go);
+    }
+    private void toggleArtworkDownload() {
+        if (artRunning) { artCancel.set(true); return; }
+        java.util.ArrayList<Game> list = new java.util.ArrayList<>();
+        for (Game g : library.games) if (artSel.contains(g.console) && library.visible(g.console)) list.add(g);
+        if (list.isEmpty()) { artText = T.t("Elige al menos una consola"); lastFocus = "art_go"; render(); return; }
+        artRunning = true; artCancel = new java.util.concurrent.atomic.AtomicBoolean(); artDone = 0; artTotal = list.size(); artText = T.t("Descargando…"); lastFocus = "art_go"; render();
+        artwork.prefetch(list, artCancel, (done, total, found) -> {
+            artDone = done; artTotal = total; artText = T.t("Descargando…") + " " + done + " / " + total + " · " + found + T.t(" con imagen");
+            if (page.equals("artwork") && artStatusView != null && artBar != null) { artStatusView.setText(artText); artBar.setMax(Math.max(1, total)); artBar.setProgress(done); }
+        }, () -> {
+            artRunning = false; artText = T.t("Descarga terminada") + " · " + artDone + " / " + artTotal;
+            if (!isFinishing() && !isDestroyed() && page.equals("artwork")) { lastFocus = "art_go"; render(); }
+        });
     }
     private void confirmRestore(TirsoDrive.Backup b) {
         new AlertDialog.Builder(this).setTitle(T.t("Restaurar partidas")).setMessage(b.title + "\n" + SaveBackups.describe(this, b) + "\n\n" + T.t("Se reemplazarán las partidas actuales de este juego en esta TV."))
@@ -1153,12 +1263,12 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if(page.equals("welcome")){drive.skip();route("home");return;}
         if (page.equals("loading")) backToLibrary();
-        else if (page.equals("backups")) route("settings");
+        else if (page.equals("backups") || page.equals("artwork")) route("settings");
         else if (!page.equals("home")) route("home");
         else new AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
                     .setPositiveButton(T.t("Salir"), (d,w) -> finish()).setNegativeButton(T.t("Cancelar"), null).show();
     }
-    @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artwork.close(); super.onDestroy(); }
+    @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artCancel.set(true); artwork.close(); super.onDestroy(); }
     @Override protected void onPause(){cancelPending();super.onPause();}
     @Override protected void onResume(){
         super.onResume();

@@ -48,9 +48,9 @@ object Presets {
     )
 
     // DeSmuME (32-bit TVs): the same layout and controls.
-    private val DESMUME = GameConfig.AltEngine("libdesmume_libretro_android.so", "DeSmuME", mapOf(
+    private fun desmume(high: Boolean) = GameConfig.AltEngine("libdesmume_libretro_android.so", "DeSmuME", mapOf(
         "desmume_cpu_mode" to "jit", "desmume_num_cores" to "2", "desmume_frameskip" to "0",
-        "desmume_internal_resolution" to "256x192", "desmume_screens_layout" to "hybrid/top",
+        "desmume_internal_resolution" to (if (high) "512x384" else "256x192"), "desmume_screens_layout" to "hybrid/top",
         "desmume_hybrid_layout_ratio" to "2:1", "desmume_hybrid_showboth_screens" to "enabled",
         "desmume_pointer_type" to "touch", "desmume_pointer_mouse" to "enabled",
         "desmume_pointer_device_r" to "emulated", "desmume_pointer_colour" to "white",
@@ -62,12 +62,15 @@ object Presets {
     )
 
     fun forConsole(context: Context, console: Console, title: String): GameConfig {
-        val base = GameConfig(title = title, core = "", pad = "snes", consoleName = console.title, shader = "sharp")
+        // 2D cores (GB, GBC, GBA, NES, SNES, Mega Drive) draw at a fixed size, so "resolution" there is how the picture
+        // is scaled up: low = plain, medium = crisp pixels (the old default), high = smooth upscale.
+        val flat = when (resolution(context)) { "low" -> "default"; "high" -> "smooth"; else -> "sharp" }
+        val base = GameConfig(title = title, core = "", pad = "snes", consoleName = console.title, shader = flat)
         return when (console) {
             Console.N64 -> base.copy(core = "libmupen64plus_next_gles3_libretro_android.so", pad = "n64", shader = "default",
                 variables = n64(resolution(context)), screenMode = "overlay", aspect = 4f / 3f)
             Console.NDS -> base.copy(core = "libmelondsds_libretro_android.so", pad = "nds", variables = NDS,
-                screenMode = "beside", aspect = 2f, altEngines = listOf(DESMUME))
+                screenMode = "beside", aspect = 2f, altEngines = listOf(desmume(resolution(context) == "high")))
             Console.GBA -> base.copy(core = "libmgba_libretro_android.so", pad = "gba", variables = MGBA, aspect = 3f / 2f)
             Console.GBC, Console.GB -> base.copy(core = "libmgba_libretro_android.so", pad = "gba", variables = MGBA, aspect = 10f / 9f)
             Console.SNES -> base.copy(core = "libsnes9x_libretro_android.so", pad = "snes", aspect = 4f / 3f)

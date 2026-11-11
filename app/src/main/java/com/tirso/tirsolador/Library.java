@@ -97,7 +97,21 @@ public final class Library {
     public void addRecent(Game g) {
         java.util.List<String> ids = recent(); ids.remove(g.id); ids.add(0, g.id);
         while (ids.size() > 30) ids.remove(ids.size() - 1);
-        prefs.edit().putString("recent", android.text.TextUtils.join("\n", ids)).apply();
+        // Every time a game is played: "<time>|<game id>" lines, newest first (kept for the played history).
+        String log = prefs.getString("plays", ""); java.util.List<String> lines = new ArrayList<>();
+        lines.add(System.currentTimeMillis() + "|" + g.id);
+        for (String l : log.split("\n")) if (!l.isEmpty() && lines.size() < 300) lines.add(l);
+        prefs.edit().putString("recent", android.text.TextUtils.join("\n", ids)).putString("plays", android.text.TextUtils.join("\n", lines)).apply();
+    }
+    /** Played history, newest first: {game, time in ms}. Games no longer in the library are skipped. */
+    public java.util.List<Object[]> plays() {
+        java.util.List<Object[]> out = new ArrayList<>();
+        for (String l : prefs.getString("plays", "").split("\n")) {
+            int bar = l.indexOf('|'); if (bar < 0) continue;
+            try { long t = Long.parseLong(l.substring(0, bar)); String id = l.substring(bar + 1);
+                for (Game g : games) if (g.id.equals(id)) { out.add(new Object[]{g, t}); break; } } catch (NumberFormatException ignored) { }
+        }
+        return out;
     }
     public int count(Console c) { int n = 0; for (Game g : games) if (g.console == c) n++; return n; }
     public void replaceTelegram(java.util.List<Game> incoming) throws JSONException {
