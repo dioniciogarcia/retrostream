@@ -158,6 +158,10 @@ open class GameActivity : AppCompatActivity() {
                 return@launch
             }
             askForMicrophoneOnce()
+            if (console == Console.PS2 && Bios.ps2(this@GameActivity) == null) {
+                fatal(tr("PS2 games need your own PS2 BIOS. Add it in RetroStream: Settings > BIOS files."))
+                return@launch
+            }
             startGame(rom.absolutePath)
         }
     }
@@ -193,7 +197,21 @@ open class GameActivity : AppCompatActivity() {
         return prepared
     }
 
-    /** Engine system files (PSP fonts, Dolphin data) packed in the phone app, unpacked once per app version. */
+    /** PS2 keeps its memory cards under its system folder, so each game gets its own (inside its saves, backed up
+     *  with them); the BIOS and the shared resources are linked in. Other consoles share one system folder. */
+    private fun systemDirFor(): File {
+        if (console != Console.PS2) return saves.systemDir
+        val shared = File(saves.systemDir, "pcsx2").apply { mkdirs() }
+        File(shared, "bios").mkdirs()
+        val own = File(saves.savesDir, "ps2/pcsx2").apply { mkdirs() }
+        for (name in listOf("resources", "bios")) {
+            val link = File(own, name)
+            if (!link.exists()) runCatching { android.system.Os.symlink(File(shared, name).absolutePath, link.absolutePath) }
+        }
+        return File(saves.savesDir, "ps2")
+    }
+
+    /** Engine system files (PSP fonts, Dolphin data, PS2 resources) packed in the phone app, unpacked once per app version. */
     private fun installSystemFiles(systemDir: File) {
         val zipName = config.systemZip ?: return
         val marker = "$zipName:${BuildConfig.VERSION_CODE}"
@@ -254,7 +272,7 @@ open class GameActivity : AppCompatActivity() {
         val data = GLRetroViewData(this).apply {
             coreFilePath = java.io.File(libDir, core).absolutePath
             gameFilePath = romPath
-            systemDirectory = saves.systemDir.absolutePath
+            systemDirectory = systemDirFor().absolutePath
             savesDirectory = saves.savesDir.absolutePath
             variables = vars.map { Variable(it.key, it.value) }.toTypedArray()
             saveRAMState = saves.readSram()
@@ -264,7 +282,12 @@ open class GameActivity : AppCompatActivity() {
             preferLowLatencyAudio = true
         }
 
-        if (config.preserveGl) runCatching { android.system.Os.setenv("LIBRETRODROID_PRESERVE_GL", "1", true) }
+        // One app plays many engines: settings left by the last game must not leak into this one.
+        runCatching { if (config.preserveGl) android.system.Os.setenv("LIBRETRODROID_PRESERVE_GL", "1", true) else android.system.Os.unsetenv("LIBRETRODROID_PRESERVE_GL") }
+        if (!isDolphin) runCatching {
+            android.system.Os.setenv("LIBRETRODROID_VULKAN", if (config.graphics == "vulkan" && console == Console.PS2) "1" else "0", true)
+            android.system.Os.unsetenv("TIRSO_GL_OFF")
+        }
         if (isDolphin) {
             if (prefs.getBoolean("fix_starting", false) && pictureFix != SAFE_PICTURE) {
                 // The last start with this graphics choice never got going: use the safe one so the game opens.

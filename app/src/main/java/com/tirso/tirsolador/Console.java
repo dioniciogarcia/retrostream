@@ -12,6 +12,7 @@ public enum Console {
     NDS("Nintendo DS", "Nintendo - Nintendo DS", "nds", 0xFFB34C65),
     // Phone app only (Tirso Compiler's phone engines).
     PSP("PSP", "Sony - PlayStation Portable", "psp", 0xFF4A4F5C),
+    PS2("PlayStation 2", "Sony - PlayStation 2", "ps2", 0xFF1F3E8A),
     GC("GameCube", "Nintendo - GameCube", "gamecube", 0xFF5B3E9E),
     WII("Wii", "Nintendo - Wii", "wii", 0xFF2D8AB8);
 
@@ -21,7 +22,7 @@ public enum Console {
         this.title = title; this.thumbnailSystem = thumbnailSystem; this.logo = logo; this.color = color;
     }
     /** Consoles only the phone app can play. */
-    public boolean phoneOnly() { return this == PSP || this == GC || this == WII; }
+    public boolean phoneOnly() { return this == PSP || this == PS2 || this == GC || this == WII; }
     private static Console[] cached;
     /** The consoles this app plays (the TV app leaves out the phone-only ones). */
     public static Console[] all() {

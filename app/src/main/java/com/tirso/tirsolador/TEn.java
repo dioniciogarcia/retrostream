@@ -38,6 +38,17 @@ final class TEn {
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
+        m.put("Archivos BIOS", "BIOS files");
+        m.put("BIOS de PS2 lista", "PS2 BIOS ready");
+        m.put("Añade tu BIOS de PS2", "Add your PS2 BIOS");
+        m.put("BIOS de PS2: ", "PS2 BIOS: ");
+        m.put("no añadida", "not added");
+        m.put("Quitar la BIOS de PS2", "Remove the PS2 BIOS");
+        m.put("Otros archivos (Famicom Disk System, MAME)", "Other files (Famicom Disk System, MAME)");
+        m.put("No hay un selector de archivos en este teléfono.", "This phone has no file picker.");
+        m.put("BIOS de PS2 añadida", "PS2 BIOS added");
+        m.put("No se pudo leer el archivo.", "The file couldn't be read.");
+        m.put("Eso no parece una BIOS de PS2 (suelen pesar 4 MB).", "That doesn't look like a PS2 BIOS (they are usually 4 MB).");
         m.put("Telegram no reconoce ese número. Escríbelo con el código de país, por ejemplo +1 809 555 0123.", "Telegram doesn't recognize that number. Include the country code, for example +1 809 555 0123.");
         m.put("Telegram ha bloqueado ese número.", "Telegram has blocked that number.");
         m.put("Demasiados intentos con ese número. Espera unas horas o usa el código QR.", "Too many tries with that number. Wait a few hours or use the QR code.");

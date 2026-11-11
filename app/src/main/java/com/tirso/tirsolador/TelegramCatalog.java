@@ -18,6 +18,7 @@ final class TelegramCatalog {
             case N64:return "TD - ROMs - N64";
             case NDS:return "TD - ROMs - DS";
             case PSP:return "TD - ROMs - PSP";
+            case PS2:return "TD - ROMs - PS2";
             case GC:return "TD - ROMs - GameCube";
             case WII:return "TD - ROMs - Wii";
             default:return "";
@@ -35,6 +36,7 @@ final class TelegramCatalog {
             case "gba":case "gameboyadvance":return Console.GBA;case "n64":case "nintendo64":return Console.N64;
             case "ds":case "nds":case "nintendods":return Console.NDS;case "mame":case "arcade":return Console.MAME;
             case "psp":case "playstationportable":return BuildConfig.PHONE?Console.PSP:null;
+            case "ps2":case "playstation2":return BuildConfig.PHONE?Console.PS2:null;
             case "gc":case "gamecube":case "ngc":case "nintendogamecube":return BuildConfig.PHONE?Console.GC:null;
             case "wii":case "nintendowii":return BuildConfig.PHONE?Console.WII:null;
             default:return null;
@@ -56,6 +58,7 @@ final class TelegramCatalog {
             case N64:allowed="n64,v64,z64";break;
             case NDS:allowed="nds";break;
             case PSP:allowed="iso,cso,chd,pbp";break;
+            case PS2:allowed="iso,cso,chd,zso";break;
             case GC:allowed="iso,gcm,gcz,rvz,ciso";break;
             case WII:allowed="iso,gcz,rvz,wbfs,wia";break;
             default:allowed="";

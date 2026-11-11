@@ -8,7 +8,7 @@ import org.apache.commons.compress.archivers.sevenz.*;
 final class ArchiveContent {
     static final long LIMIT=512L*1024*1024;
     /** Disc consoles (phone app) have games of several GB. */
-    static boolean disc(Console c){return c==Console.PSP||c==Console.GC||c==Console.WII;}
+    static boolean disc(Console c){return c==Console.PSP||c==Console.PS2||c==Console.GC||c==Console.WII;}
     static long limit(Console c){return disc(c)?12L*1024*1024*1024:LIMIT;}
     static boolean rom(Console console,String name){String lower=name.toLowerCase(Locale.ROOT);return !lower.endsWith(".zip")&&!lower.endsWith(".7z")&&TelegramCatalog.supported(console,name);}
     static String base(String name)throws IOException{

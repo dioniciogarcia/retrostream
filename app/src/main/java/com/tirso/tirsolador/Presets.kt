@@ -111,6 +111,12 @@ object Presets {
             // Phone app: Tirso Compiler's PSP and GameCube/Wii settings, widescreen on.
             Console.PSP -> base.copy(core = "libppsspp_libretro_android.so", pad = "psp", shader = "default", aspect = 16f / 9f,
                 systemZip = "ppsspp_system.zip", variables = PSP + mapOf("ppsspp_internal_resolution" to (PSP_SIZE[res] ?: "960x544")))
+            // PS2: ARMSX2's libretro core, drawn with Vulkan. Your own BIOS goes in Settings > BIOS files.
+            Console.PS2 -> base.copy(core = "libarmsx2_libretro_android.so", pad = "ps2", shader = "default", aspect = 16f / 9f,
+                systemZip = "ps2_system.zip", graphics = "vulkan", variables = mapOf(
+                    "armsx2_renderer" to "Vulkan", "armsx2_upscale" to when (res) { "low" -> "1x"; "high" -> "3x"; else -> "2x" },
+                    "armsx2_aspect_ratio" to "16:9", "armsx2_widescreen_patches" to "enabled", "armsx2_no_interlacing_patches" to "enabled",
+                    "armsx2_fast_boot" to "enabled", "armsx2_mtvu" to "enabled", "armsx2_bios" to "auto", "armsx2_cheats" to "enabled"))
             Console.GC, Console.WII -> base.copy(core = "libdolphin_libretro_android.so", shader = "default", aspect = 16f / 9f,
                 pad = if (console == Console.WII) "wii_sideways" else "gc", systemZip = "dolphin_system.zip",
                 controllerType = 1, preserveGl = true, graphics = "vulkan", variables = dolphin(console == Console.WII, res))

@@ -106,6 +106,42 @@ object Pads {
     ))
     val PSP_RIGHT = rightFourButtons("○", "△", "□", "✕")
 
+    /** PS2 (DualShock 2): D-pad + left stick, ○ △ □ ✕ + right stick, L1 L2 R1 R2, Start, Select. */
+    val PS2_LEFT = RadialGamePadConfig(
+        sockets = 12,
+        primaryDial = PrimaryDialConfig.Cross(CrossConfig(GLRetroView.MOTION_SOURCE_DPAD)),
+        secondaryDials = listOf(
+            SecondaryDialConfig.SingleButton(2, 1f, 0f, ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_L1, label = "L1")),
+            SecondaryDialConfig.SingleButton(3, 1f, 0f, ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_L2, label = "L2")),
+            SecondaryDialConfig.SingleButton(4, 1f, 0f, ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_SELECT, label = "SELECT")),
+            SecondaryDialConfig.SingleButton(8, 1f, 0f, ButtonConfig(id = MENU_ID, label = "☰", contentDescription = "Menu")),
+            SecondaryDialConfig.Stick(9, 2, 2.2f, 0.1f, GLRetroView.MOTION_SOURCE_ANALOG_LEFT, contentDescription = "Left stick",
+                rotationProcessor = object : SecondaryDialConfig.RotationProcessor() {
+                    override fun getRotation(rotation: Float): Float = rotation - 10f
+                }),
+        )
+    )
+    val PS2_RIGHT = RadialGamePadConfig(
+        sockets = 12,
+        primaryDial = PrimaryDialConfig.PrimaryButtons(
+            listOf(
+                ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_A, label = "○"),
+                ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_X, label = "△"),
+                ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_Y, label = "□"),
+                ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_B, label = "✕"),
+            )
+        ),
+        secondaryDials = listOf(
+            SecondaryDialConfig.SingleButton(2, 1f, 0f, ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_R2, label = "R2")),
+            SecondaryDialConfig.SingleButton(3, 1f, 0f, ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_R1, label = "R1")),
+            SecondaryDialConfig.SingleButton(4, 1f, 0f, ButtonConfig(id = KeyEvent.KEYCODE_BUTTON_START, label = "START")),
+            SecondaryDialConfig.Stick(8, 2, 2.2f, 0.1f, GLRetroView.MOTION_SOURCE_ANALOG_RIGHT, contentDescription = "Right stick",
+                rotationProcessor = object : SecondaryDialConfig.RotationProcessor() {
+                    override fun getRotation(rotation: Float): Float = rotation + 10f
+                }),
+        )
+    )
+
     private val tiltLeft = object : SecondaryDialConfig.RotationProcessor() {
         override fun getRotation(rotation: Float): Float = rotation - 10f
     }
@@ -272,6 +308,7 @@ object Pads {
         "ps1" -> PS1_LEFT to PS1_RIGHT
         "nds" -> NDS_LEFT to NDS_RIGHT
         "psp" -> PSP_LEFT to PSP_RIGHT
+        "ps2" -> PS2_LEFT to PS2_RIGHT
         "gc" -> GC_LEFT to GC_RIGHT
         "gba" -> GBA_LEFT to GBA_RIGHT
         "snes" -> SNES_LEFT to SNES_RIGHT

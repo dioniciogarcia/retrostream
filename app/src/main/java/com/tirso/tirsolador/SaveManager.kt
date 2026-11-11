@@ -121,7 +121,9 @@ class SaveManager(val root: File, val systemDir: File) {
     }
 
     private companion object {
-        val SKIP_FOLDERS = setOf("Cache", "ShaderCache", "Logs", "Dump", "ScreenShots", "Load", "ResourcePacks")
+        val SKIP_FOLDERS = setOf("Cache", "ShaderCache", "Logs", "Dump", "ScreenShots", "Load", "ResourcePacks",
+            // PS2 (ARMSX2): only its memory cards are saves; the rest is shared files and caches.
+            "resources", "bios", "inis", "cache", "covers", "logs", "snaps", "textures", "videos", "gamesettings", "sstates", "patches", "cheats", "inputprofiles", "upscale")
     }
 
     private fun atomicWrite(target: File, data: ByteArray) {

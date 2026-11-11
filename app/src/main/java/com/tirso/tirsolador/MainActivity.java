@@ -199,14 +199,14 @@ public class MainActivity extends Activity {
         switch (c) {
             case N64: return "Mupen64Plus-Next"; case NDS: return "melonDS"; case GBA: case GB: case GBC: return "mGBA";
             case SNES: return "Snes9x"; case NES: return "FCEUmm"; case MD: return "Genesis Plus GX";
-            case PSP: return "PPSSPP"; case GC: case WII: return "Dolphin"; default: return "MAME 2003-Plus";
+            case PSP: return "PPSSPP"; case PS2: return "ARMSX2"; case GC: case WII: return "Dolphin"; default: return "MAME 2003-Plus";
         }
     }
     private String heroSubtitle(Console c) {
         switch (c) {
             case N64: return "NINTENDO 64"; case GBA: return "GAME BOY ADVANCE"; case GBC: return "GAME BOY COLOR"; case GB: return "GAME BOY";
             case NDS: return "NINTENDO DS"; case SNES: return "SUPER NINTENDO"; case NES: return "ENTERTAINMENT SYSTEM"; case MD: return "MEGA DRIVE";
-            case PSP: return "PLAYSTATION PORTABLE"; case GC: return "NINTENDO GAMECUBE"; case WII: return "NINTENDO WII";
+            case PSP: return "PLAYSTATION PORTABLE"; case PS2: return "PLAYSTATION 2"; case GC: return "NINTENDO GAMECUBE"; case WII: return "NINTENDO WII";
             default: return T.english() ? "ARCADE" : "ARCADE";
         }
     }
@@ -474,7 +474,7 @@ public class MainActivity extends Activity {
         switch(c){
             case N64:return 0xFF2F6DF6;case GBA:return 0xFF7A4DFF;case GBC:return 0xFFFF9A2E;case GB:return 0xFF4DB36B;case NDS:return 0xFFFF4D73;
             case SNES:return 0xFFA06BFF;case NES:return 0xFFFF4040;case MD:return 0xFF2AA8FF;
-            case PSP:return 0xFF6B7280;case GC:return 0xFF7C5CFF;case WII:return 0xFF38BDF8;default:return 0xFF14C9AA;
+            case PSP:return 0xFF6B7280;case PS2:return 0xFF2F5BD3;case GC:return 0xFF7C5CFF;case WII:return 0xFF38BDF8;default:return 0xFF14C9AA;
         }
     }
     private int shade(int color,float f){return 0xFF000000|((int)(((color>>16)&255)*f)<<16)|((int)(((color>>8)&255)*f)<<8)|(int)((color&255)*f);}
@@ -944,7 +944,8 @@ public class MainActivity extends Activity {
         sSection(T.t("Tu biblioteca")); LinearLayout b = sRow();
         sCard(b, "TirsoDrive", drive.stage == TirsoDrive.Stage.READY ? T.t("Conectado · gestionar grupos") : T.t("Vincular colección"), "TD", 0xFF14C9AA, "telegram", this::connectScreen);
         sCard(b, T.t("Copias de partidas"), T.t("Guardadas en tu canal de Telegram"), "BAK", 0xFF2DE2C8, "backups", () -> openBackups());
-        sCard(b, T.t("Archivos del sistema"), T.t("BIOS y archivos compartidos"), "SYS", 0xFF4DB36B, "system_files", this::importSystemFile);
+        if (BuildConfig.PHONE) sCard(b, T.t("Archivos BIOS"), Bios.ps2(this) != null ? T.t("BIOS de PS2 lista") : T.t("Añade tu BIOS de PS2"), "BIOS", 0xFF4DB36B, "system_files", this::biosFiles);
+        else sCard(b, T.t("Archivos del sistema"), T.t("BIOS y archivos compartidos"), "SYS", 0xFF4DB36B, "system_files", this::importSystemFile);
         sSection(T.t("Juego")); LinearLayout c = sRow();
         String resSummary = null; boolean resMixed = false;
         for (Console cn : Console.all()) { if (!library.visible(cn) || cn == Console.MAME) continue; String v = Presets.resolution(this, cn); if (resSummary == null) resSummary = v; else if (!resSummary.equals(v)) resMixed = true; }
@@ -1342,7 +1343,20 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(T.t("Archivos del sistema")).setMessage(T.t("Añade disksys.rom para Famicom Disk System o archivos ZIP de BIOS/parent para MAME. Conserva sus nombres originales. Usa archivos de los que dispongas legítimamente."))
             .setPositiveButton(T.t("Elegir archivo"),(d,w)->{try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),31);}catch(android.content.ActivityNotFoundException e){message(T.t("Archivos del sistema"),T.t("Esta TV necesita un selector de documentos compatible para importar archivos."));}}).setNegativeButton(T.t("Cancelar"),null).show();
     }
+    /** Phone app: each person adds their own BIOS (PS2 needs one); FDS and MAME files as before. */
+    private void biosFiles(){
+        java.io.File ps2=Bios.ps2(this);
+        String[] items={T.t("BIOS de PS2: ")+(ps2!=null?ps2.getName():T.t("no añadida")),T.t("Quitar la BIOS de PS2"),T.t("Otros archivos (Famicom Disk System, MAME)")};
+        new AlertDialog.Builder(this).setTitle(T.t("Archivos BIOS")).setItems(items,(d,w)->{
+            if(w==0){try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),32);}catch(android.content.ActivityNotFoundException e){message(T.t("Archivos BIOS"),T.t("No hay un selector de archivos en este teléfono."));}}
+            else if(w==1){Bios.removePs2(this);render();}
+            else importSystemFile();
+        }).setNegativeButton(T.t("Cancelar"),null).show();
+    }
     @Override protected void onActivityResult(int request,int result,Intent data){
+        if(request==32){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null||data.getData()==null)return;android.net.Uri uri=data.getData();
+            new Thread(()->{String err;try{err=Bios.addPs2(this,uri);}catch(Exception e){err=e.getMessage();}String fe=err;
+                runOnUiThread(()->{Toast.makeText(this,fe==null?T.t("BIOS de PS2 añadida"):fe,Toast.LENGTH_LONG).show();render();});}).start();return;}
         super.onActivityResult(request,result,data);if(request!=31||result!=RESULT_OK||data==null||data.getData()==null)return;
         android.net.Uri uri=data.getData();new Thread(()->{try{
             String filename=null;try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst())filename=cursor.getString(0);}

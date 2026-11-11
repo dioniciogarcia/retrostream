@@ -61,3 +61,5 @@ libadrenotools (used to load custom Adreno GPU drivers)
   Copyright (c) 2021, Billy Laws. BSD 2-Clause License.
   https://github.com/bylaws/libadrenotools
   Includes linkernsbypass, Copyright (c) 2021, Billy Laws. BSD 2-Clause License.
+
+PS2: ARMSX2 libretro core (GPL-3.0), https://github.com/ARMSX2/ARMSX2 — libretro buildbot nightly of 2026-11-11 (master 22b1a7661fa5); resources from bin/resources at that commit.
