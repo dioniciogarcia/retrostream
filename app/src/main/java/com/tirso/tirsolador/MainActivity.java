@@ -180,6 +180,11 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(px(60), px(60)); p.setMargins(px(7), 0, px(7), 0);
         v.setLayoutParams(p); return v;
     }
+    private View friendsIcon() {
+        View v = icon("users", T.t("Amigos"), "nav_friends", () -> route("friends"));
+        if (drive.friendsChat() != 0) ((IconView) v).badge(drive.friendsOnline());
+        return v;
+    }
     private GradientDrawable round(int color, float radius) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(px(radius)); return g; }
     private GradientDrawable gradient(int a, int b, float radius, GradientDrawable.Orientation o) {
         GradientDrawable g = new GradientDrawable(o, new int[]{a, b}); g.setCornerRadius(px(radius)); return g;
@@ -257,6 +262,7 @@ public class MainActivity extends Activity {
                 if (page.equals("library")) { h.addView(icon("sort", T.t("Ordenar juegos: ") + (library.descending() ? "Z a A" : "A a Z"), "sort", this::sortGames)); h.addView(icon("refresh", T.t("Refrescar catálogo"), "refresh", this::refreshCatalog)); }
                 h.addView(icon("search", T.t("Buscar juegos"), "search", this::search));
                 h.addView(icon("star", T.t("Favoritos"), "nav_favorites", this::openFavorites));
+                h.addView(friendsIcon());
                 h.addView(icon("history", T.t("Historial de juego"), "nav_history", () -> route("history")));
                 h.addView(icon("settings", T.t("Ajustes"), "nav_settings", () -> route("settings")));
             }
@@ -270,6 +276,7 @@ public class MainActivity extends Activity {
             if (!welcome) {
                 right.addView(icon("search", T.t("Buscar juegos"), "search", this::search));
                 right.addView(icon("star", T.t("Favoritos"), "nav_favorites", this::openFavorites));
+                right.addView(friendsIcon());
                 right.addView(icon("history", T.t("Historial de juego"), "nav_history", () -> route("history")));
                 right.addView(icon("settings", T.t("Ajustes"), "nav_settings", () -> route("settings")));
             }
@@ -313,6 +320,7 @@ public class MainActivity extends Activity {
             case "settings": monoTitle = T.t("AJUSTES"); monoRight = ""; break;
             case "backups": monoTitle = T.t("COPIAS"); monoRight = ""; break;
             case "history": monoTitle = T.t("HISTORIAL"); monoRight = ""; break;
+            case "friends": monoTitle = T.t("AMIGOS"); monoRight = drive.friendsChat() != 0 ? drive.friendsOnline() + T.t(" EN LÍNEA") : ""; break;
             case "artwork": monoTitle = T.t("IMÁGENES"); monoRight = ""; break;
             case "resolution": monoTitle = T.t("RESOLUCIÓN"); monoRight = ""; break;
             case "welcome": monoTitle = "TIRSODRIVE"; monoRight = ""; break;
@@ -327,13 +335,14 @@ public class MainActivity extends Activity {
         else if (page.equals("settings")) settings();
         else if (page.equals("backups")) backupsScreen();
         else if (page.equals("history")) historyScreen();
+        else if (page.equals("friends")) friendsScreen();
         else if (page.equals("artwork")) artworkScreen();
         else if (page.equals("resolution")) resolutionScreen();
         else if (page.equals("loading") && selected != null) loadingScreen();
         else if (page.equals("library")) libraryScreen();
         else home();
         if (page.equals("library")) footer(new String[][]{{"A", T.t("Jugar")}, {"B", T.t("Volver")}, {"Y", T.t("Buscar")}, {"X", T.t("Favorito")}}, T.t("Carátulas de libretro · guardadas en la TV"));
-        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork") || page.equals("resolution")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
+        else if (page.equals("settings") || page.equals("welcome") || page.equals("backups") || page.equals("artwork") || page.equals("resolution") || page.equals("friends")) footer(new String[][]{{"A", T.t("Elegir")}, {"B", T.t("Volver")}}, null);
         root.post(() -> {
             View target = lastFocus.isEmpty() ? null : root.findViewWithTag(lastFocus);
             if (target == null) target = firstContentFocusable(content == null ? body : content);
@@ -850,6 +859,7 @@ public class MainActivity extends Activity {
     private void playDownloaded(String path){
         pendingPlay="";library.addRecent(selected);page="library";lastFocus="game_"+selected.id;libraryFocus=lastFocus;render();
         Intent intent=new Intent(this,selected.console==Console.N64?GameActivityN64.class:GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
+        drive.playing(selected);
         startActivity(intent);
     }
     private void search() {
@@ -1009,6 +1019,84 @@ public class MainActivity extends Activity {
         now.add(java.util.Calendar.DAY_OF_YEAR, -1);
         if (now.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR) && now.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR)) return T.t("Ayer");
         return java.text.DateFormat.getDateInstance(java.text.DateFormat.LONG).format(new java.util.Date(time));
+    }
+
+    // ------------------------------------------------------------------ friends
+    private Runnable friendsRender;
+    private void friendsRefreshSoon() {
+        if (friendsRender != null) return;
+        friendsRender = () -> { friendsRender = null; if (page.equals("friends")) render(); };
+        root.postDelayed(friendsRender, 500);
+    }
+    private String sinceText(long since) {
+        long m = Math.max(0, (System.currentTimeMillis() - since) / 60000);
+        return m < 1 ? T.t("ahora") : m < 60 ? m + " min" : (m / 60) + " h " + (m % 60) + " min";
+    }
+    private void friendRow(TirsoDrive.Friend f, boolean you) {
+        String name = f.name.isEmpty() ? "…" : f.name;
+        LinearLayout row = horizontal(); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(px(22), px(14), px(22), px(14));
+        int color = f.playing() ? 0xFF22C55E : f.online() ? 0xFF3B82F6 : 0xFF6B7280;
+        TextView av = tv(name.substring(0, 1).toUpperCase(java.util.Locale.ROOT), 34, Color.WHITE, fHead); av.setGravity(Gravity.CENTER);
+        av.setBackground(gradient(shade(color, 1f), shade(color, .7f), 40, GradientDrawable.Orientation.TL_BR));
+        row.addView(av, new LinearLayout.LayoutParams(px(72), px(72)));
+        LinearLayout col = vertical(); col.setPadding(px(22), 0, 0, 0);
+        TextView n = tv(name + (you ? T.t("  (tú)") : ""), 30, text, fHead); n.setSingleLine(true); n.setEllipsize(android.text.TextUtils.TruncateAt.END); col.addView(n);
+        String sub = f.playing() ? f.game : f.online() ? T.t("En el menú") : T.t("Desconectado");
+        TextView st = tv(sub, 24, f.playing() ? color : muted, fBody); st.setSingleLine(true); st.setEllipsize(android.text.TextUtils.TruncateAt.END); st.setPadding(0, px(4), 0, 0); col.addView(st);
+        row.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+        if (f.playing()) {
+            Console c = null; try { c = Console.valueOf(f.console); } catch (Exception e) { }
+            TextView badge = tv((c == null ? f.console : c.name()) + " · " + sinceText(f.since), 22, Color.WHITE, fMono); badge.setPadding(px(16), px(8), px(16), px(8));
+            badge.setBackground(round(c == null ? 0xFF475569 : c.color, 14)); row.addView(badge);
+        }
+        focusable(row, "friend_" + f.userId, surface, () -> { });
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(px(8), px(6), px(8), px(6)); content.addView(row, p);
+    }
+    private void friendSection(String title, int count) {
+        TextView t = tv(title + " · " + count, 24, muted, fMono); t.setLetterSpacing(.14f); t.setPadding(px(14), px(18), 0, px(6)); content.addView(t);
+    }
+    private void friendsScreen() {
+        drive.friendsListener(this::friendsRefreshSoon);
+        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
+        content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content);
+        if (!mono) { TextView h = tv(T.t("Amigos"), 62, text, fHead); h.setPadding(px(10), px(10), 0, px(10)); body.addView(h); }
+        body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        if (!drive.ready()) { content.addView(tv(T.t("Conecta TirsoDrive para ver a tus amigos."), 30, muted, fBody)); return; }
+        if (drive.friendsChat() == 0) {
+            content.addView(tv(T.t("Mira quién está conectado y a qué juega. Todos entran al mismo grupo privado de Telegram."), 28, muted, fBody));
+            content.addView(button(T.t("Pegar enlace de invitación"), "friends_join", this::friendsJoinDialog));
+            content.addView(button(T.t("Crear grupo de amigos"), "friends_create", () -> {
+                Toast.makeText(this, T.t("Creando grupo…"), Toast.LENGTH_SHORT).show();
+                drive.friendsCreate((link, error) -> { if (error != null) Toast.makeText(this, error, Toast.LENGTH_LONG).show(); else { Toast.makeText(this, T.t("Grupo creado. Comparte el enlace con tus amigos."), Toast.LENGTH_LONG).show(); render(); } }); 
+            }));
+            return;
+        }
+        java.util.ArrayList<TirsoDrive.Friend> playing = new java.util.ArrayList<>(), online = new java.util.ArrayList<>(), offline = new java.util.ArrayList<>();
+        for (TirsoDrive.Friend f : drive.friends.values()) (f.playing() ? playing : f.online() ? online : offline).add(f);
+        java.util.Comparator<TirsoDrive.Friend> byName = (a, b) -> a.name.compareToIgnoreCase(b.name);
+        playing.sort(byName); online.sort(byName); offline.sort(byName);
+        if (playing.size() + online.size() + offline.size() <= 1) content.addView(tv(T.t("Aún no hay amigos aquí. Comparte el enlace de invitación."), 28, muted, fBody));
+        if (!playing.isEmpty()) { friendSection(T.t("JUGANDO AHORA"), playing.size()); for (TirsoDrive.Friend f : playing) friendRow(f, f.userId == drive.accountId); }
+        if (!online.isEmpty()) { friendSection(T.t("EN LÍNEA"), online.size()); for (TirsoDrive.Friend f : online) friendRow(f, f.userId == drive.accountId); }
+        if (!offline.isEmpty()) { friendSection(T.t("DESCONECTADOS"), offline.size()); for (TirsoDrive.Friend f : offline) friendRow(f, f.userId == drive.accountId); }
+        LinearLayout actions = horizontal(); actions.setPadding(0, px(24), 0, 0);
+        actions.addView(button(drive.shareActivity() ? T.t("Mostrar mi actividad: sí") : T.t("Mostrar mi actividad: no"), "friends_share", () -> { drive.shareActivity(!drive.shareActivity()); render(); }));
+        actions.addView(button(T.t("Actualizar"), "friends_refresh", () -> { drive.loadFriends(); Toast.makeText(this, T.t("Actualizando…"), Toast.LENGTH_SHORT).show(); }));
+        if (!drive.friendsLink().isEmpty()) actions.addView(button(T.t("Copiar enlace"), "friends_copy", () -> {
+            ((android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("RetroStream", drive.friendsLink()));
+            Toast.makeText(this, T.t("Enlace copiado: ") + drive.friendsLink(), Toast.LENGTH_LONG).show();
+        }));
+        actions.addView(button(T.t("Salir del grupo"), "friends_leave", () -> new AlertDialog.Builder(this).setTitle(T.t("Salir de amigos"))
+            .setMessage(T.t("Dejarás de ver y de mostrar actividad. Puedes volver a unirte con el enlace."))
+            .setPositiveButton(T.t("Salir"), (d, w) -> { drive.friendsLeave(); render(); }).setNegativeButton(T.t("Cancelar"), null).show()));
+        content.addView(actions);
+    }
+    private void friendsJoinDialog() {
+        EditText input = new EditText(this); input.setSingleLine(true); input.setHint("https://t.me/+…");
+        new AlertDialog.Builder(this).setTitle(T.t("Enlace de invitación")).setView(input)
+            .setPositiveButton(T.t("Unirme"), (d, w) -> drive.friendsJoin(input.getText().toString(), (id, error) -> {
+                if (error != null) Toast.makeText(this, error, Toast.LENGTH_LONG).show(); else render();
+            })).setNegativeButton(T.t("Cancelar"), null).show();
     }
     private void historyScreen() {
         LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -1306,8 +1394,11 @@ public class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artCancel.set(true); artwork.close(); if (isFinishing()) { drive.releaseAll(); TemporaryRoms.purge(getApplicationContext()); } super.onDestroy(); }
     @Override protected void onPause(){cancelPending();super.onPause();}
+    @Override protected void onStart(){super.onStart();if(drive!=null)drive.appVisible(true);}
+    @Override protected void onStop(){if(drive!=null)drive.appVisible(false);super.onStop();}
     @Override protected void onResume(){
         super.onResume();
+        if(drive!=null)drive.inMenu();
         // Saves changed while playing are copied to the Telegram channel in the background.
         if(drive!=null&&drive.ready()&&page!=null&&!page.equals("welcome"))SaveBackups.uploadAll(this,drive,p->kotlin.Unit.INSTANCE,(ok,msg)->kotlin.Unit.INSTANCE);
     }

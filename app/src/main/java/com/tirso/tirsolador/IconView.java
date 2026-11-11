@@ -11,6 +11,8 @@ import android.view.View;
 final class IconView extends View {
     private final String icon;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private int badge;
+    void badge(int n){badge=n;invalidate();}
     IconView(Context context, String icon, String label, int color) {
         super(context); this.icon = icon; setContentDescription(label);
         paint.setColor(color); paint.setStrokeWidth(1.8f); paint.setStyle(Paint.Style.STROKE);
@@ -51,11 +53,20 @@ final class IconView extends View {
                 canvas.drawArc(new RectF(3,3,21,21), 120, 300, false, paint);
                 p.moveTo(3,4); p.lineTo(4.5f,9); p.lineTo(9,7); canvas.drawPath(p,paint);
                 canvas.drawLine(12,7.5f,12,12,paint); canvas.drawLine(12,12,15.5f,14,paint); break;
+            case "users":
+                canvas.drawCircle(9,8,3.6f,paint);p.moveTo(2.5f,20);p.cubicTo(2.5f,13.5f,15.5f,13.5f,15.5f,20);canvas.drawPath(p,paint);
+                canvas.drawCircle(17.2f,9,2.7f,paint);Path q=new Path();q.moveTo(18,14.2f);q.cubicTo(21,14.4f,22,16.5f,22,19);canvas.drawPath(q,paint);break;
             case "next":
                 p.moveTo(9,5);p.lineTo(16,12);p.lineTo(9,19);canvas.drawPath(p,paint);break;
             default:
                 p.moveTo(15,5);p.lineTo(8,12);p.lineTo(15,19);canvas.drawPath(p,paint);
         }
         canvas.restore();
+        if (badge > 0) {
+            float r = Math.min(getWidth(), getHeight()) * .21f, cx = getWidth() * .76f, cy = getHeight() * .26f;
+            Paint f = new Paint(Paint.ANTI_ALIAS_FLAG); f.setColor(0xFF22C55E); canvas.drawCircle(cx, cy, r, f);
+            Paint t = new Paint(Paint.ANTI_ALIAS_FLAG); t.setColor(0xFF06210F); t.setTextAlign(Paint.Align.CENTER); t.setFakeBoldText(true); t.setTextSize(r * 1.35f);
+            canvas.drawText(String.valueOf(Math.min(badge, 9)), cx, cy + r * .46f, t);
+        }
     }
 }

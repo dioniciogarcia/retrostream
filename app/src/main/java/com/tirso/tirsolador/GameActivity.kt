@@ -1095,8 +1095,14 @@ open class GameActivity : AppCompatActivity() {
         persist()
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (!isolated) TirsoDrive.get(this).gameVisible(true)
+    }
+
     override fun onStop() {
         super.onStop()
+        if (!isolated) TirsoDrive.get(this).gameVisible(false)
         autoBackup()
     }
 
