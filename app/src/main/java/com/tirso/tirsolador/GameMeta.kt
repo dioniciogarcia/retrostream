@@ -16,7 +16,7 @@ import java.util.zip.ZipInputStream
  * Compiler uses): the database is downloaded once, every game is matched once, and the result is kept in
  * storage so the app never has to look anything up again when it opens.
  */
-object GameMeta {
+internal object GameMeta {
     private const val VERSION = 2
     private const val DB_URL = "https://github.com/OpenVGDB/OpenVGDB/releases/latest/download/openvgdb.zip"
     const val CREDITS = "Description: OpenVGDB · Pictures: libretro thumbnails"

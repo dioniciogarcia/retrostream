@@ -12,7 +12,7 @@ import java.util.Date
  * Every zip carries a caption (#RSSAVE / sha / title / console) so the app knows which game it belongs to;
  * the sha is the game file's SHA-256, so the same game matches on any device or account.
  */
-object SaveBackups {
+internal object SaveBackups {
     class Entry(val root: File, val sha: String, val title: String, val console: Console)
 
     private val main = Handler(Looper.getMainLooper())
