@@ -344,21 +344,34 @@ final class TirsoDrive {
     /** Finds, in the game's group, the files a .cue sheet lists (by exact file name). */
     void findParts(Game game,List<String> names,Done<List<TdApi.File>> callback){
         Done<List<TdApi.File>> cb=once(callback,null);
-        List<TdApi.File> found=new ArrayList<>();
-        findPart(game,names,0,found,cb);
+        TdApi.File[] found=new TdApi.File[names.size()];
+        String cueStem=partKey(game.fileName.replaceAll("\\.[A-Za-z0-9]+$",""));
+        scanParts(game,names,found,0,0,cueStem,new HashMap<>(),cb);
     }
-    private void findPart(Game game,List<String> names,int i,List<TdApi.File> found,Done<List<TdApi.File>> cb){
-        if(i>=names.size()){cb.done(found,null);return;}
-        String name=names.get(i);
-        send(new TdApi.SearchChatMessages(game.chatId,null,name.replaceAll("\\.[A-Za-z0-9]+$",""),null,0,0,50,new TdApi.SearchMessagesFilterDocument()),r->{
-            TdApi.File hit=null;
-            if(r instanceof TdApi.FoundChatMessages)for(TdApi.Message m:((TdApi.FoundChatMessages)r).messages){
-                if(m.content instanceof TdApi.MessageDocument){TdApi.Document d=((TdApi.MessageDocument)m.content).document;
-                    if(d!=null&&d.fileName!=null&&d.fileName.equalsIgnoreCase(name)){hit=d.document;break;}}
+    /** Names compared loosely (case, spaces, punctuation), since uploads sometimes change them a little. */
+    private static String partKey(String name){return name.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9.]","");}
+    /** Pages through the group's files (newest first) until every track the .cue lists is found. */
+    private void scanParts(Game game,List<String> names,TdApi.File[] found,long from,int pages,String cueStem,Map<String,TdApi.File> byStem,Done<List<TdApi.File>> cb){
+        send(new TdApi.SearchChatMessages(game.chatId,null,"",null,from,0,100,new TdApi.SearchMessagesFilterDocument()),r->{
+            TdApi.Message[] list=r instanceof TdApi.FoundChatMessages?((TdApi.FoundChatMessages)r).messages:new TdApi.Message[0];
+            long next=r instanceof TdApi.FoundChatMessages?((TdApi.FoundChatMessages)r).nextFromMessageId:0;
+            for(TdApi.Message m:list){
+                if(!(m.content instanceof TdApi.MessageDocument))continue;TdApi.Document d=((TdApi.MessageDocument)m.content).document;
+                if(d==null||d.fileName==null)continue;String key=partKey(d.fileName);
+                for(int i=0;i<names.size();i++)if(found[i]==null&&key.equals(partKey(names.get(i))))found[i]=d.document;
+                // Same name as the .cue with .bin (for a .cue that lists one track under another name).
+                if(key.endsWith(".bin")&&key.substring(0,key.length()-4).equals(cueStem))byStem.put("bin",d.document);
             }
-            if(hit==null){cb.done(null,T.t("Falta un archivo del disco en el grupo: ")+name);return;}
-            watchedFiles.add(hit.id);files.put(hit.id,hit);found.add(hit);
-            findPart(game,names,i+1,found,cb);
+            boolean all=true;for(TdApi.File f:found)if(f==null)all=false;
+            if(!all&&(list.length==0||next==0||pages>=60)){
+                if(names.size()==1&&byStem.containsKey("bin"))found[0]=byStem.get("bin");
+                else{for(int i=0;i<found.length;i++)if(found[i]==null){cb.done(null,T.t("Falta un archivo del disco en el grupo: ")+names.get(i));return;}}
+                all=true;
+            }
+            if(!all){scanParts(game,names,found,next,pages+1,cueStem,byStem,cb);return;}
+            List<TdApi.File> out=new ArrayList<>();
+            for(TdApi.File f:found){watchedFiles.add(f.id);files.put(f.id,f);out.add(f);}
+            cb.done(out,null);
         });
     }
     void downloadPart(int fileId){
