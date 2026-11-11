@@ -40,11 +40,12 @@ jobs:
       - name: Build release APK
         env:
           TIRSO_TELEGRAM_API_HASH: ${{ secrets.TIRSO_TELEGRAM_API_HASH }}
-        run: gradle --no-daemon :app:assembleRelease -PtirsoBuild=$((100 + GITHUB_RUN_NUMBER))
+        run: gradle --no-daemon :app:assembleTvRelease :app:assemblePhoneRelease -PtirsoBuild=$((100 + GITHUB_RUN_NUMBER))
       - name: Package APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/RetroStream.apk
+          cp app/build/outputs/apk/tv/release/app-tv-release.apk dist/RetroStream.apk
+          cp app/build/outputs/apk/phone/release/app-phone-release.apk dist/RetroStream-phone.apk
           sha256sum dist/*.apk > dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -56,7 +57,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           BUILD=$((100 + GITHUB_RUN_NUMBER))
-          SUM=$(cut -d' ' -f1 dist/SHA256SUMS.txt)
-          printf 'Automatic build of the latest commit. Download RetroStream.apk.\n\nbuild:%s\n\n<!-- checksums -->\n%s  RetroStream.apk\n' "$BUILD" "$SUM" > notes.md
+          printf 'Automatic build of the latest commit.\nTV: RetroStream.apk · Phone: RetroStream-phone.apk\n\nbuild:%s\n\n<!-- checksums -->\n' "$BUILD" > notes.md
+          (cd dist && sha256sum RetroStream.apk RetroStream-phone.apk) >> notes.md
           gh release delete latest --yes --cleanup-tag || true
           gh release create latest dist/* --title "RetroStream (latest build)" --notes-file notes.md

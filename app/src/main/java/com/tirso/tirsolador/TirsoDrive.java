@@ -19,7 +19,7 @@ import java.util.function.Consumer;
 
 /** Process-level TDLib client; UI callbacks and catalog mutations are serialized on main. */
 final class TirsoDrive {
-    enum Stage { CONFIG, CONNECTING, QR, PASSWORD, CODE, READY, ERROR, OTHER }
+    enum Stage { CONFIG, CONNECTING, QR, PHONE, PASSWORD, CODE, READY, ERROR, OTHER }
     interface Listener { void changed(boolean catalogChanged); }
     static final class Source {
         final Console console;
@@ -54,7 +54,7 @@ final class TirsoDrive {
     private final Map<Integer,Game> playAfterDelete=new HashMap<>();
     private TirsoDrive(Context context){
         this.context=context;prefs=context.getSharedPreferences("tirsodrive",Context.MODE_PRIVATE);secrets=new SecretStore(context);
-        for(Console c:Console.values())sources.put(c,new Source(c));
+        for(Console c:Console.all())sources.put(c,new Source(c));
     }
     void attach(Listener listener){this.listener=listener;}
     void detach(Listener listener){if(this.listener==listener)this.listener=null;}
@@ -146,6 +146,8 @@ final class TirsoDrive {
                 p.systemVersion=android.os.Build.VERSION.RELEASE;p.applicationVersion=BuildConfig.VERSION_NAME;checked(p);
             }catch(Exception e){stage=Stage.ERROR;error=T.t("No se pudo preparar el almacenamiento seguro de Telegram.");}
         }else if(object instanceof TdApi.AuthorizationStateWaitPhoneNumber){
+            // Phone app: you choose phone number or QR (a phone can't scan its own screen). TV: QR straight away.
+            if(BuildConfig.PHONE&&!qrRequested){stage=Stage.PHONE;status=T.t("Inicia sesión con tu número de Telegram");return;}
             if(qrRequested)return;qrRequested=true;stage=Stage.CONNECTING;status=T.t("Generando código QR…");checked(new TdApi.RequestQrCodeAuthentication(new long[0]));
         }else if(object instanceof TdApi.AuthorizationStateWaitOtherDeviceConfirmation){
             stage=Stage.QR;status=T.t("Escanea el QR desde Telegram en tu teléfono");qrLink=((TdApi.AuthorizationStateWaitOtherDeviceConfirmation)object).link;
@@ -171,6 +173,10 @@ final class TirsoDrive {
         publish(false);
     }
     void password(String password){error="";checked(new TdApi.CheckAuthenticationPassword(password));}
+    /** Signs in with a phone number: Telegram then sends a code to your Telegram app. */
+    void phoneNumber(String number){error="";stage=Stage.CONNECTING;status=T.t("Enviando el código…");publish(false);checked(new TdApi.SetAuthenticationPhoneNumber(number.replaceAll("[^0-9+]",""),null));}
+    /** Switches to the QR code (scan it from Telegram on another phone). */
+    void useQr(){error="";qrRequested=true;stage=Stage.CONNECTING;status=T.t("Generando código QR…");publish(false);checked(new TdApi.RequestQrCodeAuthentication(new long[0]));}
     void code(String code){error="";checked(new TdApi.CheckAuthenticationCode(code));}
     void logout(){
         stage=Stage.CONNECTING;status=T.t("Cerrando sesión…");

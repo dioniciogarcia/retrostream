@@ -38,6 +38,15 @@ final class TEn {
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
+        m.put("Inicia sesión con tu número de Telegram", "Sign in with your Telegram number");
+        m.put("Enviando el código…", "Sending the code…");
+        m.put("Introducir número de teléfono", "Enter phone number");
+        m.put("Usar código QR", "Use QR code");
+        m.put("Usar número de teléfono", "Use phone number");
+        m.put("Telegram enviará un código a tu app de Telegram. El QR solo sirve si tienes Telegram en otro teléfono.", "Telegram sends a code to your Telegram app. The QR code only helps if you have Telegram on another phone.");
+        m.put("Tu número de Telegram", "Your Telegram number");
+        m.put("Con el código de país, por ejemplo +1 para República Dominicana.", "Include the country code, for example +1 for the Dominican Republic.");
+        m.put("Enviar código", "Send code");
         m.put("Amigos", "Friends");
         m.put("AMIGOS", "FRIENDS");
         m.put(" EN LÍNEA", " ONLINE");

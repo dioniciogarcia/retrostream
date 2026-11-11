@@ -88,7 +88,7 @@ public class MainActivity extends Activity {
         scrape();
         driveListener=catalog->{
             if(catalog){rememberLibrary();library=new Library(this);scrape();}
-            if(!drive.skipped()&&(drive.stage==TirsoDrive.Stage.QR||drive.stage==TirsoDrive.Stage.PASSWORD||drive.stage==TirsoDrive.Stage.CODE))page="welcome";
+            if(!drive.skipped()&&(drive.stage==TirsoDrive.Stage.QR||drive.stage==TirsoDrive.Stage.PHONE||drive.stage==TirsoDrive.Stage.PASSWORD||drive.stage==TirsoDrive.Stage.CODE))page="welcome";
             if(page.equals("welcome")||catalog)render();
             else if(page.equals("loading"))updateDownload();
             else if(!drive.error.isEmpty()&&!drive.error.equals(lastDriveError))Toast.makeText(this,drive.error,Toast.LENGTH_LONG).show();
@@ -198,13 +198,15 @@ public class MainActivity extends Activity {
     private String coreName(Console c) {
         switch (c) {
             case N64: return "Mupen64Plus-Next"; case NDS: return "melonDS"; case GBA: case GB: case GBC: return "mGBA";
-            case SNES: return "Snes9x"; case NES: return "FCEUmm"; case MD: return "Genesis Plus GX"; default: return "MAME 2003-Plus";
+            case SNES: return "Snes9x"; case NES: return "FCEUmm"; case MD: return "Genesis Plus GX";
+            case PSP: return "PPSSPP"; case GC: case WII: return "Dolphin"; default: return "MAME 2003-Plus";
         }
     }
     private String heroSubtitle(Console c) {
         switch (c) {
             case N64: return "NINTENDO 64"; case GBA: return "GAME BOY ADVANCE"; case GBC: return "GAME BOY COLOR"; case GB: return "GAME BOY";
             case NDS: return "NINTENDO DS"; case SNES: return "SUPER NINTENDO"; case NES: return "ENTERTAINMENT SYSTEM"; case MD: return "MEGA DRIVE";
+            case PSP: return "PLAYSTATION PORTABLE"; case GC: return "NINTENDO GAMECUBE"; case WII: return "NINTENDO WII";
             default: return T.english() ? "ARCADE" : "ARCADE";
         }
     }
@@ -303,7 +305,11 @@ public class MainActivity extends Activity {
     private void route(String target) { cancelPending();rememberLibrary();page = target; lastFocus = ""; heroEntry = true; render(); }
     private void backToLibrary() {cancelPending();page="library";lastFocus=libraryFocus;heroEntry=true;render();}
     private void render() {
-        u = getResources().getDisplayMetrics().widthPixels / 1920f;
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        // TV: the 1920x1080 design scaled to the screen. Phone: fit both sides (wide phones are taller than 16:9 allows),
+        // and upright the same design is shown narrower.
+        u = !BuildConfig.PHONE ? dm.widthPixels / 1920f
+            : dm.widthPixels >= dm.heightPixels ? Math.min(dm.widthPixels / 1920f, dm.heightPixels / 1080f) : dm.widthPixels / 1180f;
         applyTheme();
         root = vertical();
         int sidePad = px(mono ? 80 : 70);
@@ -313,7 +319,7 @@ public class MainActivity extends Activity {
         setContentView(root);
         content = null; activeScroll = null; catalogStatus = null; infoPanel = null;
         String monoTitle, monoRight;
-        int systems = 0; for (Console c : Console.values()) if (library.visible(c)) systems++;
+        int systems = 0; for (Console c : Console.all()) if (library.visible(c)) systems++;
         switch (page) {
             case "library": monoTitle = favorites ? T.t("FAVORITOS") : console == null ? T.t("BIBLIOTECA") : console.title.toUpperCase(java.util.Locale.ROOT);
                 monoRight = library.filtered(console, favorites || mode == 1, query).size() + T.t(" JUEGOS"); break;
@@ -363,7 +369,7 @@ public class MainActivity extends Activity {
         if(!drive.error.isEmpty())body.addView(label(drive.error,13,library.dark()?0xFFFFADB5:0xFFB0263D,false));
         if(drive.stage==TirsoDrive.Stage.READY){
             content=scrollContent();
-            for(Console c:Console.values()){
+            for(Console c:Console.all()){
                 TirsoDrive.Source source=drive.sources.get(c);
                 content.addView(button(c.title+"  ·  "+(source.chatId==0?source.issue:source.title),"source_"+c.name(),()->chooseSource(c)));
             }
@@ -386,9 +392,14 @@ public class MainActivity extends Activity {
         if(drive.stage==TirsoDrive.Stage.CONFIG){
             instructions.addView(button(T.t("Configurar TirsoDrive"),"configure_credentials",this::configureCredentials));
             instructions.addView(label(T.t("Configuración inicial de la aplicación. Tu sesión de Telegram se autoriza después con el QR."),12,muted,false));
+        }else if(drive.stage==TirsoDrive.Stage.PHONE){
+            instructions.addView(button(T.t("Introducir número de teléfono"),"auth_phone",this::phoneInput));
+            instructions.addView(button(T.t("Usar código QR"),"auth_qr",drive::useQr));
+            instructions.addView(label(T.t("Telegram enviará un código a tu app de Telegram. El QR solo sirve si tienes Telegram en otro teléfono."),12,muted,false));
         }else if(drive.stage==TirsoDrive.Stage.PASSWORD)instructions.addView(button(T.t("Introducir contraseña"),"auth_password",()->authInput(true)));
         else if(drive.stage==TirsoDrive.Stage.CODE)instructions.addView(button(T.t("Introducir código"),"auth_code",()->authInput(false)));
         else instructions.addView(button(T.t("Reintentar conexión"),"retry_connection",drive::retry));
+        if(BuildConfig.PHONE&&drive.stage==TirsoDrive.Stage.QR)instructions.addView(button(T.t("Usar número de teléfono"),"auth_phone",this::phoneInput));
         if(!drive.error.isEmpty()&&drive.stage!=TirsoDrive.Stage.CONFIG)instructions.addView(button(T.t("Revisar configuración"),"repair_credentials",this::configureCredentials));
         instructions.addView(button(T.t("Continuar sin conexión"),"continue_offline",()->{drive.skip();route("home");}));
         columns.addView(instructions,new LinearLayout.LayoutParams(0,-2,1));
@@ -409,6 +420,12 @@ public class MainActivity extends Activity {
             .setMessage("API ID: "+BuildConfig.TELEGRAM_API_ID+T.t(". Introduce el API hash una sola vez; se guarda cifrado en esta TV."))
             .setView(hash).setPositiveButton(T.t("Guardar"),(d,w)->{String value=hash.getText().toString().trim();hash.setText("");drive.configureHash(value);})
             .setNegativeButton(T.t("Cancelar"),(d,w)->hash.setText("")).show();
+    }
+    private void phoneInput(){
+        EditText input=new EditText(this);input.setSingleLine(true);input.setInputType(android.text.InputType.TYPE_CLASS_PHONE);input.setHint("+1 809 555 0123");
+        new AlertDialog.Builder(this).setTitle(T.t("Tu número de Telegram")).setMessage(T.t("Con el código de país, por ejemplo +1 para República Dominicana."))
+            .setView(input).setPositiveButton(T.t("Enviar código"),(d,w)->{String v=input.getText().toString().trim();if(!v.isEmpty())drive.phoneNumber(v.startsWith("+")?v:"+"+v);})
+            .setNegativeButton(T.t("Cancelar"),null).show();
     }
     private void authInput(boolean password){
         EditText input=new EditText(this);input.setSingleLine(true);
@@ -447,7 +464,8 @@ public class MainActivity extends Activity {
     private int brand(Console c){
         switch(c){
             case N64:return 0xFF2F6DF6;case GBA:return 0xFF7A4DFF;case GBC:return 0xFFFF9A2E;case GB:return 0xFF4DB36B;case NDS:return 0xFFFF4D73;
-            case SNES:return 0xFFA06BFF;case NES:return 0xFFFF4040;case MD:return 0xFF2AA8FF;default:return 0xFF14C9AA;
+            case SNES:return 0xFFA06BFF;case NES:return 0xFFFF4040;case MD:return 0xFF2AA8FF;
+            case PSP:return 0xFF6B7280;case GC:return 0xFF7C5CFF;case WII:return 0xFF38BDF8;default:return 0xFF14C9AA;
         }
     }
     private int shade(int color,float f){return 0xFF000000|((int)(((color>>16)&255)*f)<<16)|((int)(((color>>8)&255)*f)<<8)|(int)((color&255)*f);}
@@ -475,7 +493,7 @@ public class MainActivity extends Activity {
     }
     private String wordmark(Console c) { return c.name(); }
     private int heroIndex() {
-        java.util.ArrayList<Console> v = new java.util.ArrayList<>(); for (Console c : Console.values()) if (library.visible(c)) v.add(c);
+        java.util.ArrayList<Console> v = new java.util.ArrayList<>(); for (Console c : Console.all()) if (library.visible(c)) v.add(c);
         if (v.isEmpty()) return 0; int i = v.indexOf(heroConsole(v)); return Math.max(0, i);
     }
     private Drawable tileBg(Console c, boolean focused) {
@@ -531,7 +549,7 @@ public class MainActivity extends Activity {
     }
     private void home() {
         java.util.ArrayList<Console> visible = new java.util.ArrayList<>();
-        for (Console c : Console.values()) if (library.visible(c)) visible.add(c);
+        for (Console c : Console.all()) if (library.visible(c)) visible.add(c);
         if (visible.isEmpty()) {
             content = scrollContent(); content.addView(label(T.t("No hay consolas visibles"), 20, text, true));
             content.addView(button(T.t("Elegir consolas"), "empty_settings", () -> route("settings"))); return;
@@ -560,7 +578,7 @@ public class MainActivity extends Activity {
         for (Console c : consoles) if (c.name().equals(library.homeConsole())) return c; return consoles.get(0);
     }
     private void moveHero(int delta) {
-        java.util.ArrayList<Console> consoles = new java.util.ArrayList<>(); for (Console c : Console.values()) if (library.visible(c)) consoles.add(c);
+        java.util.ArrayList<Console> consoles = new java.util.ArrayList<>(); for (Console c : Console.all()) if (library.visible(c)) consoles.add(c);
         if (consoles.isEmpty()) return;
         int index = consoles.indexOf(heroConsole(consoles));
         heroDir = delta > 0 ? 1 : -1; library.homeConsole(consoles.get((index + delta + consoles.size()) % consoles.size())); lastFocus = "hero_console"; render();
@@ -603,7 +621,7 @@ public class MainActivity extends Activity {
         }
         heroEntry = false; heroDir = 0;
     }
-    private java.util.List<Console> visibleConsoles() { java.util.ArrayList<Console> v = new java.util.ArrayList<>(); for (Console c : Console.values()) if (library.visible(c)) v.add(c); return v; }
+    private java.util.List<Console> visibleConsoles() { java.util.ArrayList<Console> v = new java.util.ArrayList<>(); for (Console c : Console.all()) if (library.visible(c)) v.add(c); return v; }
     private void heroHome(java.util.List<Console> consoles) {
         Console current = heroConsole(consoles); heroLogo = null; heroWord = null;
         if (lastFocus.isEmpty()) lastFocus = "hero_console";
@@ -920,14 +938,14 @@ public class MainActivity extends Activity {
         sCard(b, T.t("Archivos del sistema"), T.t("BIOS y archivos compartidos"), "SYS", 0xFF4DB36B, "system_files", this::importSystemFile);
         sSection(T.t("Juego")); LinearLayout c = sRow();
         String resSummary = null; boolean resMixed = false;
-        for (Console cn : Console.values()) { if (!library.visible(cn) || cn == Console.MAME) continue; String v = Presets.resolution(this, cn); if (resSummary == null) resSummary = v; else if (!resSummary.equals(v)) resMixed = true; }
+        for (Console cn : Console.all()) { if (!library.visible(cn) || cn == Console.MAME) continue; String v = Presets.resolution(this, cn); if (resSummary == null) resSummary = v; else if (!resSummary.equals(v)) resMixed = true; }
         String resShown = resMixed ? T.t("Personalizada") : T.t("high".equals(resSummary) ? "Alta" : "low".equals(resSummary) ? "Baja" : "Media");
         sCard(c, T.t("Resolución"), resShown + " · " + T.t("Por consola"), "RES", 0xFF2F6DF6, "resolution", () -> route("resolution"));
         sCard(c, T.t("Mandos"), T.t("Perfiles independientes"), "PAD", 0xFFFF4D73, "controllers", this::controllers);
         sCard(c, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "IMG", 0xFFFF9A2E, "artwork_dl", () -> route("artwork"));
         sSection(T.t("Consolas visibles"));
         LinearLayout row = null; int n = 0;
-        for (Console cn : Console.values()) {
+        for (Console cn : Console.all()) {
             if (n++ % 3 == 0) { row = sRow(); }
             boolean on = library.visible(cn);
             LinearLayout chip = horizontal(); chip.setPadding(px(22), px(12), px(22), px(12));
@@ -944,7 +962,7 @@ public class MainActivity extends Activity {
         }
         sFiller(row, (3 - n % 3) % 3);
         LinearLayout all = sRow(); all.setGravity(Gravity.START);
-        all.addView(button(T.t("Mostrar todas"), "show_all", () -> { for (Console cn : Console.values()) library.visible(cn, true); lastFocus = "show_all"; render(); }));
+        all.addView(button(T.t("Mostrar todas"), "show_all", () -> { for (Console cn : Console.all()) library.visible(cn, true); lastFocus = "show_all"; render(); }));
         sSection(T.t("Aplicación")); LinearLayout d = sRow();
         sCard(d, T.t("Actualizaciones"), T.t("Buscar e instalar la última versión"), "UPD", 0xFF7A4DFF, "updates", this::checkUpdates);
         sCard(d, T.t("Informe de problemas"), T.t("Qué registró Android si un juego falla"), "LOG", 0xFFFF9A2E, "crash_report", this::crashReport);
@@ -1148,7 +1166,7 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
         content = vertical(); content.setClipChildren(false); content.setPadding(0, px(4), 0, px(20)); scroll.addView(content); col.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         resolutionRow(null);
-        for (Console c : Console.values()) if (library.visible(c) && c != Console.MAME) resolutionRow(c);
+        for (Console c : Console.all()) if (library.visible(c) && c != Console.MAME) resolutionRow(c);
     }
     private void resolutionRow(Console c) {
         LinearLayout row = horizontal(); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(px(26), px(14), px(18), px(14));
@@ -1160,13 +1178,13 @@ public class MainActivity extends Activity {
         row.addView(names, new LinearLayout.LayoutParams(0, -2, 1));
         String[] ids = {"low", "medium", "high"}, labels = {T.t("Baja"), T.t("Media"), T.t("Alta")};
         String current = c == null ? null : Presets.resolution(this, c);
-        if (c == null) { boolean same = true; String first = null; for (Console x : Console.values()) { if (!library.visible(x) || x == Console.MAME) continue; String v = Presets.resolution(this, x); if (first == null) first = v; else if (!first.equals(v)) same = false; } current = same ? first : null; }
+        if (c == null) { boolean same = true; String first = null; for (Console x : Console.all()) { if (!library.visible(x) || x == Console.MAME) continue; String v = Presets.resolution(this, x); if (first == null) first = v; else if (!first.equals(v)) same = false; } current = same ? first : null; }
         for (int i = 0; i < 3; i++) {
             final String id = ids[i]; boolean on = id.equals(current); final String tag = "res_" + (c == null ? "ALL" : c.name()) + "_" + id;
             TextView chip = tv(labels[i], 26, on ? onAccent() : text, fHead); chip.setGravity(Gravity.CENTER); chip.setPadding(px(30), px(14), px(30), px(14));
             final int ringColor = focusRing();
             focusableWith(chip, tag, f -> { GradientDrawable g = round(on ? (th.equals("midnight") ? accent : th.equals("tiles") ? 0xFFFFC857 : ink) : (th.equals("midnight") ? ov(0x18FFFFFF) : ov(0x14FFFFFF)), 18); if (f) g.setStroke(px(5), ringColor); return g; },
-                () -> { if (c == null) { for (Console x : Console.values()) Presets.setResolution(this, x, id); } else Presets.setResolution(this, c, id); lastFocus = tag; render(); });
+                () -> { if (c == null) { for (Console x : Console.all()) Presets.setResolution(this, x, id); } else Presets.setResolution(this, c, id); lastFocus = tag; render(); });
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(px(150), px(72)); cp.setMargins(px(6), 0, px(6), 0); row.addView(chip, cp);
         }
         LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2); rp.setMargins(px(8), px(7), px(8), px(7)); content.addView(row, rp);
@@ -1177,18 +1195,18 @@ public class MainActivity extends Activity {
     private java.util.concurrent.atomic.AtomicBoolean artCancel = new java.util.concurrent.atomic.AtomicBoolean();
     private String artText = ""; private int artDone, artTotal; private TextView artStatusView; private android.widget.ProgressBar artBar;
     private void artworkScreen() {
-        if (!artInit) { artInit = true; for (Console c : Console.values()) if (library.visible(c) && library.count(c) > 0) artSel.add(c); }
+        if (!artInit) { artInit = true; for (Console c : Console.all()) if (library.visible(c) && library.count(c) > 0) artSel.add(c); }
         LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));
         if (!mono) { TextView h = tv(T.t("Descargar imágenes"), 62, text, fHead); h.setPadding(px(10), px(10), 0, 0); col.addView(h); }
         TextView sub = tv(T.t("Elige las consolas de las que descargar logos y carátulas. Se guardan en la TV."), 26, muted, fBody); sub.setPadding(px(10), px(8), 0, px(16)); col.addView(sub);
         LinearLayout actions = horizontal(); actions.setPadding(px(2), 0, 0, px(8));
-        actions.addView(actionButton(T.t("Seleccionar todo"), "art_all", false, () -> { for (Console c : Console.values()) if (library.visible(c) && library.count(c) > 0) artSel.add(c); lastFocus = "art_all"; render(); }));
+        actions.addView(actionButton(T.t("Seleccionar todo"), "art_all", false, () -> { for (Console c : Console.all()) if (library.visible(c) && library.count(c) > 0) artSel.add(c); lastFocus = "art_all"; render(); }));
         actions.addView(actionButton(T.t("Ninguna"), "art_none", false, () -> { artSel.clear(); lastFocus = "art_none"; render(); }));
         col.addView(actions);
         ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
         content = vertical(); content.setClipChildren(false); content.setPadding(0, px(6), 0, px(20)); scroll.addView(content); col.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         LinearLayout row = null; int n = 0, selectedGames = 0;
-        for (Console c : Console.values()) {
+        for (Console c : Console.all()) {
             if (!library.visible(c)) continue;
             boolean on = artSel.contains(c); int count = library.count(c); if (on) selectedGames += count;
             if (n++ % 3 == 0) { row = horizontal(); content.addView(row, new LinearLayout.LayoutParams(-1, -2)); }
@@ -1394,6 +1412,7 @@ public class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artCancel.set(true); artwork.close(); if (isFinishing()) { drive.releaseAll(); TemporaryRoms.purge(getApplicationContext()); } super.onDestroy(); }
     @Override protected void onPause(){cancelPending();super.onPause();}
+    @Override public void onConfigurationChanged(android.content.res.Configuration c){super.onConfigurationChanged(c);if(root!=null)render();}
     @Override protected void onStart(){super.onStart();if(drive!=null)drive.appVisible(true);}
     @Override protected void onStop(){if(drive!=null)drive.appVisible(false);super.onStop();}
     @Override protected void onResume(){

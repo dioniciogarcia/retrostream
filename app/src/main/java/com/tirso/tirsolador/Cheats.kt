@@ -44,8 +44,9 @@ class Cheats(private val activity: Activity, private val prefs: SharedPreference
         cached?.let { if (it.isNotEmpty() || !dolphin) return it }
         val out = mutableListOf<Cheat>()
         if (dolphin) {
-            val dir = File(activity.filesDir, "cheats/dolphin-emu")
-            dir.listFiles { f -> f.name.endsWith(".cht") }?.maxByOrNull { it.lastModified() }?.let { out += parseCht(it.readText()) }
+            listOf(File(activity.filesDir, "cheats/dolphin-emu"), File(activity.filesDir, "bios/cheats/dolphin-emu"))
+                .flatMap { d -> d.listFiles { f -> f.name.endsWith(".cht") }?.toList().orEmpty() }
+                .maxByOrNull { it.lastModified() }?.let { out += parseCht(it.readText()) }
         } else {
             runCatching {
                 val text = activity.assets.open("tirso/cheats.json").use { it.reader().readText() }

@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <application android:label="RetroStream">
+        <!-- The phone app turns with the phone (upright or sideways). -->
+        <activity android:name=".MainActivity" android:screenOrientation="fullUser" tools:replace="android:screenOrientation"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+    </application>
+</manifest>

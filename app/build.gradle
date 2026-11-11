@@ -12,11 +12,17 @@ android {
         def tirsoBuild = providers.gradleProperty('tirsoBuild').orElse('0').get().toInteger()
         versionCode tirsoBuild > 0 ? tirsoBuild : 6
         versionName tirsoBuild > 0 ? "1.0.1.${tirsoBuild}" : '1.0.1'
-        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }   // same two CPU types as Tirso Compiler's TV games
         buildConfigField 'int', 'TELEGRAM_API_ID', '38798734'
         def telegramHash = providers.environmentVariable('TIRSO_TELEGRAM_API_HASH').orElse('').get()
         buildConfigField 'String', 'TELEGRAM_API_HASH', groovy.json.JsonOutput.toJson(telegramHash)
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    flavorDimensions 'target'
+    productFlavors {
+        // TV app (RetroStream.apk): the same two CPU types as Tirso Compiler's TV games.
+        tv { dimension 'target'; ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }; buildConfigField 'boolean', 'PHONE', 'false' }
+        // Phone app (RetroStream-phone.apk): 64-bit phones, plus PSP, GameCube and Wii (Tirso Compiler's engines).
+        phone { dimension 'target'; applicationIdSuffix '.phone'; ndk { abiFilters 'arm64-v8a' }; buildConfigField 'boolean', 'PHONE', 'true' }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     lint { abortOnError false; checkReleaseBuilds false }
@@ -25,7 +31,7 @@ android {
     buildTypes { release { signingConfig signingConfigs.debug; minifyEnabled false; debuggable false } }
     kotlinOptions { jvmTarget = '17' }
     ndkVersion '27.2.12479018'   // lets the build strip debug data from the native libraries
-    packaging { jniLibs { useLegacyPackaging true } }
+    packaging { jniLibs { useLegacyPackaging true; pickFirsts += ['**/liblibretrodroid.so'] } }   // phone: Tirso's LibretroDroid build (Dolphin needs it)
 }
 dependencies {
     // The same player Tirso Compiler puts in its games: LibretroDroid 0.14.0 + RadialGamePad (built from source).

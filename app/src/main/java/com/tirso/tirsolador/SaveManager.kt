@@ -79,8 +79,8 @@ class SaveManager(val root: File, val systemDir: File) {
     }
 
     /** Newest change to any save file (to skip automatic backups when nothing changed). */
-    fun lastChange(): Long = listOf(savesDir, statesDir).flatMap { d ->
-        d.walkTopDown().onEnter { it.name !in SKIP_FOLDERS }.filter { it.isFile && it != auto }.map { it.lastModified() }.toList()
+    fun lastChange(withAuto: Boolean = false): Long = listOf(savesDir, statesDir).flatMap { d ->
+        d.walkTopDown().onEnter { it.name !in SKIP_FOLDERS }.filter { it.isFile && (withAuto || it != auto) }.map { it.lastModified() }.toList()
     }.maxOrNull() ?: 0L
 
     /** The package a backup was made for ("" when the zip doesn't say). */

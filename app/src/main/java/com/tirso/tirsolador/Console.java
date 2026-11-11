@@ -9,11 +9,27 @@ public enum Console {
     GBA("Game Boy Advance", "Nintendo - Game Boy Advance", "gba", 0xFF7158AC),
     N64("Nintendo 64", "Nintendo - Nintendo 64", "n64", 0xFF347E99),
     MAME("MAME", "MAME", "mame", 0xFF3578A1),
-    NDS("Nintendo DS", "Nintendo - Nintendo DS", "nds", 0xFFB34C65);
+    NDS("Nintendo DS", "Nintendo - Nintendo DS", "nds", 0xFFB34C65),
+    // Phone app only (Tirso Compiler's phone engines).
+    PSP("PSP", "Sony - PlayStation Portable", "psp", 0xFF4A4F5C),
+    GC("GameCube", "Nintendo - GameCube", "gamecube", 0xFF5B3E9E),
+    WII("Wii", "Nintendo - Wii", "wii", 0xFF2D8AB8);
 
     public final String title, thumbnailSystem, logo;
     public final int color;
     Console(String title, String thumbnailSystem, String logo, int color) {
         this.title = title; this.thumbnailSystem = thumbnailSystem; this.logo = logo; this.color = color;
+    }
+    /** Consoles only the phone app can play. */
+    public boolean phoneOnly() { return this == PSP || this == GC || this == WII; }
+    private static Console[] cached;
+    /** The consoles this app plays (the TV app leaves out the phone-only ones). */
+    public static Console[] all() {
+        if (cached == null) {
+            java.util.ArrayList<Console> list = new java.util.ArrayList<>();
+            for (Console c : values()) if (BuildConfig.PHONE || !c.phoneOnly()) list.add(c);
+            cached = list.toArray(new Console[0]);
+        }
+        return cached;
     }
 }

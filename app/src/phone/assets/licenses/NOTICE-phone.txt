@@ -1,0 +1,63 @@
+This game app was made with Tirso Compiler from a game file supplied by its owner.
+It contains the open-source software listed below. Each is free software: you can
+redistribute and/or modify it under the terms of its licence. It comes WITHOUT ANY
+WARRANTY. The full GNU GPL v3 text is included in this app (licenses/GPL-3.0.txt) and at
+https://www.gnu.org/licenses/gpl-3.0.html ; GPL v2: https://www.gnu.org/licenses/gpl-2.0.html
+
+PPSSPP (libretro PSP core) by Henrik Rydgard and contributors
+  GNU GPL v2 or later. https://github.com/hrydgard/ppsspp
+  Build: libretro buildbot nightly, arm64-v8a, 2026-11-04 (source revision c68f43c7311b)
+  Includes PPSSPP system files (fonts and flash0 data from the PPSSPP project).
+
+LibretroDroid 0.14.0
+  Copyright (C) Filippo Scognamiglio. GNU GPL v3.
+  https://github.com/Swordfish90/LibretroDroid
+
+RadialGamePad (revision 08d1dd95, built from source with Tirso's multi-touch fix)
+  Copyright (C) Filippo Scognamiglio. GNU GPL v3.
+  https://github.com/Swordfish90/RadialGamePad
+
+Tirso game player (this app's own code)
+  GNU GPL v3. Its complete source code is in the Tirso Compiler folder
+  (templates/source), and is available from the person who gave you this app.
+
+AndroidX libraries and Kotlin: Apache License 2.0.
+  https://www.apache.org/licenses/LICENSE-2.0
+
+PSP and PlayStation are trademarks of Sony Interactive Entertainment. This app is not affiliated with or endorsed by Sony.
+This game app was made with Tirso Compiler from a game file supplied by its owner.
+It contains the open-source software listed below. Each is free software: you can
+redistribute and/or modify it under the terms of its licence. It comes WITHOUT ANY
+WARRANTY. The full GNU GPL v3 text is included in this app (licenses/GPL-3.0.txt) and at
+https://www.gnu.org/licenses/gpl-3.0.html ; GPL v2: licenses/Dolphin-LICENSE.txt
+
+Dolphin (libretro GameCube / Wii core) by the Dolphin Emulator Project and contributors
+  GNU GPL v2 or later. https://github.com/libretro/dolphin (libretro port of
+  https://github.com/dolphin-emu/dolphin)
+  Built from commit 32c61f9 with small changes (Modified by Tirso, 2026-11-05: widescreen view,
+  switches for phone GPU driver problems). The changes are in the Tirso source (engines/dolphin-tirso.patch).
+  Includes Dolphin system files (Sys folder from the libretro Dolphin.zip assets).
+
+LibretroDroid 0.14.0
+  Copyright (C) Filippo Scognamiglio. GNU GPL v3.
+  https://github.com/Swordfish90/LibretroDroid
+  Modified by Tirso, 2026-11-05: OpenGL state guard for Dolphin, and a Vulkan bridge that shows
+  pictures from Vulkan cores (libretrodroid/src/main/cpp/vulkan in the Tirso source).
+
+RadialGamePad (revision 08d1dd95, built from source with Tirso's multi-touch fix)
+  Copyright (C) Filippo Scognamiglio. GNU GPL v3.
+  https://github.com/Swordfish90/RadialGamePad
+
+Tirso game player (this app's own code)
+  GNU GPL v3. Its complete source code is in the Tirso Compiler folder
+  (templates/source.zip), and is available from the person who gave you this app.
+
+AndroidX libraries and Kotlin: Apache License 2.0.
+  https://www.apache.org/licenses/LICENSE-2.0
+
+GameCube and Wii are trademarks of Nintendo. This app is not affiliated with or endorsed by Nintendo.
+
+libadrenotools (used to load custom Adreno GPU drivers)
+  Copyright (c) 2021, Billy Laws. BSD 2-Clause License.
+  https://github.com/bylaws/libadrenotools
+  Includes linkernsbypass, Copyright (c) 2021, Billy Laws. BSD 2-Clause License.

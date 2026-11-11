@@ -34,6 +34,25 @@ object Presets {
         else -> console.name.lowercase()
     }
 
+    // PPSSPP (Tirso Compiler's PspAdapter): low / medium / high = 1x / 2x / 3x.
+    private val PSP_SIZE = mapOf("low" to "480x272", "medium" to "960x544", "high" to "1440x816")
+    private val PSP = mapOf("ppsspp_backend" to "opengl", "ppsspp_cpu_core" to "JIT", "ppsspp_frame_duplication" to "enabled",
+        "ppsspp_auto_frameskip" to "disabled", "ppsspp_cheats" to "enabled")
+
+    // Dolphin (Tirso Compiler's DolphinAdapter), widescreen hack on.
+    private fun dolphin(wii: Boolean, res: String): Map<String, String> {
+        val v = mutableMapOf(
+            "dolphin_renderer" to "Hardware", "dolphin_cpu_core" to "4", "dolphin_main_cpu_thread" to "enabled",
+            "dolphin_dsp_hle" to "enabled", "dolphin_fast_disc_speed" to "enabled", "dolphin_skip_gc_bios" to "enabled",
+            "dolphin_shader_compilation_mode" to "0", "dolphin_aspect_ratio" to "3", "dolphin_enable_rumble" to "enabled",
+            "dolphin_osd_enabled" to "disabled", "dolphin_ir_mode" to "1", "dolphin_cheats_enabled" to "enabled",
+            "dolphin_cheats_import" to "enabled", "dolphin_widescreen_hack" to "enabled",
+            "dolphin_efb_scale" to when (res) { "low" -> "1"; "high" -> "3"; else -> "2" },
+        )
+        if (wii) { v["dolphin_widescreen"] = "enabled"; v["dolphin_wiimote_default_device"] = "sideways"; v["dolphin_hotkey_sideways_toggle"] = "Disabled" }
+        return v
+    }
+
     // Real GLideN64 sizes (Mupen64Plus-Next options): low / medium / high.
     private val N64_SIZE = mapOf("low" to "320x240", "medium" to "640x480", "high" to "960x720")
 
@@ -89,6 +108,12 @@ object Presets {
             Console.MD -> base.copy(core = "libgenesis_plus_gx_libretro_android.so", pad = "snes", aspect = 4f / 3f)
             Console.MAME -> base.copy(core = "libmame2003_plus_libretro_android.so", pad = "snes", shader = "default",
                 variables = mapOf("mame2003-plus_skip_disclaimer" to "enabled", "mame2003-plus_skip_warnings" to "enabled"))
+            // Phone app: Tirso Compiler's PSP and GameCube/Wii settings, widescreen on.
+            Console.PSP -> base.copy(core = "libppsspp_libretro_android.so", pad = "psp", shader = "default", aspect = 16f / 9f,
+                systemZip = "ppsspp_system.zip", variables = PSP + mapOf("ppsspp_internal_resolution" to (PSP_SIZE[res] ?: "960x544")))
+            Console.GC, Console.WII -> base.copy(core = "libdolphin_libretro_android.so", shader = "default", aspect = 16f / 9f,
+                pad = if (console == Console.WII) "wii_sideways" else "gc", systemZip = "dolphin_system.zip",
+                controllerType = 1, preserveGl = true, graphics = "vulkan", variables = dolphin(console == Console.WII, res))
         }
     }
 }

@@ -24,7 +24,7 @@ final class Updater {
     static final String REPO = "dioniciogarcia/retrostream";
     static final String API = "https://api.github.com/repos/" + REPO + "/releases/tags/latest";
     static final String ALLOWED_PREFIX = "https://github.com/" + REPO + "/releases/download/";
-    static final String ASSET = "RetroStream.apk";
+    static final String ASSET = BuildConfig.PHONE ? "RetroStream-phone.apk" : "RetroStream.apk";
     static final String ACTION = "com.tirso.tirsolador.UPDATE_STATUS";
 
     interface Progress { void update(long done, long total); }

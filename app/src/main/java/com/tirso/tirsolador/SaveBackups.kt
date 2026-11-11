@@ -45,8 +45,11 @@ internal object SaveBackups {
     }
 
     private fun manager(ctx: Context, e: Entry) = SaveManager(e.root, system(ctx))
+    /** "Continue where you left off" travels with the backup, except DS (TV and phone may run different DS engines). */
+    @JvmStatic fun resumable(e: Entry) = e.console != Console.NDS
+
     @JvmStatic fun changed(ctx: Context, e: Entry): Boolean {
-        val last = manager(ctx, e).lastChange()
+        val last = manager(ctx, e).lastChange(resumable(e))
         return last > 0 && last > prefs(ctx).getLong("done_${e.sha}", 0L)
     }
 
@@ -54,11 +57,11 @@ internal object SaveBackups {
 
     private fun zipFile(ctx: Context, e: Entry): File? {
         val sm = manager(ctx, e)
-        if (sm.lastChange() == 0L) return null
+        if (sm.lastChange(resumable(e)) == 0L) return null
         val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HHmm", java.util.Locale.US).format(Date())
         val safe = e.title.replace(Regex("[^A-Za-z0-9 ._()\\-]"), "_").take(80)
         val f = File(ctx.cacheDir, "$safe (${e.console.name}) - saves $stamp.zip")
-        f.outputStream().use { sm.exportZip(it, mapOf("package" to ctx.packageName, "title" to e.title, "console" to e.console.name, "sha" to e.sha), withAutoState = false) }
+        f.outputStream().use { sm.exportZip(it, mapOf("package" to ctx.packageName, "title" to e.title, "console" to e.console.name, "sha" to e.sha), withAutoState = resumable(e)) }
         return f
     }
 
@@ -70,7 +73,7 @@ internal object SaveBackups {
         if (!drive.ready()) { cb(false, T.t("Conecta TirsoDrive para usar las copias de partidas en Telegram.")); return }
         Thread {
             val zip = runCatching { zipFile(app, e) }.getOrNull()
-            val stamp = manager(app, e).lastChange()
+            val stamp = manager(app, e).lastChange(resumable(e))
             main.post {
                 if (zip == null) { cb(false, T.t("Este juego aún no tiene partidas guardadas.")); return@post }
                 drive.backupChannel { chat, err ->
@@ -133,7 +136,7 @@ internal object SaveBackups {
                 }.getOrDefault(false)
                 main.post {
                     drive.releaseBackup(b)
-                    if (ok) prefs(app).edit().putLong("done_${b.sha}", manager(app, Entry(rootFor(app, console, b.sha), b.sha, b.title, console)).lastChange()).apply()
+                    if (ok) prefs(app).edit().putLong("done_${b.sha}", manager(app, Entry(rootFor(app, console, b.sha), b.sha, b.title, console)).lastChange(console != Console.NDS)).apply()
                     cb(ok, if (ok) T.t("Partidas restauradas") else T.t("El archivo no es una copia válida de partidas."))
                 }
             }.start()

@@ -175,13 +175,14 @@ open class GameActivity : AppCompatActivity() {
         val ws = java.nio.file.Files.createTempDirectory(cacheDir.toPath(), "play-").toFile()
         workspace = ws
         val prepared = ArchiveContent.prepare(source, name, console, ws)
-        if (prepared.length() < 1 || prepared.length() > ArchiveContent.LIMIT) throw java.io.IOException("Invalid game size")
-        val digest = GameStorage.hash(prepared)
+        if (prepared.length() < 1 || prepared.length() > ArchiveContent.limit(console)) throw java.io.IOException("Invalid game size")
+        val digest = if (ArchiveContent.disc(console)) GameStorage.quickHash(prepared) else GameStorage.hash(prepared)
         gameId = digest.take(16)
         romSha = digest
         val system = File(filesDir, "bios").apply { mkdirs() }
         saves = SaveManager(File(filesDir, "saves/${Presets.key(console)}/$digest"), system)
         SaveBackups.writeMeta(saves.root, gameTitle, console)
+        installSystemFiles(system)
         if (console == Console.MAME) {
             // MAME looks for its BIOS / parent zips next to the game.
             system.listFiles { f -> f.name.endsWith(".zip") }?.forEach { f ->
@@ -190,6 +191,25 @@ open class GameActivity : AppCompatActivity() {
             }
         }
         return prepared
+    }
+
+    /** Engine system files (PSP fonts, Dolphin data) packed in the phone app, unpacked once per app version. */
+    private fun installSystemFiles(systemDir: File) {
+        val zipName = config.systemZip ?: return
+        val marker = "$zipName:${BuildConfig.VERSION_CODE}"
+        if (prefs.getString("system_marker_$zipName", null) == marker) return
+        val root = systemDir.canonicalFile
+        java.util.zip.ZipInputStream(assets.open(zipName).buffered()).use { zip ->
+            while (true) {
+                val e = zip.nextEntry ?: break
+                val out = File(root, e.name).canonicalFile
+                if (!out.path.startsWith(root.path)) continue
+                if (e.isDirectory) { out.mkdirs(); continue }
+                out.parentFile?.mkdirs()
+                out.outputStream().use { zip.copyTo(it) }
+            }
+        }
+        prefs.edit().putString("system_marker_$zipName", marker).apply()
     }
 
     override fun onDestroy() {
@@ -715,6 +735,7 @@ open class GameActivity : AppCompatActivity() {
         val entries = mutableListOf<Pair<String, () -> Unit>>()
         entries += "Resume" to { closeMenu() }
         entries += "Game information" to { showGameInfo() }
+        entries += "Walkthrough" to { walkthrough() }
         if (cheats.available()) {
             val n = cheats.enabled.size
             entries += (if (n > 0) "Cheats ($n on)" else "Cheats") to { toast("Looking for cheats…"); cheats.ensure { cheats.show(retroView) { closeMenu() } } }
@@ -755,6 +776,42 @@ open class GameActivity : AppCompatActivity() {
             .setItems(entries.map { tr(it.first) }.toTypedArray()) { _, which -> entries[which].second() }
             .setOnCancelListener { closeMenu() }
             .show()
+    }
+
+    /** Opens YouTube searching this game; you add the part you're stuck on (dungeon, boss, chapter). The game stays paused. */
+    private fun walkthrough() {
+        val name = gameTitle.replace(Regex("""\s*[(\[][^)\]]*[)\]]"""), "").trim().ifEmpty { gameTitle }
+        val input = android.widget.EditText(this).apply {
+            setSingleLine(); setText("$name walkthrough "); setSelection(text.length)
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = android.widget.FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(tr("Walkthrough"))
+            .setMessage(tr("Add what you're looking for (dungeon, boss, chapter…) and search on YouTube."))
+            .setView(box)
+            .setPositiveButton(tr("Search")) { _, _ -> openYouTube(input.text.toString().trim()) }
+            .setNegativeButton(tr("Cancel"), null)
+            .create()
+        input.setOnEditorActionListener { _, _, _ -> dialog.dismiss(); openYouTube(input.text.toString().trim()); true }
+        dialog.show()
+        input.requestFocus()
+    }
+
+    private fun openYouTube(query: String) {
+        if (query.isEmpty()) return
+        val url = Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(query))
+        val tries = listOf(
+            Intent(Intent.ACTION_SEARCH).setPackage("com.google.android.youtube").putExtra("query", query),
+            Intent(Intent.ACTION_VIEW, url).setPackage("com.google.android.youtube.tv"),
+            Intent(Intent.ACTION_VIEW, url).setPackage("com.amazon.firetv.youtube"),
+            Intent(Intent.ACTION_VIEW, url),
+        )
+        for (i in tries) {
+            try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return } catch (_: Exception) { }
+        }
+        toast("YouTube isn't installed on this device")
     }
 
     private fun showGameInfo() {

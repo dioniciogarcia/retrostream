@@ -17,6 +17,9 @@ final class TelegramCatalog {
             case MAME:return "TD - ROMs - MAME";
             case N64:return "TD - ROMs - N64";
             case NDS:return "TD - ROMs - DS";
+            case PSP:return "TD - ROMs - PSP";
+            case GC:return "TD - ROMs - GameCube";
+            case WII:return "TD - ROMs - Wii";
             default:return "";
         }
     }
@@ -31,6 +34,9 @@ final class TelegramCatalog {
             case "gb":case "gameboy":return Console.GB;case "gbc":case "gameboycolor":return Console.GBC;
             case "gba":case "gameboyadvance":return Console.GBA;case "n64":case "nintendo64":return Console.N64;
             case "ds":case "nds":case "nintendods":return Console.NDS;case "mame":case "arcade":return Console.MAME;
+            case "psp":case "playstationportable":return BuildConfig.PHONE?Console.PSP:null;
+            case "gc":case "gamecube":case "ngc":case "nintendogamecube":return BuildConfig.PHONE?Console.GC:null;
+            case "wii":case "nintendowii":return BuildConfig.PHONE?Console.WII:null;
             default:return null;
         }
     }
@@ -49,6 +55,9 @@ final class TelegramCatalog {
             case GBA:allowed="gba";break;
             case N64:allowed="n64,v64,z64";break;
             case NDS:allowed="nds";break;
+            case PSP:allowed="iso,cso,chd,pbp";break;
+            case GC:allowed="iso,gcm,gcz,rvz,ciso";break;
+            case WII:allowed="iso,gcz,rvz,wbfs,wia";break;
             default:allowed="";
         }
         for(String e:allowed.split(","))if(!e.isEmpty()&&e.equals(extension))return true;
