@@ -82,6 +82,15 @@ public final class Library {
         if (descending()) java.util.Collections.reverse(result);
         return result;
     }
+    public java.util.List<String> recent() {
+        java.util.List<String> out = new ArrayList<>(); String raw = prefs.getString("recent", "");
+        for (String id : raw.split("\n")) if (!id.isEmpty()) out.add(id); return out;
+    }
+    public void addRecent(Game g) {
+        java.util.List<String> ids = recent(); ids.remove(g.id); ids.add(0, g.id);
+        while (ids.size() > 30) ids.remove(ids.size() - 1);
+        prefs.edit().putString("recent", android.text.TextUtils.join("\n", ids)).apply();
+    }
     public int count(Console c) { int n = 0; for (Game g : games) if (g.console == c) n++; return n; }
     public void replaceTelegram(java.util.List<Game> incoming) throws JSONException {
         JSONArray array=new JSONArray();for(Game game:incoming)array.put(game.toJson());

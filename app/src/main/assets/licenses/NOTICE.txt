@@ -10,3 +10,5 @@ Engines (libretro buildbot nightly, 2026-11):
 - Sega Mega Drive: Genesis Plus GX (non-commercial licence) - https://github.com/libretro/Genesis-Plus-GX
 - MAME: MAME 2003-Plus (MAME licence) - https://github.com/libretro/mame2003-plus-libretro
 The source code of each engine is available at the addresses above.
+
+Fonts: Poppins and Inter (SIL Open Font License 1.1, see FONT-POPPINS-OFL.txt for the licence text), DejaVu Sans Mono (Bitstream Vera / DejaVu free licence).
