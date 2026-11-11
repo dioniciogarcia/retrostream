@@ -120,6 +120,10 @@ final class TEn {
         m.put("Consola completa", "Big Console");
         m.put("Mosaico", "Color Tiles");
         m.put("Abrir", "Open");
+        m.put("Resolución", "Resolution");
+        m.put("Alta", "High");
+        m.put("Baja", "Low");
+        m.put("Media", "Medium");
         m.put("Informe de problemas", "Problem report");
         m.put("Qué registró Android si un juego falla", "What Android recorded if a game fails");
         m.put("Preparando informe…", "Preparing report…");

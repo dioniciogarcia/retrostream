@@ -30,6 +30,16 @@ final class Artwork {
         return "https://thumbnails.libretro.com/" + path(g.console.thumbnailSystem)
                 + "/Named_Boxarts/" + path(g.coverName) + ".png";
     }
+    /** Where the cover of a game is kept once it has been shown (null name = none). */
+    static File cacheFile(Context context, Console console, String coverName) {
+        try {
+            String url = "https://thumbnails.libretro.com/" + path(console.thumbnailSystem) + "/Named_Boxarts/" + path(coverName) + ".png";
+            StringBuilder hash = new StringBuilder();
+            for (byte b : MessageDigest.getInstance("SHA-256").digest(url.getBytes(StandardCharsets.UTF_8)))
+                hash.append(String.format(java.util.Locale.ROOT, "%02x", b));
+            return new File(new File(context.getCacheDir(), "artwork"), hash + ".png");
+        } catch (Exception e) { return null; }
+    }
     void load(Game game, ImageView view) {
         String url = url(game); view.setTag(url);
         Bitmap cached = memory.get(url); if (cached != null) { view.setImageBitmap(cached); reveal(view); return; }

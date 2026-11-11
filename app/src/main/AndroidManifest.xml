@@ -1,13 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
     <application android:label="RetroStream" android:theme="@style/AppTheme"
         android:icon="@drawable/app_icon" android:banner="@drawable/tv_banner"
-        android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="false">
-        <activity android:name=".GameActivity" android:exported="false" android:screenOrientation="landscape"
+        android:allowBackup="false" android:extractNativeLibs="true" android:supportsRtl="true" android:usesCleartextTraffic="false">
+        <activity android:name=".GameActivity" android:exported="false" android:screenOrientation="sensorLandscape" android:theme="@style/Theme.RetroStreamGame"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density" />
         <receiver android:name=".UpdateReceiver" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape">

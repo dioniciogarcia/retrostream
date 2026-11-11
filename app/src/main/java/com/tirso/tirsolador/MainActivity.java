@@ -499,7 +499,7 @@ public class MainActivity extends Activity {
     }
     private void playDownloaded(String path){
         pendingPlay="";
-        Intent intent=new Intent(this,GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
+        Intent intent=new Intent(this,GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
         startActivity(intent);
     }
     private void search() {
@@ -543,6 +543,10 @@ public class MainActivity extends Activity {
         LinearLayout system=horizontal();content.addView(system);
         settingTile(system,T.t("Archivos del sistema"),T.t("BIOS y archivos compartidos"),"system_files",this::importSystemFile);
         settingTile(system,"RetroStream",BuildConfig.VERSION_NAME,"about",()->message("RetroStream "+BuildConfig.VERSION_NAME,T.t("Nueve consolas integradas. Las ROMs se preparan al pulsar Jugar y se eliminan al salir. Tus partidas y estados permanecen en la TV.\n\nMAME: ROMs compatibles con MAME 2003-Plus; ciertos juegos requieren BIOS o archivos parent. Puedes añadirlos en Archivos del sistema.\n\nCódigo y licencias de los núcleos incluidos en la release y en los avisos de esta aplicación.")));
+        LinearLayout gameRow=horizontal();content.addView(gameRow);
+        String res=Presets.resolution(this);
+        settingTile(gameRow,T.t("Resolución"),T.t("high".equals(res)?"Alta":"low".equals(res)?"Baja":"Media")+" · N64","resolution",()->{
+            String cur=Presets.resolution(this);Presets.setResolution(this,"low".equals(cur)?"medium":"medium".equals(cur)?"high":"low");render();});
         LinearLayout updates=horizontal();content.addView(updates);
         settingTile(updates,T.t("Actualizaciones"),T.t("Buscar e instalar la última versión"),"updates",this::checkUpdates);
         settingTile(updates,T.t("Informe de problemas"),T.t("Qué registró Android si un juego falla"),"crash_report",this::crashReport);

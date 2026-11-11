@@ -1,0 +1,12 @@
+RetroStream plays games with the same player and engines as Tirso Compiler's TV games (GPL v3).
+
+Player: LibretroDroid 0.14.0 (GPL v3, https://github.com/Swordfish90/LibretroDroid) and RadialGamePad (GPL v3, https://github.com/Swordfish90/RadialGamePad), with Tirso Compiler's multi-touch fix.
+Engines (libretro buildbot nightly, 2026-11): 
+- Nintendo 64: Mupen64Plus-Next (GPL v3) - https://github.com/libretro/mupen64plus-libretro-nx
+- Nintendo DS: melonDS DS (GPL v3) - https://github.com/JesseTG/melonds-ds ; DeSmuME on 32-bit TVs (GPL v2) - https://github.com/libretro/desmume
+- Game Boy, Game Boy Color, Game Boy Advance: mGBA (MPL 2.0) - https://github.com/mgba-emu/mgba
+- Super Nintendo: Snes9x (non-commercial licence) - https://github.com/libretro/snes9x
+- NES: FCEUmm (GPL v2) - https://github.com/libretro/libretro-fceumm
+- Sega Mega Drive: Genesis Plus GX (non-commercial licence) - https://github.com/libretro/Genesis-Plus-GX
+- MAME: MAME 2003-Plus (MAME licence) - https://github.com/libretro/mame2003-plus-libretro
+The source code of each engine is available at the addresses above.
