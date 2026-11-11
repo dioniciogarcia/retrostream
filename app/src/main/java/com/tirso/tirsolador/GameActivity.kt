@@ -72,7 +72,7 @@ open class GameActivity : AppCompatActivity() {
     private var screenMode = "overlay"
     private var aspect = 4f / 3f
     private var activeCore = ""
-    private val cheats by lazy { Cheats(this, prefs, isDolphin) }
+    private val cheats by lazy { Cheats(this, prefs, isDolphin, gameId, gameTitle, console) }
     private var dsFamily = "stacked"
     private var pictureArea = RectF(0f, 0f, 1f, 1f)
     private var currentTurn: String? = null
@@ -318,6 +318,7 @@ open class GameActivity : AppCompatActivity() {
         // Cheats you turned on earlier: sent once the game is running (Dolphin lists its codes while booting).
         lifecycleScope.launch {
             view.getGLRetroEvents().filter { it is GLRetroView.GLRetroEvents.FrameRendered }.first()
+            if (!isDolphin) cheats.ensure { if (cheats.enabled.isNotEmpty() && retroView === view) cheats.apply(view) }
             delay(if (isDolphin) 8000 else 1500)
             if (cheats.enabled.isNotEmpty() && retroView === view) cheats.apply(view)
         }
@@ -716,7 +717,7 @@ open class GameActivity : AppCompatActivity() {
         entries += "Game information" to { showGameInfo() }
         if (cheats.available()) {
             val n = cheats.enabled.size
-            entries += (if (n > 0) "Cheats ($n on)" else "Cheats") to { cheats.show(retroView) { closeMenu() } }
+            entries += (if (n > 0) "Cheats ($n on)" else "Cheats") to { toast("Looking for cheats…"); cheats.ensure { cheats.show(retroView) { closeMenu() } } }
         }
         entries += "Save game state" to { chooseSlot(save = true) }
         entries += "Load game state" to { chooseSlot(save = false) }

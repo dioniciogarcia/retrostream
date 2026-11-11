@@ -15,7 +15,7 @@ private val ES = mapOf(
     "Connect a Bluetooth controller to play. Back opens the menu." to "Conecta un mando para jugar. Atrás abre el menú.",
     "Full screen (R3 switches screen)" to "Pantalla completa (R3 cambia de pantalla)", "Both screens" to "Ambas pantallas",
     "Touch screen" to "Pantalla táctil", "Top screen" to "Pantalla superior",
-    "Resume" to "Continuar", "Game information" to "Información del juego", "Cheats" to "Trucos",
+    "Resume" to "Continuar", "Game information" to "Información del juego", "Cheats" to "Trucos", "Looking for cheats…" to "Buscando trucos…", "No cheats were found for this game (or there is no internet connection)." to "No se encontraron trucos para este juego (o no hay conexión a internet).",
     "Save game state" to "Guardar estado", "Load game state" to "Cargar estado",
     "Show both screens (L3)" to "Mostrar ambas pantallas (L3)", "Full screen (L3)" to "Pantalla completa (L3)",
     "Switch screen (R3)" to "Cambiar pantalla (R3)", "Swap screens (R3)" to "Intercambiar pantallas (R3)",

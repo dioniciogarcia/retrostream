@@ -118,10 +118,17 @@ final class TirsoDrive {
         else if(object instanceof TdApi.UpdateNewChat){TdApi.Chat c=((TdApi.UpdateNewChat)object).chat;chats.put(c.id,c);}
         else if(object instanceof TdApi.UpdateChatTitle){TdApi.UpdateChatTitle u=(TdApi.UpdateChatTitle)object;TdApi.Chat c=chats.get(u.chatId);if(c!=null)c.title=u.title;}
         else if(object instanceof TdApi.UpdateFile)fileUpdated(((TdApi.UpdateFile)object).file);
+        else if(object instanceof TdApi.UpdateNewMessage){presenceMessage(((TdApi.UpdateNewMessage)object).message);friendsChanged();}
+        else if(object instanceof TdApi.UpdateMessageContent){
+            TdApi.UpdateMessageContent u=(TdApi.UpdateMessageContent)object;
+            if(u.chatId==friendsChat()&&u.chatId!=0)send(new TdApi.GetMessage(u.chatId,u.messageId),r->{if(r instanceof TdApi.Message){presenceMessage((TdApi.Message)r);friendsChanged();}});
+        }
         else if(object instanceof TdApi.UpdateMessageSendSucceeded){
-            TdApi.UpdateMessageSendSucceeded u=(TdApi.UpdateMessageSendSucceeded)object;Done<Long> d=pendingUploads.remove(u.oldMessageId);if(d!=null)d.done(u.message.id,null);
+            TdApi.UpdateMessageSendSucceeded u=(TdApi.UpdateMessageSendSucceeded)object;
+            if(u.oldMessageId==presenceTemp&&presenceTemp!=0){presenceTemp=0;myPresenceMsg=u.message.id;}
+            Done<Long> d=pendingUploads.remove(u.oldMessageId);if(d!=null)d.done(u.message.id,null);
         }else if(object instanceof TdApi.UpdateMessageSendFailed){
-            TdApi.UpdateMessageSendFailed u=(TdApi.UpdateMessageSendFailed)object;Done<Long> d=pendingUploads.remove(u.oldMessageId);if(d!=null)d.done(0L,errorText(u.error));
+            TdApi.UpdateMessageSendFailed u=(TdApi.UpdateMessageSendFailed)object;if(u.oldMessageId==presenceTemp)presenceTemp=0;Done<Long> d=pendingUploads.remove(u.oldMessageId);if(d!=null)d.done(0L,errorText(u.error));
         }
     }
     private void authorization(TdApi.Object object){
@@ -150,7 +157,7 @@ final class TirsoDrive {
                 if(me instanceof TdApi.User){
                     long previous=prefs.getLong("accountId",0);accountId=((TdApi.User)me).id;
                     if(previous!=accountId){new Library(context).clearTelegram();publish(true);}
-                    prefs.edit().putLong("accountId",accountId).apply();discover();
+                    prefs.edit().putLong("accountId",accountId).apply();discover();if(friendsChat()!=0){loadFriends();presenceChanged();}
                 }else if(me instanceof TdApi.Error)fail((TdApi.Error)me);
             });
         }else if(object instanceof TdApi.AuthorizationStateLoggingOut){stage=Stage.CONNECTING;status=T.t("Cerrando sesión…");
@@ -329,6 +336,138 @@ final class TirsoDrive {
         deletingFiles.add(fileId);files.remove(fileId);requestedDownloads.remove(fileId);watchedFiles.remove(fileId);
         send(new TdApi.DeleteFile(fileId),result->{deletingFiles.remove(fileId);Game next=playAfterDelete.remove(fileId);publish(false);if(next!=null)download(next);});
     });}
+
+
+    // ------------------------------------------------------------------ friends (who is online / playing)
+    static final String FRIENDS_TITLE="TD - RetroStream - Friends";
+    static final String PRESENCE_TAG="#RSPRESENCE";
+    static final long ONLINE_WINDOW=150_000L;
+    static final class Friend{long userId;String name="";String state="offline",game="",console="";long since,ts;
+        boolean online(){return !state.equals("offline")&&System.currentTimeMillis()-ts<ONLINE_WINDOW;}
+        boolean playing(){return online()&&state.equals("playing")&&!game.isEmpty();}}
+    final Map<Long,Friend> friends=new HashMap<>();
+    private final Map<Long,String> userNames=new HashMap<>();
+    private Runnable friendsListener;
+    private long myPresenceMsg,presenceTemp;
+    private String myState="menu",myGame="",myConsole="";private long mySince;
+    private boolean menuVisible,gameVisible,playingIsolated,heartbeatRunning,wasActive;
+    void friendsListener(Runnable r){friendsListener=r;}
+    private void friendsChanged(){if(friendsListener!=null)friendsListener.run();}
+    long friendsChat(){return prefs.getLong("friendsChat_"+accountId,0);}
+    String friendsLink(){return prefs.getString("friendsLink_"+accountId,"");}
+    boolean shareActivity(){return prefs.getBoolean("friendsShare",true);}
+    void shareActivity(boolean on){prefs.edit().putBoolean("friendsShare",on).apply();if(on)postPresence();else{myState="offline";postPresence();myState=menuVisible?"menu":"offline";}friendsChanged();}
+    int friendsOnline(){int n=0;for(Friend f:friends.values())if(f.userId!=accountId&&f.online())n++;return n;}
+    private TdApi.Chat findFriendsChat(){
+        long saved=friendsChat();TdApi.Chat c=saved!=0?chats.get(saved):null;if(c!=null)return c;
+        for(TdApi.Chat chat:chats.values())if(TelegramCatalog.group(chat)&&norm(chat.title).equals(norm(FRIENDS_TITLE)))return chat;
+        return null;
+    }
+    private void friendsReady(long chatId,String link){
+        prefs.edit().putLong("friendsChat_"+accountId,chatId).putString("friendsLink_"+accountId,link==null?"":link).apply();
+        friends.clear();myPresenceMsg=0;loadFriends();startHeartbeat();friendsChanged();
+    }
+    /** Creates the private friends group (or reuses the one that already exists) and its invite link. */
+    void friendsCreate(Done<String> callback){
+        Done<String> cb=once(callback,"");
+        if(stage!=Stage.READY||accountId==0){cb.done("",T.t("Conecta TirsoDrive primero."));return;}
+        TdApi.Chat found=findFriendsChat();
+        if(found!=null){friendsInvite(found.id,cb);return;}
+        send(new TdApi.CreateNewSupergroupChat(FRIENDS_TITLE,false,false,"RetroStream · amigos conectados. No borres este grupo.",null,0,false),r->{
+            if(r instanceof TdApi.Chat){TdApi.Chat chat=(TdApi.Chat)r;chats.put(chat.id,chat);friendsInvite(chat.id,cb);}
+            else cb.done("",errorText(r));
+        });
+    }
+    private void friendsInvite(long chatId,Done<String> cb){
+        send(new TdApi.CreateChatInviteLink(chatId,"RetroStream",0,0,false),r->{
+            if(r instanceof TdApi.ChatInviteLink){String link=((TdApi.ChatInviteLink)r).inviteLink;friendsReady(chatId,link);cb.done(link,null);}
+            else cb.done("",errorText(r));
+        });
+    }
+    /** Joins the friends group with an invite link a friend sent. */
+    void friendsJoin(String link,Done<Long> callback){
+        Done<Long> cb=once(callback,0L);
+        link=link.trim();
+        if(!link.contains("t.me/")&&!link.contains("telegram.me/")){cb.done(0L,T.t("Ese enlace no es de Telegram."));return;}
+        send(new TdApi.JoinChatByInviteLink(link),r->{
+            if(r instanceof TdApi.Chat){TdApi.Chat chat=(TdApi.Chat)r;chats.put(chat.id,chat);friendsReady(chat.id,"");cb.done(chat.id,null);}
+            else cb.done(0L,errorText(r));
+        });
+    }
+    void friendsLeave(){prefs.edit().remove("friendsChat_"+accountId).remove("friendsLink_"+accountId).apply();friends.clear();myPresenceMsg=0;friendsChanged();}
+    private static String line(String text,String key){
+        for(String l:text.split("\n")){int i=l.indexOf(':');if(i>0&&l.substring(0,i).equals(key))return l.substring(i+1).trim();}
+        return "";
+    }
+    private void presenceMessage(TdApi.Message m){
+        if(m==null||m.chatId!=friendsChat()||!(m.content instanceof TdApi.MessageText)||!(m.senderId instanceof TdApi.MessageSenderUser))return;
+        String text=((TdApi.MessageText)m.content).text.text;if(!text.startsWith(PRESENCE_TAG))return;
+        long user=((TdApi.MessageSenderUser)m.senderId).userId;
+        if(user==accountId){myPresenceMsg=m.id;}
+        Friend f=friends.get(user);if(f==null){f=new Friend();f.userId=user;friends.put(user,f);}
+        f.state=line(text,"state");if(f.state.isEmpty())f.state="offline";f.game=line(text,"game");f.console=line(text,"console");
+        try{f.ts=Long.parseLong(line(text,"ts"));}catch(NumberFormatException e){f.ts=(long)m.date*1000;}
+        try{f.since=Long.parseLong(line(text,"since"));}catch(NumberFormatException e){f.since=f.ts;}
+        String n=userNames.get(user);if(n!=null)f.name=n;
+        else send(new TdApi.GetUser(user),r->{if(r instanceof TdApi.User){TdApi.User u=(TdApi.User)r;String full=(u.firstName+" "+u.lastName).trim();userNames.put(user,full);Friend x=friends.get(user);if(x!=null)x.name=full;friendsChanged();}});
+    }
+    /** Reads every friend's status message from the group. */
+    void loadFriends(){
+        long chat=friendsChat();if(chat==0||stage!=Stage.READY)return;
+        pageFriends(chat,0,0);
+    }
+    private void pageFriends(long chat,long from,int page){
+        send(new TdApi.GetChatHistory(chat,from,0,100,false),r->{
+            if(!(r instanceof TdApi.Messages))return;
+            TdApi.Message[] list=((TdApi.Messages)r).messages;
+            if(list==null||list.length==0){friendsChanged();return;}
+            long oldest=from;
+            for(TdApi.Message m:list){
+                Friend existing=m.senderId instanceof TdApi.MessageSenderUser?friends.get(((TdApi.MessageSenderUser)m.senderId).userId):null;
+                if(existing==null||page==0&&existing.ts<=0)presenceMessage(m);else if(existing!=null&&((long)m.date*1000)>existing.ts-ONLINE_WINDOW*4&&false)presenceMessage(m);
+                oldest=m.id;
+            }
+            if(page<3)pageFriends(chat,oldest,page+1);else friendsChanged();
+        });
+    }
+    private String presenceText(){
+        return PRESENCE_TAG+"\nstate:"+myState+(myGame.isEmpty()?"":"\ngame:"+myGame+"\nconsole:"+myConsole)+"\nsince:"+mySince+"\nts:"+System.currentTimeMillis();
+    }
+    /** Writes my status into my one message in the group (edited in place, so the group never fills up). */
+    void postPresence(){
+        long chat=friendsChat();if(chat==0||stage!=Stage.READY||accountId==0)return;
+        if(!shareActivity()&&!myState.equals("offline"))return;
+        TdApi.InputMessageText content=new TdApi.InputMessageText(new TdApi.FormattedText(presenceText(),new TdApi.TextEntity[0]),null,false);
+        if(myPresenceMsg!=0){
+            send(new TdApi.EditMessageText(chat,myPresenceMsg,null,content),r->{
+                if(r instanceof TdApi.Error&&!((TdApi.Error)r).message.contains("NOT_MODIFIED")){myPresenceMsg=0;sendPresence(chat,content);}
+            });
+        }else sendPresence(chat,content);
+    }
+    private void sendPresence(long chat,TdApi.InputMessageText content){
+        if(presenceTemp!=0)return;
+        send(new TdApi.SendMessage(chat,null,null,null,null,content),r->{if(r instanceof TdApi.Message)presenceTemp=((TdApi.Message)r).id;});
+    }
+    private boolean active(){return menuVisible||gameVisible||(myState.equals("playing")&&playingIsolated&&System.currentTimeMillis()-mySince<4*3600_000L);}
+    private void presenceChanged(){
+        boolean now=active();
+        if(!now){myState="offline";myGame="";myConsole="";postPresence();wasActive=false;return;}
+        wasActive=true;startHeartbeat();postPresence();
+    }
+    void appVisible(boolean visible){menuVisible=visible;if(visible&&myState.equals("offline")){myState="menu";mySince=System.currentTimeMillis();}presenceChanged();if(visible)loadFriends();}
+    void gameVisible(boolean visible){gameVisible=visible;presenceChanged();}
+    /** The player started a game. */
+    void playing(Game game){myState="playing";myGame=game.title;myConsole=game.console.name();mySince=System.currentTimeMillis();playingIsolated=game.console==Console.N64;presenceChanged();}
+    /** Back in the menus. */
+    void inMenu(){if(!myState.equals("menu")){myState="menu";myGame="";myConsole="";mySince=System.currentTimeMillis();}playingIsolated=false;presenceChanged();}
+    private void startHeartbeat(){
+        if(heartbeatRunning||friendsChat()==0)return;heartbeatRunning=true;
+        main.postDelayed(new Runnable(){public void run(){
+            if(friendsChat()==0||!active()){heartbeatRunning=false;return;}
+            postPresence();if(menuVisible)loadFriends();
+            main.postDelayed(this,60_000L);
+        }},60_000L);
+    }
 
     // ------------------------------------------------------------------ save backups (Telegram channel)
     static final String BACKUP_TITLE="TD - RetroStream - Save file back-ups";
