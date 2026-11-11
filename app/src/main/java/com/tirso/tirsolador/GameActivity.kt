@@ -1103,7 +1103,6 @@ open class GameActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         if (!isolated) TirsoDrive.get(this).gameVisible(false)
-        autoBackup()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -1117,7 +1116,12 @@ open class GameActivity : AppCompatActivity() {
         if (romSha.isEmpty() || isolated) return  // the app uploads changed saves itself when you come back to it
         val drive = TirsoDrive.get(this)
         if (!drive.ready() || !SaveBackups.changed(this, entry())) return
-        SaveBackups.upload(this, drive, entry(), true) { ok, _ -> if (!ok) Log.w("Tirso", "Automatic save backup failed") }
+        val app = applicationContext
+        Toast.makeText(app, tr("Backing up your save to Telegram…"), Toast.LENGTH_SHORT).show()
+        SaveBackups.upload(this, drive, entry(), true) { ok, _ ->
+            if (!ok) Log.w("Tirso", "Automatic save backup failed")
+            Toast.makeText(app, tr(if (ok) "Save backed up to Telegram" else "Save backup failed"), Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun backUpToTelegram() {
