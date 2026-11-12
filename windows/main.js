@@ -11,6 +11,7 @@ const { External } = require('./lib/external');
 const { Meta } = require('./lib/meta');
 const { LocalGames } = require('./lib/localscan');
 const { Friends } = require('./lib/social');
+const { Remote, brief } = require('./lib/remote');
 const catalog = require('./lib/catalog');
 const I18N = require('./renderer/i18n');
 
@@ -20,7 +21,7 @@ try { config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), '
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
-let win = null, store = null, drive = null, player = null, cloud = null, external = null, meta = null, local = null, friends = null, t = (s) => s;
+let remote = null, win = null, store = null, drive = null, player = null, cloud = null, external = null, meta = null, local = null, friends = null, t = (s) => s;
 /** Telegram games plus the ones found in the PC folders the user chose. */
 function allGames() { return store.games().concat(local ? local.games() : []); }
 /** The games as the screens show them (names, covers and descriptions from the lookup). */
@@ -137,6 +138,7 @@ app.whenReady().then(() => {
       if (info.played > 0) { const pt = store.get('playtime') || {}; pt[info.id] = (pt[info.id] || 0) + info.played; store.set('playtime', pt); }
       send('played', Object.assign(info, { playtime: store.get('playtime') || {} }));
       if (friends) friends.inMenu();
+      if (remote) remote.stopped();
       if (info.entry) { const m = store.get('saveOf') || {}; m[info.id] = info.entry; store.set('saveOf', m); }
       // "Keep downloaded games" off: the game file is deleted after playing (it stays in Telegram).
       const g = gameById(info.id);
@@ -162,6 +164,42 @@ app.whenReady().then(() => {
   cloud = new Cloud({ dir, drive, store, t: (s) => t(s) });
   meta = new Meta({ dir, t: (s) => t(s) });
   local = new LocalGames({ dir, store });
+  remote = new Remote({ store, version: app.getVersion() });
+  remote.start();
+  player.onState = (st) => { remote.state = st; };
+  remote.on('code', (c) => send('remote', { code: c }));
+  remote.on('paired', (name) => toast(t('Phone paired:') + ' ' + name));
+  remote.on('play', (req, done) => {
+    const want = req.game || {}; const all = allGames();
+    const g = all.find((x) => x.id === want.id)
+      || all.find((x) => want.chatId && x.chatId === want.chatId && x.messageId === want.messageId)
+      || all.find((x) => x.console === want.console && want.fileName && x.fileName === want.fileName);
+    if (!g) { done({ error: 'not found' }); return; }
+    // A game already running closes first (its save is kept), then the new one starts.
+    const start = () => { remote.pending = { game: brief(g), at: Date.now() }; send('launch', { id: g.id, fresh: !!req.fresh }); if (win) { if (win.isMinimized()) win.restore(); win.show(); } done({ ok: true }); };
+    if (player.child) { player.command('exit'); setTimeout(start, 2500); }
+    else if (external.child) { try { external.child.kill(); } catch (_) { /* gone */ } setTimeout(start, 2500); }
+    else start();
+  });
+  remote.on('control', async (req, done) => {
+    const a = String(req.action || ''); const slot = Math.max(1, Math.min(3, Number(req.slot) || 1));
+    if (!remote.now) { done({ error: 'not playing' }); return; }
+    if (external.child) {
+      if (a === 'exit') { try { external.child.kill(); } catch (_) { /* gone */ } done({ ok: true }); }
+      else done({ error: 'not available' });
+      return;
+    }
+    if (!player.child) { done({ error: 'not playing' }); return; }
+    if (['pause', 'resume', 'shot', 'ff', 'reset', 'exit'].includes(a)) { await player.command(a); done({ ok: true }); return; }
+    if (a === 'save' || a === 'load') { const r = await player.command(a + ' ' + slot); done(r.ok ? { ok: true } : { error: a === 'load' ? 'empty slot' : 'failed' }); return; }
+    if (a === 'backup') {
+      await player.command('flush');
+      const e = (store.get('saveOf') || {})[remote.now.game.id];
+      if (!e || drive.stage !== 'ready') { done({ error: 'no telegram' }); return; }
+      const err = await cloud.upload(e, true).catch((x) => String(x.message || x)); done(err ? { error: String(err) } : { ok: true }); return;
+    }
+    done({ error: 'unknown action' });
+  });
   friends = new Friends({ drive, store, t: (s) => t(s) });
   friends.on('changed', () => send('friends', friends.snapshot()));
   let wasReady = false;
@@ -231,11 +269,22 @@ app.whenReady().then(() => {
       }
       if (entry) { const m = store.get('saveOf') || {}; m[game.id] = entry; store.set('saveOf', m); }
       friends.playing(game);
+      remote.playing(game, ext ? ['exit'] : ['pause', 'resume', 'save', 'load', 'shot', 'ff', 'reset', 'backup', 'exit']);
       if (ext) { await external.launch(prep, Object.assign({}, store.prefs.data, opts || {}), afterGame); return { ok: true }; }
       const cheats = await Promise.race([cloud.cheats(game).catch(() => null), new Promise((r) => setTimeout(() => r(null), 6000))]);
       await player.launch(prep, Object.assign({}, store.prefs.data, opts || {}), cheats);
       return { ok: true };
-    } catch (e) { return { error: String(e.message || e) }; }
+    } catch (e) { if (remote) { remote.pending = null; remote.stopped(); } return { error: String(e.message || e) }; }
+  });
+  ipcMain.handle('remote', async (_e, action, arg) => {
+    switch (action) {
+      case 'on': store.set('remoteOn', !!arg); break;
+      case 'name': if (arg) store.set('remoteName', String(arg).substring(0, 40)); break;
+      case 'forget': remote.forget(); break;
+      default: break;
+    }
+    const ips = []; for (const list of Object.values(require('os').networkInterfaces())) for (const n of list || []) if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
+    return { on: remote.enabled(), name: remote.name(), phones: Object.values(remote.phones()).map((p) => p.name), error: remote.error || '', ips };
   });
   ipcMain.handle('backups', async (_e, action, arg) => {
     try {
@@ -434,6 +483,7 @@ app.on('second-instance', (_e, argv) => {
 });
 app.on('window-all-closed', async () => {
   store && store.flush();
+  if (remote) remote.close();
   if (friends) await Promise.race([friends.offline().catch(() => {}), new Promise((r) => setTimeout(r, 2500))]);
   if (drive) await drive.close(); app.quit();
 });

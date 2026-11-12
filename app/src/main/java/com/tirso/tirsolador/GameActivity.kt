@@ -152,6 +152,7 @@ open class GameActivity : AppCompatActivity() {
         showLastCrashIfAny()
 
         findViewById<TextView>(R.id.loadingText).text = gameTitle
+        listenToPhone()
         lifecycleScope.launch {
             val rom = try {
                 withContext(Dispatchers.IO) { prepareRom() }
@@ -258,6 +259,8 @@ open class GameActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         window.decorView.removeCallbacks(rewindTick); window.decorView.removeCallbacks(rewindStep)
+        phoneReceiver?.let { runCatching { unregisterReceiver(it) } }; phoneReceiver = null
+        if (!BuildConfig.PHONE) tellPhone("exited")
         super.onDestroy()
         val ws = workspace; val lease = romLease; val source = sourceRom; val app = applicationContext
         val kill = isolated
@@ -343,6 +346,7 @@ open class GameActivity : AppCompatActivity() {
         val view = GLRetroView(this, data)
         retroView = view
         lifecycle.addObserver(view)
+        tellPhone("started")
         if (isDolphin) {
             // Added after the view, so it hears "pause" first, while the engine can still save safely.
             lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
@@ -790,16 +794,75 @@ open class GameActivity : AppCompatActivity() {
             it.onPause()
             com.swordfish.libretrodroid.LibretroDroid.pause()
         }
+        tellPhone("state")
     }
 
     private fun resumeEmulation() {
-        glPaused = false
+        glPaused = false; phonePaused = false
         retroView?.let {
             com.swordfish.libretrodroid.LibretroDroid.resume()
             it.onResume()
             it.requestFocus()
         }
         hideSystemBars()
+        tellPhone("state")
+    }
+
+    // ------------------------------------------------------------------ phone remote (TV app): commands from the phone, state back to it
+    private var phoneReceiver: android.content.BroadcastReceiver? = null
+    private var phonePaused = false
+    private fun listenToPhone() {
+        if (BuildConfig.PHONE) return
+        val r = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: android.content.Context, i: Intent) { runCatching { fromPhone(i.getStringExtra("action") ?: "", i.getIntExtra("slot", 1)) } }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(this, r, android.content.IntentFilter(Remote.ACTION_CMD), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        phoneReceiver = r
+    }
+    private fun tellPhone(event: String, ok: Boolean = true, error: String = "") {
+        if (BuildConfig.PHONE) return
+        val i = Intent(Remote.ACTION_STATE).setPackage(packageName).putExtra("event", event)
+        when (event) {
+            "started" -> i.putExtra("gameid", intent.getStringExtra("gameid") ?: gameId).putExtra("title", gameTitle).putExtra("console", console.name)
+                .putExtra("filename", intent.getStringExtra("filename") ?: "")
+                .putExtra("controls", (listOf("pause", "resume", "save", "load", "shot", "ff", "reset", "exit") + if (isolated) emptyList() else listOf("backup")).toTypedArray())
+            "state" -> i.putExtra("paused", glPaused || menuOpen).putExtra("ff", fastSpeed > 1)
+            "done" -> i.putExtra("ok", ok).putExtra("error", error)
+        }
+        runCatching { sendBroadcast(i) }
+    }
+    private fun fromPhone(action: String, slot: Int) {
+        val view = retroView
+        if (view == null && action != "exit") { tellPhone("done", false, "not ready"); return }
+        when (action) {
+            "pause" -> if (!glPaused) { phonePaused = true; pauseEmulation(); toast("Paused from the phone") }
+            "resume" -> if (glPaused && !menuOpen) resumeEmulation()
+            "shot" -> takeScreenshot()
+            "ff" -> { toggleFastForward(); tellPhone("state") }
+            "reset" -> { if (isDolphin) view?.reset(useEmulationThread = true) else view?.reset(useEmulationThread = false); toast("Restarted") }
+            "exit" -> { menuOpen = false; exitGame() }
+            "backup" -> {
+                if (isolated) { runCatching { persist() }; tellPhone("done", false, "after_exit"); return }
+                val drive = TirsoDrive.get(this)
+                if (!drive.ready()) { tellPhone("done", false, "no telegram"); return }
+                runCatching { persist() }
+                SaveBackups.upload(this, drive, entry(), true) { ok, msg -> toast(msg); tellPhone("done", ok, if (ok) "" else msg) }
+            }
+            "save", "load" -> {
+                val wasPaused = glPaused
+                if (!wasPaused) pauseEmulation()
+                val ok = if (action == "save") runCatching {
+                    val data = if (isDolphin) heldState ?: error("no state") else view!!.serializeState(useEmulationThread = false)
+                    saves.writeSlot(slot, data)
+                }.isSuccess else {
+                    val data = saves.readSlot(slot)
+                    data != null && runCatching { if (isDolphin) view!!.unserializeState(data, useEmulationThread = true) else view!!.unserializeState(data, useEmulationThread = false) }.getOrDefault(false)
+                }
+                if (!wasPaused) resumeEmulation()
+                toast(if (action == "save") (if (ok) "${tr("Saved to slot")} $slot" else "Saving failed") else (if (ok) "${tr("Loaded slot")} $slot" else "That save couldn't be loaded"))
+                tellPhone("done", ok, if (ok) "" else if (action == "load") "empty slot" else "failed")
+            }
+        }
     }
 
     private fun openMenu() {

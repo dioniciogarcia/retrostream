@@ -58,6 +58,7 @@ internal object GameMenu {
                     .setPositiveButton(T.t("Jugar")) { _, _ -> host.play(g, true) }.setNegativeButton(T.t("Cancelar"), null).show()
             }
         }
+        if (BuildConfig.PHONE && a is PhoneActivity && g.telegramAccount != 0L) add(T.t("Jugar en TV o PC")) { a.castSheet(g) }
         add(T.t("Ver información del juego")) { info(a, g) }
         add(T.t("Buscar información del juego")) { search(a, g, false, host) }
         add(T.t("Editar información")) { editInfo(a, g, host) }

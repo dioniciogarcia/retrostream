@@ -173,19 +173,24 @@ class Player {
     const exe = path.join(this.resources, 'player', 'rs-player.exe');
     if (!fs.existsSync(exe)) throw new Error(this.t('The game player is missing. Reinstall RetroStream.'));
     const log = []; let played = 0; let error = '';
-    const child = spawn(exe, args, { cwd: path.dirname(exe), windowsHide: false, stdio: ['ignore', 'pipe', 'pipe'] });
-    this.child = child;
+    const child = spawn(exe, args, { cwd: path.dirname(exe), windowsHide: false, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child = child; this.state = { paused: false, ff: false }; this.waiters = [];
+    child.stdin.on('error', () => {});
     let buf = '';
     child.stdout.on('data', (d) => {
       buf += d.toString();
       let nl; while ((nl = buf.indexOf('\n')) >= 0) {
         const line = buf.substring(0, nl).trim(); buf = buf.substring(nl + 1);
-        try { const m = JSON.parse(line); if (m.event === 'exit') played = m.played || 0; if (m.event === 'error') error = m.reason; } catch (_) { /* not ours */ }
+        try {
+          const m = JSON.parse(line); if (m.event === 'exit') played = m.played || 0; if (m.event === 'error') error = m.reason;
+          if (m.event === 'state') { this.state = { paused: !!m.paused, ff: !!m.ff }; if (this.onState) this.onState(this.state); }
+          if (m.event === 'done') { const w = this.waiters.shift(); if (w) w(m); }
+        } catch (_) { /* not ours */ }
       }
     });
     child.stderr.on('data', (d) => { log.push(d.toString()); if (log.length > 200) log.shift(); });
     child.on('exit', (code) => {
-      this.child = null;
+      this.child = null; for (const w of this.waiters.splice(0)) w({ ok: false });
       try { fs.writeFileSync(path.join(this.dir, 'last-player.log'), log.join('')); } catch (_) { /* ignore */ }
       if (work && fs.existsSync(work)) fs.rmSync(work, { recursive: true, force: true });
       const reasons = { engine: 'The game engine could not be loaded.', file: 'The game file could not be read.', game: 'The engine could not open this game. The file may be damaged or for another region/console.', graphics: 'Your graphics card could not start OpenGL 3.3.' };
@@ -195,5 +200,14 @@ class Player {
     return true;
   }
 }
+
+/** Phone remote: a command for the running game ("pause", "save 2"…). Resolves with the player's answer for save/load/flush. */
+Player.prototype.command = function (cmd) {
+  const c = this.child; if (!c || !c.stdin || c.stdin.destroyed) return Promise.resolve({ ok: false, error: 'not playing' });
+  const word = cmd.split(' ')[0];
+  const wait = ['save', 'load', 'flush'].includes(word) ? new Promise((r) => { this.waiters.push(r); setTimeout(() => { const i = this.waiters.indexOf(r); if (i >= 0) { this.waiters.splice(i, 1); r({ ok: false }); } }, 8000); }) : Promise.resolve({ ok: true });
+  try { c.stdin.write(cmd + '\n'); } catch (_) { return Promise.resolve({ ok: false }); }
+  return wait;
+};
 
 module.exports = { Player };

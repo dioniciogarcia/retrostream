@@ -41,7 +41,7 @@ private val ES = mapOf(
     "Hide speed (fps)" to "Ocultar velocidad (fps)", "Show speed (fps)" to "Mostrar velocidad (fps)",
     "Save problem report" to "Guardar informe de problemas", "Legal notices" to "Avisos legales", "Exit game" to "Salir del juego",
     "Save to slot" to "Guardar en ranura", "Load from slot" to "Cargar de ranura", "Slot" to "Ranura", "empty" to "vacía",
-    "Saved to slot" to "Guardado en ranura", "Loaded slot" to "Ranura cargada", "Saving failed" to "No se pudo guardar", "is empty" to "está vacía",
+    "Paused from the phone" to "En pausa desde el teléfono", "Restarted" to "Reiniciado", "Saved to slot" to "Guardado en ranura", "Loaded slot" to "Ranura cargada", "Saving failed" to "No se pudo guardar", "is empty" to "está vacía",
     "Restart" to "Reiniciar", "Cancel" to "Cancelar", "Close" to "Cerrar", "OK" to "Aceptar", "Controller" to "Mando",
     "The game closed unexpectedly last time" to "El juego se cerró inesperadamente la última vez", "Copy report" to "Copiar informe",
     "Report copied. Paste it to Claude." to "Informe copiado. Pégalo en el chat con Claude.",

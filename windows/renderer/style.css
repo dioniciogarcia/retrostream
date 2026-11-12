@@ -190,3 +190,5 @@ body.light .hints b{color:var(--text)}
 body.light .shade{background:rgba(20,24,36,.35)}
 body.light .scroll::-webkit-scrollbar-thumb{background:#C3CADB}
 body.light.kbd :focus{outline-color:#161A24}
+.paircode{display:flex;gap:12px;justify-content:center;margin:18px 0}
+.paircode span{width:64px;height:78px;border-radius:14px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font:600 40px 'Space Grotesk',Inter,sans-serif;color:var(--text)}

@@ -517,6 +517,7 @@ function settings() {
         srow(t('Resolution'), (resVals.length === 1 ? t(RES_LABEL[resVals[0]]) : t('Mixed')) + ' · ' + t('per console'), '#2F6DF6', () => go('resolution'), 's_res'),
         srow(t('Controllers'), (pref('swapAB') ? t('A/B swapped') : t('Xbox layout')) + ' · ' + t('buttons and shortcuts'), '#FF4D73', () => go('controllers'), 's_ctl'),
         srow(t('Save backups'), t('In your Telegram channel · shared with the phone and TV'), '#2DE2C8', backupsMenu),
+        srow(t('Phone remote'), t('Start and control games from your phone'), '#7A4DFF', () => { S.remoteInfo = null; go('remote'); }, 's_remote'),
         srow(t('Friends'), fr.chat ? (fr.friends || []).filter((x) => x.userId !== fr.me && x.online).length + ' ' + t('online') : t('See who is online and what they play'), '#22C55E', () => go('friends'), 's_friends'),
         srow(t('System files (BIOS)'), S.bios && S.bios.length ? 'PS2: ' + S.bios.join(', ') : t('Add your own PS2 BIOS file (needed for PS2 games)'), '#4DB36B', () => choose(t('System files (BIOS)'), [
           { label: t('Add a PS2 BIOS file'), pick: async () => { const r = await window.rs.bios('add'); if (!r) return; if (r.error) { toast(r.error); return; } toast(t('BIOS added:') + ' ' + r.ok); S.bios = await window.rs.bios('list'); render(); } },
@@ -807,7 +808,8 @@ function pollPads() {
   window.rs.on('kept', (k) => { S.prefs.kept = k; render(); });
   window.rs.on('toast', (text) => toast(text));
   window.rs.on('friends', (f) => { S.friends = f; if (S.page === 'friends' || (S.page === 'home' && homeTheme() === 'classic')) { if (!document.querySelector('#layer .shade')) render(); } });
-  const launch = (id) => { const g = S.games.find((x) => x.id === id); if (g) playGame(g); else toast(t('That game is not in your library any more.')); };
+  const launch = (x) => { const id = typeof x === 'string' ? x : x.id; const g = S.games.find((y) => y.id === id); if (g) { document.getElementById('layer').replaceChildren(); playGame(g, typeof x === 'object' && x.fresh); } else toast(t('That game is not in your library any more.')); };
+  window.rs.on('remote', (r) => remoteCode(r && r.code));
   window.rs.on('launch', launch);
   if (init.launch) setTimeout(() => launch(init.launch), 1500);
   window.rs.on('played', (i) => { S.prefs.playtime = i.playtime; if (i.error) dialog(t('The game closed'), i.error + (i.details ? '\n\n' + t('Details for support:') + '\n' + i.details : ''), []); render(); });

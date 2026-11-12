@@ -112,6 +112,7 @@ public class MainActivity extends Activity {
             if(catalogStatus!=null&&page.equals("library"))catalogStatus.setText(catalogMessage());
         };
         drive.attach(driveListener);drive.start();
+        if(!BuildConfig.PHONE)Remote.start(this);   // the phone app can find this TV on the Wi-Fi and start games on it
     }
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
@@ -862,6 +863,7 @@ public class MainActivity extends Activity {
         String id = getIntent() == null ? null : getIntent().getStringExtra("play_game");
         if (id == null) return;
         getIntent().removeExtra("play_game");
+        if (getIntent().getBooleanExtra("play_fresh", false)) { freshStart = true; getIntent().removeExtra("play_fresh"); }
         for (Game g : library.games) if (g.id.equals(id)) { console = g.console; page = "library"; render(); startWhenReady(g, 0); return; }
         Toast.makeText(this, T.t("Ese juego ya no está en tu biblioteca."), Toast.LENGTH_LONG).show();
     }
@@ -902,6 +904,7 @@ public class MainActivity extends Activity {
         if (infoPanel != null) { View play = infoPanel.findViewWithTag("panel_play"); if (play != null) play.requestFocusFromTouch(); }
     }
     private void startPlay(Game game) {
+        if (!BuildConfig.PHONE) Remote.loading(game);
         selected = game; drive.inspectFile(game); playSelected();
     }
     private void loadingScreen() {

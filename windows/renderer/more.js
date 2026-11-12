@@ -326,4 +326,37 @@ function licenses() {
 }
 function about() { dialog('RetroStream ' + S.version, t('Your retro library from your Telegram channels, on the phone, TV and PC. 15 consoles: 11 built in and 4 through Dolphin, RPCS3 and Eden.'), [{ label: t('Licenses and credits'), pick: licenses }]); }
 
-const PAGES = { resolution: resolutionPage, consoles: consolesPage, homeLayout: homePage, pc: pcPage, history: historyPage, missing: missingPage, space: spacePage, controllers: controllersPage, friends: friendsPage };
+// ------------------------------------------------------------------ phone remote (the phone app finds this PC on the Wi-Fi)
+let codeBox = null;
+function remoteCode(c) {
+  if (codeBox) { codeBox(); codeBox = null; }
+  if (!c) return;
+  modal((box, close) => {
+    codeBox = close;
+    box.append(h('h2', {}, t('Pair your phone')),
+      h('p', {}, (c.phone ? c.phone + ' ' : '') + t('wants to control RetroStream on this PC. Type this code on the phone:')),
+      h('div', { class: 'paircode' }, c.code.split('').map((d) => h('span', {}, d))),
+      h('p', { style: 'color:var(--muted);font-size:13px' }, t('The code works for 2 minutes. If you did not ask for this, close this window.')),
+      h('div', { class: 'buttons' }, h('button', { class: 'btn ghost', onClick: () => { close(); codeBox = null; } }, t('Close'))));
+  });
+}
+function remotePage() {
+  if (!S.remoteInfo) window.rs.remote('get').then((r) => { S.remoteInfo = r; if (S.page === 'remote') render(); });
+  const r = S.remoteInfo || { on: true, name: '', phones: [] };
+  const act = async (a, v) => { S.remoteInfo = await window.rs.remote(a, v); render(); };
+  return page(t('Phone remote'),
+    note(t('With the RetroStream phone app on the same Wi-Fi, tap the Cast button to start games on this PC, see what is playing, pause, save, load, take screenshots, back up and exit. The first time, this PC shows a code to type on the phone.')),
+    h('div', { class: 'settings' },
+      h('section', { class: 'group' }, h('h2', {}, t('This PC')),
+        toggleRow(t('Allow the phone remote'), r.on ? t('Phones on this Wi-Fi can find this PC') : t('Off: phones can not find or control this PC'), r.on, '#22C55E', () => act('on', !r.on), 'rm_on'),
+        r.ips && r.ips.length ? srow(t('Address of this PC'), r.ips.join(' · '), '#38BDF8', () => {}, 'rm_ip') : null,
+        srow(t('Name shown on the phone'), r.name, '#2F6DF6', () => ask(t('Name shown on the phone'), r.name, (v) => act('name', v)), 'rm_name'),
+        r.error ? h('p', { class: 'error', style: 'padding:6px 10px' }, t('The remote could not start:') + ' ' + r.error) : null),
+      h('section', { class: 'group' }, h('h2', {}, t('Paired phones')),
+        r.phones.length ? r.phones.map((n, i) => h('div', { class: 'srow', 'data-key': 'rm_p' + i }, h('span', { class: 'ic', style: 'background:#7A4DFF' }), h('span', { class: 'tx' }, h('b', {}, n)))) : h('p', { style: 'padding:6px 10px;color:var(--muted)' }, t('No phones yet.')),
+        r.phones.length ? srow(t('Forget all phones'), t('They will need a new code'), '#FF4D73', () => confirmBox(t('Forget all phones'), t('Every phone must pair again with a new code.'), t('Forget'), () => act('forget')), 'rm_forget') : null),
+      h('section', { class: 'group' }, h('h2', {}, t('Help')), h('p', { style: 'padding:6px 12px;color:var(--muted);font-size:13px;line-height:1.6' },
+        t('If the phone does not find this PC: both must be on the same Wi-Fi (not a guest network), and Windows must allow RetroStream in the firewall (it asks the first time; choose "Private networks"). You can also type this PC\'s address on the phone.')))));
+}
+
+const PAGES = { resolution: resolutionPage, consoles: consolesPage, homeLayout: homePage, pc: pcPage, history: historyPage, missing: missingPage, space: spacePage, controllers: controllersPage, friends: friendsPage, remote: remotePage };

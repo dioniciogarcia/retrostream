@@ -56,6 +56,14 @@ final class IconView extends View {
             case "users":
                 canvas.drawCircle(9,8,3.6f,paint);p.moveTo(2.5f,20);p.cubicTo(2.5f,13.5f,15.5f,13.5f,15.5f,20);canvas.drawPath(p,paint);
                 canvas.drawCircle(17.2f,9,2.7f,paint);Path q=new Path();q.moveTo(18,14.2f);q.cubicTo(21,14.4f,22,16.5f,22,19);canvas.drawPath(q,paint);break;
+            case "cast":   // a screen with waves in its corner (send to TV / PC)
+                p.moveTo(2,8); p.lineTo(2,5); p.quadTo(2,4,3,4); p.lineTo(21,4); p.quadTo(22,4,22,5); p.lineTo(22,19); p.quadTo(22,20,21,20); p.lineTo(14,20); canvas.drawPath(p,paint);
+                canvas.drawArc(new RectF(-4,10,8,26), 270, 90, false, paint); canvas.drawArc(new RectF(-1,13.5f,5,19.5f), 270, 90, false, paint);
+                canvas.drawCircle(2.2f,19.8f,0.6f,paint); break;
+            case "tv":
+                canvas.drawRoundRect(new RectF(2,4,22,17), 2, 2, paint); canvas.drawLine(8,21,16,21,paint); canvas.drawLine(12,17,12,21,paint); break;
+            case "pc":
+                canvas.drawRoundRect(new RectF(3,4,21,15), 1.5f, 1.5f, paint); canvas.drawLine(2,19,22,19,paint); canvas.drawLine(12,15,12,19,paint); break;
             case "next":
                 p.moveTo(9,5);p.lineTo(16,12);p.lineTo(9,19);canvas.drawPath(p,paint);break;
             default:

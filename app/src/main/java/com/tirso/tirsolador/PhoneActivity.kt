@@ -129,7 +129,9 @@ class PhoneActivity : Activity() {
         if (drive.ready()) SaveBackups.uploadAll(this, drive, { }, { _, _ -> })
         Screenshots.uploadPending(this, drive)
         render()
+        startPolling()
     }
+    override fun onPause() { stopPolling(); super.onPause() }
     override fun onDestroy() {
         drive.detach(driveListener); artwork.close()
         if (isFinishing) { drive.releaseAll(); TemporaryRoms.purge(applicationContext) }
@@ -259,7 +261,12 @@ class PhoneActivity : Activity() {
             "friends" -> friendsPage()
             "history" -> historyPage()
             "loading" -> loadingPage()
+            "remote" -> remotePage()
             else -> home()
+        }
+        if (page == "home" || page == "library" || page == "detail" || page == "consoles") miniPlayer()?.let { bar ->
+            (root.getChildAt(0) as? ViewGroup)?.let { it.clipToPadding = false; it.setPadding(it.paddingLeft, it.paddingTop, it.paddingRight, maxOf(it.paddingBottom, dp(84))) }
+            root.addView(bar, FrameLayout.LayoutParams(minOf(resources.displayMetrics.widthPixels - dp(20), dp(560)), -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(12) })
         }
         root.post {
             val target = if (lastFocus.isEmpty()) null else root.findViewWithTag<View>(lastFocus)
@@ -283,11 +290,21 @@ class PhoneActivity : Activity() {
             LinearLayout.LayoutParams(-2, -2))
         row.addView(icon("search", T.t("Buscar juegos"), "h_search") { search() })
         row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        row.addView(castIcon())
         row.addView(icon("star", T.t("Favoritos"), "h_fav") { console = null; source = "fav"; go("library") })
         row.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { go("friends") })
         if (history) row.addView(icon("history", T.t("Historial de juego"), "h_history") { go("history") })
         row.addView(icon("settings", T.t("Ajustes"), "h_settings") { go("settings") })
         return row
+    }
+    /** The Cast button: blue while a TV or PC is playing something. */
+    private fun castIcon(): View {
+        val on = castNow() != null
+        val v = IconView(this, "cast", T.t("Jugar en TV o PC"), if (on) p.onPrimary else p.text)
+        control(v, "h_cast", if (on) p.primary else Color.TRANSPARENT, 22f, false) { if (on) { remoteDevice = castNow()?.first; go("remote") } else castSheet(null) }
+        v.setOnLongClickListener { castSheet(null); true }
+        v.layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginStart = dp(2) }
+        return v
     }
     private fun updateBadge() {
         (root.findViewWithTag<View>("h_friends") as? IconView)?.badge(if (drive.friendsChat() != 0L) drive.friendsOnline() else 0)
@@ -429,6 +446,7 @@ class PhoneActivity : Activity() {
             top.addView(icon("search", T.t("Buscar juegos"), "h_search") { search() })
             top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
             top.addView(tv("🎲", 18f, p.text).also { it.setPadding(dp(8), dp(4), dp(8), dp(4)); it.contentDescription = T.t("Sorpréndeme"); control(it, "surprise", Color.TRANSPARENT, 8f, false) { GameMenu.surprise(this, menuHost) } })
+            top.addView(castIcon())
             top.addView(icon("star", T.t("Favoritos"), "h_fav") { console = null; source = "fav"; go("library") })
             top.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { go("friends") })
             top.addView(icon("settings", T.t("Ajustes"), "h_settings") { go("settings") })
@@ -802,6 +820,7 @@ class PhoneActivity : Activity() {
         box.addView(tv(meta(g), 12f, p.muted).apply { setPadding(0, dp(3), 0, dp(8)) })
         val row = horizontal()
         row.addView(button("▶  " + T.t("Jugar"), "panel_play", true) { play(g) }, LinearLayout.LayoutParams(0, -2, 1f))
+        if (g.telegramAccount != 0L) row.addView(IconView(this, "cast", T.t("Jugar en TV o PC"), p.text).also { control(it, "panel_cast", p.surface2, 12f, false) { castSheet(g) } }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(6) })
         row.addView(button(if (library.favorite(g)) "★" else "☆", "panel_fav") { library.toggleFavorite(g); lastFocus = "panel_fav"; render() }, LinearLayout.LayoutParams(dp(44), -2).apply { marginStart = dp(6) })
         row.addView(button("⋯", "panel_more") { gameMore(g) }, LinearLayout.LayoutParams(dp(44), -2).apply { marginStart = dp(6) })
         box.addView(row)
@@ -828,7 +847,10 @@ class PhoneActivity : Activity() {
         col.addView(art, LinearLayout.LayoutParams(-1, dp(300)))
         col.addView(tv(g.title + if (library.favorite(g)) "  ★" else "", 22f, p.text, bold = true).apply { setPadding(0, dp(14), 0, 0) })
         col.addView(tv(meta(g), 13f, p.muted).apply { setPadding(0, dp(4), 0, dp(16)) })
-        col.addView(button("▶  " + T.t("Jugar"), "d_play", true) { play(g) }, LinearLayout.LayoutParams(-1, dp(52)))
+        val plays = horizontal()
+        plays.addView(button("▶  " + T.t("Jugar aquí"), "d_play", true) { play(g) }, LinearLayout.LayoutParams(0, dp(52), 1f))
+        if (g.telegramAccount != 0L) plays.addView(button(T.t("Jugar en TV o PC"), "d_cast") { castSheet(g) }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginStart = dp(8) })
+        col.addView(plays)
         val row = horizontal(); row.setPadding(0, dp(8), 0, 0)
         row.addView(button(T.t("Capturas"), "d_shots") { showShots(g) }, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(button(T.t("Más"), "d_more") { gameMore(g) }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(8) })
@@ -975,6 +997,312 @@ class PhoneActivity : Activity() {
     private fun startWhenReady(g: Game, tries: Int) {
         if (g.telegramAccount == 0L || drive.ready() || tries > 40) { play(g); return }
         root.postDelayed({ startWhenReady(g, tries + 1) }, 500)
+    }
+
+    // ------------------------------------------------------------------ play on TV or PC (phone remote over the Wi-Fi)
+    private var castStatus = mutableMapOf<String, JSONObject>()
+    private var remoteDevice: RemoteClient.Device? = null
+    private var remoteTimer: TextView? = null
+    private var polling = false
+    private val poller = object : Runnable {
+        override fun run() {
+            if (!polling) return
+            pollDevices()
+            root.postDelayed(this, if (page == "remote") 2500 else 6000)
+        }
+    }
+    private fun startPolling() { if (!polling) { polling = true; root.post(poller) } }
+    private fun stopPolling() { polling = false; root.removeCallbacks(poller) }
+    private fun pollDevices() {
+        val list = RemoteClient.saved(this).filter { it.paired }
+        if (list.isEmpty()) { if (castStatus.isNotEmpty()) { castStatus.clear(); castChanged() }; return }
+        for (d in list) RemoteClient.call(d, JSONObject().put("cmd", "status"), 3500) { r ->
+            if (isFinishing || isDestroyed) return@call
+            val before = castStatus[d.id]
+            if (r.optBoolean("ok")) castStatus[d.id] = r else castStatus.remove(d.id)
+            val key = { o: JSONObject? -> if (o == null) "" else o.optString("state") + o.optJSONObject("game")?.optString("id") + o.optBoolean("paused") + o.optBoolean("ff") }
+            if (key(before) != key(castStatus[d.id])) castChanged()
+        }
+    }
+    private fun castChanged() {
+        if (page == "remote" || page == "home" || page == "library" || page == "detail" || page == "consoles") { lastFocus = lastFocus.ifEmpty { "" }; render() }
+    }
+    /** The device something is playing on (the one the remote page shows first). */
+    private fun castNow(): Pair<RemoteClient.Device, JSONObject>? {
+        val saved = RemoteClient.saved(this)
+        remoteDevice?.let { d -> castStatus[d.id]?.let { s -> if (s.optString("state") != "menu") return (saved.firstOrNull { it.id == d.id } ?: d) to s } }
+        for (d in saved) castStatus[d.id]?.let { s -> if (s.optString("state") != "menu") return d to s }
+        return null
+    }
+    private fun castGame(s: JSONObject): Game? {
+        val j = s.optJSONObject("game") ?: return null
+        return library.games.firstOrNull { it.id == j.optString("id") }
+            ?: library.games.firstOrNull { j.optLong("chatId") != 0L && it.chatId == j.optLong("chatId") && it.messageId == j.optLong("messageId") }
+    }
+    private fun ago(since: Long): String {
+        val m = ((System.currentTimeMillis() - since) / 60000).coerceAtLeast(0)
+        return if (m < 60) "$m min" else "${m / 60} h ${m % 60} min"
+    }
+    private fun deviceIcon(d: RemoteClient.Device, color: Int, bg: Int, size: Int): View {
+        val box = FrameLayout(this); box.background = round(bg, size / 2f)
+        box.addView(IconView(this, if (d.kind == "pc") "pc" else "tv", d.name, color), FrameLayout.LayoutParams(dp(size), dp(size)))
+        return box
+    }
+
+    /** Bottom bar while a TV or PC is playing: tap for the remote, button to pause / resume. */
+    private fun miniPlayer(): View? {
+        val (d, s) = castNow() ?: return null
+        val j = s.optJSONObject("game") ?: return null
+        val bar = horizontal(); bar.setPadding(dp(10), dp(9), dp(12), dp(9))
+        val art = FrameLayout(this); art.background = round(p.primary, 10f); art.clipToOutline = true
+        castGame(s)?.let { g -> val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.CENTER_CROP; art.addView(iv, FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles") }
+        bar.addView(art, LinearLayout.LayoutParams(dp(42), dp(42)))
+        val txt = vertical(); txt.setPadding(dp(10), 0, dp(6), 0)
+        txt.addView(tv(j.optString("title"), 14f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END })
+        val line = if (s.optString("state") == "loading") T.t("Preparando en ") + d.name + "…" else d.name + " · " + ago(s.optLong("since")) + if (s.optBoolean("paused")) " · " + T.t("en pausa") else ""
+        txt.addView(tv(line, 12f, p.muted).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(3), 0, 0) })
+        bar.addView(txt, LinearLayout.LayoutParams(0, -2, 1f))
+        if (s.optString("state") == "playing") {
+            val paused = s.optBoolean("paused")
+            bar.addView(tv(if (paused) "▶" else "❚❚", 18f, p.text, bold = true).apply { gravity = Gravity.CENTER; contentDescription = T.t(if (paused) "Continuar" else "Pausa")
+                control(this, "mini_pause", p.surface2, 22f, false) { castControl(d, if (paused) "resume" else "pause") } }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        }
+        control(bar, "mini_open", p.surface2, 18f, false) { remoteDevice = d; go("remote") }
+        return bar
+    }
+
+    /** "Play on TV or PC" (with a game) or the list of devices (from the Cast button). */
+    internal fun castSheet(game: Game?) {
+        if (game != null && game.telegramAccount == 0L) { toast(T.t("Este juego está solo en tu teléfono: los otros dispositivos no pueden abrirlo.")); return }
+        val dialog = android.app.Dialog(this)
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        val col = vertical(); col.setPadding(dp(18), dp(10), dp(18), dp(20))
+        col.background = GradientDrawable().apply { setColor(p.surface); cornerRadii = floatArrayOf(dp(24f).toFloat(), dp(24f).toFloat(), dp(24f).toFloat(), dp(24f).toFloat(), 0f, 0f, 0f, 0f) }
+        col.addView(View(this).apply { background = round(p.muted, 2f); alpha = .5f }, LinearLayout.LayoutParams(dp(40), dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(12) })
+        col.addView(tv(if (game != null) T.t("Jugar en") else T.t("Tus TV y PC"), 18f, p.text, bold = true))
+        col.addView(tv(if (game != null) game.title else T.t("Dispositivos con RetroStream en tu red Wi-Fi"), 13f, p.muted).apply { setPadding(0, dp(3), 0, dp(10)) })
+        val list = vertical(); col.addView(list)
+        val status = tv(T.t("Buscando en tu Wi-Fi…"), 13f, p.muted).apply { setPadding(dp(4), dp(10), 0, dp(10)) }
+        list.addView(status)
+        val foot = horizontal(); foot.setPadding(0, dp(12), 0, 0)
+        foot.addView(tv(T.t("Buscar de nuevo"), 13f, p.primary).also { control(it, "cast_again", Color.TRANSPARENT, 8f, false) { dialog.dismiss(); castSheet(game) } }.apply { setPadding(dp(4), dp(8), dp(12), dp(8)) })
+        foot.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        foot.addView(tv(T.t("Escribir dirección"), 13f, p.primary).also { control(it, "cast_ip", Color.TRANSPARENT, 8f, false) { dialog.dismiss(); addByAddress(game) } }.apply { setPadding(dp(12), dp(8), dp(4), dp(8)) })
+        col.addView(foot)
+        dialog.setContentView(col)
+        dialog.window?.let { w ->
+            w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            w.setGravity(Gravity.BOTTOM)
+            w.setLayout(minOf(resources.displayMetrics.widthPixels, dp(560)), ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        dialog.show()
+        RemoteClient.discover(this) { devices ->
+            if (!dialog.isShowing) return@discover
+            list.removeAllViews()
+            if (devices.isEmpty()) {
+                list.addView(tv(T.t("No se encontró ningún dispositivo. Abre RetroStream en la TV o el PC, conéctalos a la misma red Wi-Fi que este teléfono y vuelve a buscar."), 13f, p.muted).apply { setPadding(dp(4), dp(8), 0, dp(8)) })
+                return@discover
+            }
+            for (d in devices) {
+                pollOne(d)
+                val s = castStatus[d.id]
+                val row = horizontal(); row.setPadding(dp(12), dp(12), dp(12), dp(12))
+                val playingHere = s != null && s.optString("state") == "playing"
+                row.addView(deviceIcon(d, if (playingHere) p.onPrimary else p.text, if (playingHere) p.primary else p.surface2, 44), LinearLayout.LayoutParams(dp(44), dp(44)))
+                val txt = vertical(); txt.setPadding(dp(12), 0, dp(8), 0)
+                txt.addView(tv(d.name, 15f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END })
+                val line = when {
+                    !d.paired -> T.t("Nuevo · vincúlalo con un código")
+                    s == null -> if (d.kind == "pc") "PC" else "TV"
+                    playingHere -> "● " + T.t("Jugando ") + s.optJSONObject("game")?.optString("title")
+                    s.optString("state") == "loading" -> T.t("Preparando un juego…")
+                    else -> "● " + T.t("En el menú")
+                }
+                txt.addView(tv(line, 12f, if (playingHere) 0xFF22C55E.toInt() else p.muted).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(3), 0, 0) })
+                row.addView(txt, LinearLayout.LayoutParams(0, -2, 1f))
+                if (!d.paired) row.addView(tv(T.t("Vincular"), 13f, p.onPrimary, bold = true).apply { setPadding(dp(12), dp(6), dp(12), dp(6)); background = round(p.primary, 14f) })
+                control(row, "dev_" + d.id, p.surface2, 16f, false) {
+                    dialog.dismiss()
+                    val go = {
+                        if (game != null) castPlay(d, game, false)
+                        else { remoteDevice = d; go("remote") }
+                    }
+                    if (d.paired) go() else pair(d) { go() }
+                }
+                if (d.paired) row.setOnLongClickListener {
+                    AlertDialog.Builder(this).setTitle(d.name).setItems(arrayOf(T.t("Olvidar este dispositivo"))) { _, _ -> RemoteClient.forget(this, d.id); castStatus.remove(d.id); dialog.dismiss(); castSheet(game) }.show(); true
+                }
+                list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            }
+        }
+    }
+    private fun pollOne(d: RemoteClient.Device) {
+        if (!d.paired) return
+        RemoteClient.call(d, JSONObject().put("cmd", "status"), 3000) { r -> if (r.optBoolean("ok")) castStatus[d.id] = r else if (r.optString("error") == "unpaired") { d.token = ""; RemoteClient.remember(this, d) } }
+    }
+    private fun addByAddress(game: Game?) {
+        val input = field("192.168.1.20", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        AlertDialog.Builder(this).setTitle(T.t("Dirección de la TV o el PC"))
+            .setMessage(T.t("En el PC: Ajustes › Control desde el teléfono muestra su dirección. En la TV: Ajustes de Android › Red."))
+            .setView(FrameLayout(this).apply { setPadding(dp(20), dp(4), dp(20), 0); addView(input) })
+            .setPositiveButton(T.t("Conectar")) { _, _ ->
+                val host = input.text.toString().trim().substringBefore(':'); if (host.isEmpty()) return@setPositiveButton
+                RemoteClient.call(host, Remote.PORT, JSONObject().put("cmd", "hello")) { r ->
+                    if (!r.optBoolean("ok")) { toast(RemoteClient.problem(r) ?: T.t("No responde.")); return@call }
+                    val known = RemoteClient.saved(this).firstOrNull { it.id == r.optString("id") }
+                    val d = known?.also { it.host = host } ?: RemoteClient.Device(r.optString("id"), r.optString("name"), r.optString("kind", "tv"), host, Remote.PORT, "")
+                    val go = { if (game != null) castPlay(d, game, false) else { remoteDevice = d; go("remote") } }
+                    if (d.paired) { RemoteClient.remember(this, d); go() } else pair(d) { go() }
+                }
+            }.setNegativeButton(T.t("Cancelar"), null).show()
+    }
+    /** Asks the TV / PC for a code, shows four boxes to type it, keeps the key it gives back. */
+    private fun pair(d: RemoteClient.Device, then: () -> Unit) {
+        RemoteClient.call(d.host, d.port, JSONObject().put("cmd", "pair").put("phone", RemoteClient.phoneName())) { r ->
+            if (!r.optBoolean("ok")) { toast(RemoteClient.problem(r) ?: T.t("No responde.")); return@call }
+            val input = EditText(this).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER; filters = arrayOf(android.text.InputFilter.LengthFilter(4)); gravity = Gravity.CENTER
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f); letterSpacing = .6f; hint = "• • • •"; setTextColor(p.text)
+            }
+            val box = vertical(); box.setPadding(dp(22), dp(6), dp(22), 0)
+            box.addView(tv(T.t("Escribe el código que aparece en ") + d.name + ".", 14f, p.muted))
+            box.addView(input, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+            val dialog = AlertDialog.Builder(this).setTitle(T.t("Vincular con ") + d.name).setView(box).setNegativeButton(T.t("Cancelar"), null).create()
+            fun send() {
+                val code = input.text.toString(); if (code.length != 4) return
+                RemoteClient.call(d.host, d.port, JSONObject().put("cmd", "pair").put("code", code).put("phone", RemoteClient.phoneName())) { a ->
+                    val token = a.optString("token")
+                    if (token.isEmpty()) { input.setText(""); toast(RemoteClient.problem(a) ?: T.t("No se pudo vincular.")); if (a.optString("error") == "expired") dialog.dismiss(); return@call }
+                    d.token = token; d.name = a.optString("name", d.name); RemoteClient.remember(this, d)
+                    dialog.dismiss(); toast(T.t("Vinculado con ") + d.name); then()
+                }
+            }
+            input.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) { if ((s?.length ?: 0) == 4) send() }
+            })
+            dialog.show()
+            input.requestFocus()
+            dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        }
+    }
+    private fun briefOf(g: Game) = JSONObject().put("id", g.id).put("title", g.title).put("console", g.console.name)
+        .put("chatId", g.chatId).put("messageId", g.messageId).put("fileName", g.fileName ?: "")
+    private fun castPlay(d: RemoteClient.Device, g: Game, fresh: Boolean) {
+        toast(T.t("Abriendo en ") + d.name + "…")
+        RemoteClient.call(d, JSONObject().put("cmd", "play").put("game", briefOf(g)).put("fresh", fresh), 30000) { r ->
+            RemoteClient.problem(r)?.let { toast(it); if (r.optString("error") == "unpaired") { d.token = ""; RemoteClient.remember(this, d) }; return@call }
+            remoteDevice = d
+            castStatus[d.id] = JSONObject().put("ok", true).put("state", "loading").put("game", briefOf(g)).put("since", System.currentTimeMillis())
+            go("remote"); root.postDelayed({ pollDevices() }, 1500)
+        }
+    }
+    private fun castControl(d: RemoteClient.Device, action: String, slot: Int = 1) {
+        RemoteClient.call(d, JSONObject().put("cmd", "control").put("action", action).put("slot", slot), if (action == "backup") 30000 else 10000) { r ->
+            val bad = RemoteClient.problem(r)
+            if (bad != null) toast(bad)
+            else when (action) {
+                "save" -> toast(T.t("Guardado en el espacio ") + slot)
+                "load" -> toast(T.t("Cargado el espacio ") + slot)
+                "shot" -> toast(T.t("Captura tomada"))
+                "backup" -> toast(T.t("Partida copiada a Telegram"))
+                "exit" -> toast(T.t("Juego cerrado"))
+            }
+            // The answer arrives a moment before the TV / PC updates its state.
+            root.postDelayed({ pollDevices() }, 400)
+        }
+    }
+    private fun chooseSlot(d: RemoteClient.Device, save: Boolean) {
+        AlertDialog.Builder(this).setTitle(T.t(if (save) "Guardar en" else "Cargar desde"))
+            .setItems(arrayOf(T.t("Espacio 1"), T.t("Espacio 2"), T.t("Espacio 3"))) { _, i -> castControl(d, if (save) "save" else "load", i + 1) }
+            .setNegativeButton(T.t("Cancelar"), null).show()
+    }
+
+    /** The remote: what is playing on a TV / PC and its controls. */
+    private fun remotePage() {
+        val d = remoteDevice ?: castNow()?.first ?: RemoteClient.saved(this).firstOrNull { it.paired } ?: run { page = "home"; home(); return }
+        remoteDevice = d
+        val s = castStatus[d.id]
+        val col = vertical(); col.setPadding(dp(18), 0, dp(18), dp(24))
+        val top = horizontal(); top.setPadding(0, dp(22), 0, dp(6))
+        top.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
+        val head = vertical(); head.gravity = Gravity.CENTER_HORIZONTAL
+        head.addView(tv(T.t("JUGANDO EN"), 10f, p.muted, mono = true).apply { letterSpacing = .14f })
+        head.addView(tv(d.name, 15f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(2), 0, 0) })
+        top.addView(head, LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(icon("cast", T.t("Cambiar de dispositivo"), "r_switch") { castSheet(null) })
+        col.addView(top)
+        val state = s?.optString("state") ?: "offline"
+        val j = s?.optJSONObject("game")
+        val g = s?.let { castGame(it) }
+        // Picture: the game's cover (the live screen arrives in the next update).
+        val art = FrameLayout(this); art.background = round(p.surface2, 18f); art.clipToOutline = true
+        art.addView(tv(j?.optString("title") ?: d.name, 18f, p.muted, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(20), dp(20), dp(20), dp(20)) }, FrameLayout.LayoutParams(-1, -1))
+        if (g != null) { val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.FIT_CENTER; art.addView(iv, FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(g, iv, "Named_Snaps", "Named_Titles", "Named_Boxarts") }
+        if (state == "playing") {
+            val badge = tv(ago(s!!.optLong("since")), 12f, Color.WHITE, bold = true).apply { setPadding(dp(8), dp(4), dp(8), dp(4)); background = round(0xCC000000.toInt(), 8f) }
+            art.addView(badge, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(10), dp(10)) })
+            remoteTimer = badge
+            if (s.optBoolean("paused")) art.addView(tv("❚❚  " + T.t("En pausa"), 13f, Color.WHITE, bold = true).apply { setPadding(dp(10), dp(5), dp(10), dp(5)); background = round(0xCC000000.toInt(), 8f) },
+                FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(10), dp(10), 0, 0) })
+        }
+        col.addView(art, LinearLayout.LayoutParams(-1, dp(if (landscape) 150 else 200)).apply { topMargin = dp(8) })
+        col.addView(tv(j?.optString("title") ?: when (state) { "menu" -> T.t("Nada en juego"); "offline" -> T.t("Buscando el dispositivo…"); else -> "" }, 20f, p.text, bold = true).apply { setPadding(0, dp(14), 0, 0) })
+        val sub = when (state) {
+            "playing" -> (Console.values().firstOrNull { it.name == j?.optString("console") }?.title ?: j?.optString("console") ?: "") + (if (s!!.optBoolean("ff")) " · " + T.t("avance rápido") else "")
+            "loading" -> T.t("Descargando o preparando el juego en ") + d.name + "…"
+            "menu" -> T.t("Elige un juego y toca «Jugar en TV o PC».")
+            else -> T.t("Si no aparece: abre RetroStream en la TV o el PC y revisa que esté en la misma red Wi-Fi.")
+        }
+        col.addView(tv(sub, 13f, p.muted).apply { setPadding(0, dp(4), 0, dp(14)) })
+        if (state == "playing") {
+            val can = s!!.optJSONArray("controls")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() } ?: setOf("exit")
+            val paused = s.optBoolean("paused")
+            val main = horizontal(); main.gravity = Gravity.CENTER
+            fun roundButton(label: String, desc: String, tag: String, big: Boolean, on: Boolean, f: () -> Unit) {
+                val size = if (big) 64 else 50
+                val b = tv(label, if (big) 24f else 17f, if (big) p.onPrimary else p.text, bold = true).apply { gravity = Gravity.CENTER; contentDescription = desc }
+                control(b, tag, if (big) p.primary else if (on) p.primary else p.surface2, size / 2f, false, f)
+                main.addView(b, LinearLayout.LayoutParams(dp(size), dp(size)).apply { setMargins(dp(14), 0, dp(14), 0) })
+            }
+            if ("ff" in can) roundButton("»", T.t("Avance rápido"), "r_ff", false, s.optBoolean("ff")) { castControl(d, "ff") }
+            if ("pause" in can) roundButton(if (paused) "▶" else "❚❚", T.t(if (paused) "Continuar" else "Pausa"), "r_pause", true, false) { castControl(d, if (paused) "resume" else "pause") }
+            if ("shot" in can) roundButton("◉", T.t("Captura"), "r_shot", false, false) { castControl(d, "shot") }
+            if (main.childCount > 0) col.addView(main)
+            val grid = horizontal(); grid.setPadding(0, dp(16), 0, 0)
+            fun cell(label: String, tag: String, good: Boolean = false, f: () -> Unit) {
+                val b = tv(label, 13f, if (good) 0xFF22C55E.toInt() else p.text, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(14), dp(4), dp(14)) }
+                control(b, tag, p.surface2, 14f, false, f)
+                grid.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
+            }
+            if ("save" in can) cell(T.t("Guardar"), "r_save") { chooseSlot(d, true) }
+            if ("load" in can) cell(T.t("Cargar"), "r_load") { chooseSlot(d, false) }
+            if ("backup" in can) cell(T.t("Copia"), "r_backup", true) { castControl(d, "backup") }
+            if ("reset" in can) cell(T.t("Reiniciar"), "r_reset") {
+                AlertDialog.Builder(this).setTitle(T.t("¿Reiniciar el juego?")).setMessage(T.t("Se pierde lo que no hayas guardado."))
+                    .setPositiveButton(T.t("Reiniciar")) { _, _ -> castControl(d, "reset") }.setNegativeButton(T.t("Cancelar"), null).show()
+            }
+            if (grid.childCount > 0) col.addView(grid)
+            if (!can.contains("pause")) col.addView(tv(T.t("Esta consola usa su propio programa en el PC: desde el teléfono puedes ver qué se juega y cerrarlo."), 12f, p.muted).apply { setPadding(0, dp(12), 0, 0) })
+        }
+        val chips = horizontal(); chips.setPadding(0, dp(16), 0, 0)
+        if (j != null) {
+            chips.addView(chip("▶ YouTube", false, "r_yt") {
+                val q = (j.optString("title") + " " + (Console.values().firstOrNull { it.name == j.optString("console") }?.title ?: "") + " walkthrough").trim()
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/results?search_query=" + android.net.Uri.encode(q)))) }
+            })
+            if (g != null) chips.addView(chip(T.t("Capturas"), false, "r_shots") { showShots(g) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+        }
+        if (state == "playing") chips.addView(tv("⏻  " + T.t("Salir"), 13f, 0xFFFCA5A5.toInt(), bold = true).apply { setPadding(dp(14), dp(7), dp(14), dp(7))
+            control(this, "r_exit", 0xFF3B1219.toInt(), 20f, false) {
+                AlertDialog.Builder(this@PhoneActivity).setTitle(T.t("¿Salir del juego?")).setMessage(T.t("Se guarda dónde lo dejaste, como al salir con el mando."))
+                    .setPositiveButton(T.t("Salir")) { _, _ -> castControl(d, "exit") }.setNegativeButton(T.t("Cancelar"), null).show()
+            } }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+        if (chips.childCount > 0) col.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) })
+        root.addView(scroll(col))
+        lastFocus = lastFocus.ifEmpty { "r_pause" }
+        pollDevices()
     }
 
     // ------------------------------------------------------------------ more: screenshots, shortcut, info
@@ -1437,7 +1765,7 @@ class PhoneActivity : Activity() {
             "welcome" -> { if (drive.stage != TirsoDrive.Stage.READY) drive.skip(); go("home") }
             "loading" -> cancelLoading()
             "detail" -> go("library")
-            "consoles", "settings", "friends", "history" -> go("home")
+            "consoles", "settings", "friends", "history", "remote" -> go("home")
             "set_consoles", "set_home", "set_storage", "set_resolution" -> go("settings")
             "library" -> { query = ""; source = "all"; console = null; go("home") }
             else -> AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))

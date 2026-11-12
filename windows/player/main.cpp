@@ -25,6 +25,9 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <iostream>
+#include <mutex>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -124,6 +127,10 @@ static std::string title, consoleId, gameId;
 static fs::path saveRoot, shotsQueue, picturesDir;
 static std::string toastText; static Uint32 toastUntil = 0;
 static void toast(const std::string& s) { toastText = s; toastUntil = SDL_GetTicks() + 2600; }
+// Commands from the app (sent by the phone remote): one word per line on stdin, e.g. "pause", "save 2", "exit".
+static std::mutex cmdLock; static std::deque<std::string> cmds;
+static void readCommands() { std::string line; while (std::getline(std::cin, line)) { std::lock_guard<std::mutex> g(cmdLock); cmds.push_back(line); } }
+static void tellState() { printf("{\"event\":\"state\",\"paused\":%s,\"ff\":%s}\n", menuOpen ? "true" : "false", ffToggle ? "true" : "false"); fflush(stdout); }
 
 // ------------------------------------------------------------------ libretro callbacks
 static void RETRO_CALLCONV coreLog(enum retro_log_level level, const char* fmt, ...) {
@@ -433,8 +440,8 @@ static void applyCheats() {
 
 // ------------------------------------------------------------------ the in-game menu
 static std::string menuPage = "main";
-static void openMenu() { menuOpen = true; menuPage = "main"; if (audioDev) { SDL_PauseAudioDevice(audioDev, 1); SDL_ClearQueuedAudio(audioDev); } }
-static void closeMenu() { menuOpen = false; if (audioDev) SDL_PauseAudioDevice(audioDev, 0); }
+static void openMenu() { menuOpen = true; menuPage = "main"; if (audioDev) { SDL_PauseAudioDevice(audioDev, 1); SDL_ClearQueuedAudio(audioDev); } tellState(); }
+static void closeMenu() { menuOpen = false; if (audioDev) SDL_PauseAudioDevice(audioDev, 0); tellState(); }
 static void walkthrough() {
   std::string q; for (unsigned char c : title + " walkthrough") { if (isalnum(c)) q += c; else { char b[4]; snprintf(b, 4, "%%%02X", c); q += b; } }
   SDL_OpenURL(("https://www.youtube.com/results?search_query=" + q).c_str());
@@ -600,6 +607,7 @@ int main(int argc, char* argv[]) {
   loadSram(); loadCheats();
   bool firstFrame = true;
   printf("{\"event\":\"started\"}\n"); fflush(stdout);
+  std::thread(readCommands).detach();
   Uint64 freq = SDL_GetPerformanceFrequency(), next = SDL_GetPerformanceCounter(), playStart = SDL_GetTicks64(), playedMs = 0, lastTick = SDL_GetTicks64();
   int frameNo = 0; bool guideWas = false, comboMenuWas = false, comboShotWas = false, comboFfWas = false;
 
@@ -631,6 +639,21 @@ int main(int argc, char* argv[]) {
         mouseX = (int16_t)std::max(-32767.f, std::min(32767.f, nx * 65534.f - 32767.f)); mouseY = (int16_t)std::max(-32767.f, std::min(32767.f, ny * 65534.f - 32767.f));
       }
     }
+    // Phone remote commands (through the app).
+    for (;;) {
+      std::string c; { std::lock_guard<std::mutex> g(cmdLock); if (cmds.empty()) break; c = cmds.front(); cmds.pop_front(); }
+      while (!c.empty() && (c.back() == '\r' || c.back() == ' ')) c.pop_back();
+      std::string word = c.substr(0, c.find(' ')); int slot = 1; if (c.size() > word.size() + 1) slot = std::max(1, std::min(3, atoi(c.c_str() + word.size() + 1)));
+      if (word == "pause") { if (!menuOpen) openMenu(); }
+      else if (word == "resume") { if (menuOpen) closeMenu(); }
+      else if (word == "exit") running = false;
+      else if (word == "save") { bool ok = saveState("slot" + std::to_string(slot)); toast(ok ? std::string(tr("Saved")) + " · " + tr("Slot") + " " + std::to_string(slot) : "Error"); printf("{\"event\":\"done\",\"what\":\"save\",\"ok\":%s}\n", ok ? "true" : "false"); fflush(stdout); }
+      else if (word == "load") { std::error_code ec; bool ok = fs::exists(statePath("slot" + std::to_string(slot)), ec) && loadState("slot" + std::to_string(slot)); toast(ok ? std::string(tr("Loaded")) + " · " + tr("Slot") + " " + std::to_string(slot) : tr("Nothing saved in that slot")); printf("{\"event\":\"done\",\"what\":\"load\",\"ok\":%s}\n", ok ? "true" : "false"); fflush(stdout); }
+      else if (word == "shot") screenshot();
+      else if (word == "ff") { ffToggle = !ffToggle; toast(ffToggle ? std::string(tr("Fast forward")) + " 3x" : tr("Normal speed")); tellState(); }
+      else if (word == "reset") { C.reset(); toast(tr("Restarted")); }
+      else if (word == "flush") { saveSram(true); printf("{\"event\":\"done\",\"what\":\"flush\",\"ok\":true}\n"); fflush(stdout); }
+    }
     // Controller shortcuts: Guide or Select+Start opens the menu; Select+R1 screenshot; Select+R2 fast forward; hold Select+L1 to rewind.
     bool guide = false, comboMenu = false, comboShot = false, comboFf = false, comboRewind = false;
     for (auto* g : pads) if (g) {
@@ -643,7 +666,7 @@ int main(int argc, char* argv[]) {
     }
     if ((guide && !guideWas) || (comboMenu && !comboMenuWas)) { if (menuOpen) closeMenu(); else openMenu(); }
     if (comboShot && !comboShotWas && !menuOpen) screenshot();
-    if (comboFf && !comboFfWas && !menuOpen) { ffToggle = !ffToggle; toast(ffToggle ? std::string(tr("Fast forward")) + " 3x" : tr("Normal speed")); }
+    if (comboFf && !comboFfWas && !menuOpen) { ffToggle = !ffToggle; toast(ffToggle ? std::string(tr("Fast forward")) + " 3x" : tr("Normal speed")); tellState(); }
     guideWas = guide; comboMenuWas = comboMenu; comboShotWas = comboShot; comboFfWas = comboFf;
     const Uint8* k = SDL_GetKeyboardState(nullptr);
     fastForward = !menuOpen && (ffToggle || k[SDL_SCANCODE_TAB]);
