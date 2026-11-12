@@ -103,11 +103,17 @@ static PFNGLGENRENDERBUFFERSPROC pGenRenderbuffers; static PFNGLBINDRENDERBUFFER
 static PFNGLFRAMEBUFFERRENDERBUFFERPROC pFramebufferRenderbuffer; static PFNGLCHECKFRAMEBUFFERSTATUSPROC pCheckFramebufferStatus;
 static PFNGLDELETEFRAMEBUFFERSPROC pDeleteFramebuffers; static PFNGLDELETERENDERBUFFERSPROC pDeleteRenderbuffers;
 
+// Engines that draw with the graphics card get their own OpenGL context (sharing textures with ours), so the menu
+// drawing never disturbs their state; the picture is a shared texture.
+static SDL_GLContext uiCtx = nullptr, coreCtx = nullptr;
+static SDL_Window* window;
+static void useCore() { if (coreCtx) SDL_GL_MakeCurrent(window, coreCtx); }
+static void useUi() { if (coreCtx) SDL_GL_MakeCurrent(window, uiCtx); }
+
 // sound
 static SDL_AudioDeviceID audioDev = 0; static std::vector<int16_t> audioBuf; static int audioRate = 0;
 
 // input
-static SDL_Window* window = nullptr;
 static std::vector<SDL_GameController*> pads;
 static int16_t mouseX = 0, mouseY = 0; static bool mouseDown = false;
 static float imgX = 0, imgY = 0, imgW = 1, imgH = 1;   // where the picture is on screen
@@ -365,7 +371,9 @@ static bool grab(std::vector<uint32_t>& out, unsigned& w, unsigned& h) {
   w = fw; h = fh; if (!w || !h) return false;
   if (!hwFrame) { if (rgba.size() < (size_t)w * h) return false; out = rgba; return true; }
   out.resize((size_t)w * h);
+  SDL_GLContext prev = SDL_GL_GetCurrentContext(); useCore();
   pBindFramebuffer(GL_FRAMEBUFFER, fbo); glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, out.data()); pBindFramebuffer(GL_FRAMEBUFFER, 0);
+  if (coreCtx && prev) SDL_GL_MakeCurrent(window, prev);
   for (unsigned y = 0; y < h / 2; y++) std::swap_ranges(out.begin() + (size_t)y * w, out.begin() + (size_t)(y + 1) * w, out.begin() + (size_t)(h - 1 - y) * w);
   for (auto& p : out) p |= 0xFF000000u;
   return true;
@@ -529,7 +537,7 @@ int main(int argc, char* argv[]) {
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1); SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24); SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
   window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 960,
     SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
-  SDL_GLContext gl = window ? SDL_GL_CreateContext(window) : nullptr;
+  SDL_GLContext gl = window ? SDL_GL_CreateContext(window) : nullptr; uiCtx = gl;
   if (!gl) { logf("OpenGL: %s", SDL_GetError()); printf("{\"event\":\"error\",\"reason\":\"graphics\"}\n"); fflush(stdout); return 6; }
   SDL_GL_MakeCurrent(window, gl); SDL_GL_SetSwapInterval(0);
   pGenFramebuffers = (PFNGLGENFRAMEBUFFERSPROC)SDL_GL_GetProcAddress("glGenFramebuffers"); pBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)SDL_GL_GetProcAddress("glBindFramebuffer");
@@ -554,7 +562,14 @@ int main(int argc, char* argv[]) {
   ImGui_ImplOpenGL3_Init(compat ? "#version 130" : "#version 330");
 
   logf("game loaded: %ux%u max %ux%u, %.2f fps, %.0f Hz", av.geometry.base_width, av.geometry.base_height, av.geometry.max_width, av.geometry.max_height, av.timing.fps, av.timing.sample_rate);
-  if (useHw) { if (!makeFbo(std::max(av.geometry.max_width, 1u), std::max(av.geometry.max_height, 1u))) logf("framebuffer not complete"); if (hw.context_reset) hw.context_reset(); }
+  if (useHw) {
+    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+    coreCtx = SDL_GL_CreateContext(window);
+    if (!coreCtx) { logf("engine context: %s", SDL_GetError()); printf("{\"event\":\"error\",\"reason\":\"graphics\"}\n"); fflush(stdout); return 6; }
+    SDL_GL_MakeCurrent(window, coreCtx);
+    if (!makeFbo(std::max(av.geometry.max_width, 1u), std::max(av.geometry.max_height, 1u))) logf("framebuffer not complete");
+    if (hw.context_reset) hw.context_reset();
+  }
 
   // Sound at the engine's own rate; the game's speed follows the sound.
   audioRate = (int)(av.timing.sample_rate + 0.5); if (audioRate <= 0) audioRate = 44100;
@@ -636,7 +651,8 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    // Draw: the picture fitted to the window, then the menu and messages.
+    // Draw: the picture fitted to the window, then the menu and messages (in our own context).
+    if (coreCtx) { glFinish(); useUi(); }
     int ww, wh; SDL_GL_GetDrawableSize(window, &ww, &wh);
     ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplSDL2_NewFrame(); ImGui::NewFrame();
     if (fresh && !hwFrame && fw && fh) { ensureTexture(fw, fh); filterFor(tex); glPixelStorei(GL_UNPACK_ALIGNMENT, 4); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data()); }
@@ -665,6 +681,7 @@ int main(int argc, char* argv[]) {
     glViewport(0, 0, ww, wh); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     SDL_GL_SwapWindow(window);
+    useCore();
 
     // Keep the game's own speed: follow the sound (or the clock when there is none).
     if (menuOpen) { SDL_Delay(16); next = SDL_GetPerformanceCounter(); continue; }
@@ -683,9 +700,11 @@ int main(int argc, char* argv[]) {
   saveSram(true);
   saveState("auto");
   if (audioDev) SDL_CloseAudioDevice(audioDev);
+  useCore();
   if (useHw && hw.context_destroy) hw.context_destroy();
   C.unload_game(); C.deinit();
   printf("{\"event\":\"exit\",\"played\":%llu}\n", (unsigned long long)playedMs); fflush(stdout);
+  if (coreCtx) { SDL_GL_DeleteContext(coreCtx); coreCtx = nullptr; SDL_GL_MakeCurrent(window, uiCtx); }
   ImGui_ImplOpenGL3_Shutdown(); ImGui_ImplSDL2_Shutdown(); ImGui::DestroyContext();
   SDL_GL_DeleteContext(gl); SDL_DestroyWindow(window); SDL_Quit();
   (void)playStart;
