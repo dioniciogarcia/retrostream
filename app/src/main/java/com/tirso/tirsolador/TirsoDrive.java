@@ -315,7 +315,7 @@ final class TirsoDrive {
     /** A group with no files visible: if it hides old messages from new members, say how to fix it. */
     private void checkHiddenHistory(Source source){
         TdApi.Chat chat=chats.get(source.chatId);
-        if(chat==null||!(chat.type instanceof TdApi.ChatTypeSupergroup))return;
+        if(chat==null||!(chat.type instanceof TdApi.ChatTypeSupergroup)||((TdApi.ChatTypeSupergroup)chat.type).isChannel)return;   // channels always show their full history
         long sg=((TdApi.ChatTypeSupergroup)chat.type).supergroupId;
         send(new TdApi.GetSupergroupFullInfo(sg),r->{
             if(r instanceof TdApi.SupergroupFullInfo&&!((TdApi.SupergroupFullInfo)r).isAllHistoryAvailable){
