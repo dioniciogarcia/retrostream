@@ -59,7 +59,9 @@ static const char* tr(const char* en) {
     {"Screenshot saved (Pictures > RetroStream)", "Captura guardada (Imágenes > RetroStream)"}, {"Rewound", "Retrocedido"},
     {"Nothing to rewind yet", "Aún no hay nada que retroceder"}, {"Normal speed", "Velocidad normal"}, {"Sharp pixels", "Píxeles nítidos"},
     {"Smooth", "Suave"}, {"on", "sí"}, {"off", "no"}, {"paused", "en pausa"}, {"Esc or the Guide button opens this menu", "Esc o el botón central del mando abren este menú"},
-    {"Rewind isn't available for this console", "Retroceder no está disponible en esta consola"}, {"Restarted", "Reiniciado"},
+    {"Rewind isn't available for this console", "Retroceder no está disponible en esta consola"}, {"Restarted", "Reiniciado"}, {"Cheats", "Trucos"},
+    {"Tick the cheats you want. Codes marked (M) or Master must be on for the others to work. Save first: cheats can break a game.",
+     "Marca los trucos que quieras. Los códigos (M) o Master deben estar activos para que funcionen los demás. Guarda antes: los trucos pueden romper un juego."},
     {"Controls: arrows, Z X A S, Q W, Enter, Right Shift · Tab fast forward · Backspace rewind · F5 save · F7 load · F12 screenshot",
      "Controles: flechas, Z X A S, Q W, Enter, Mayús derecha · Tab avance rápido · Retroceso retroceder · F5 guardar · F7 cargar · F12 captura"},
   };
@@ -78,6 +80,7 @@ struct Core {
   size_t (*serialize_size)(); bool (*serialize)(void*, size_t); bool (*unserialize)(const void*, size_t);
   bool (*load_game)(const retro_game_info*); void (*unload_game)();
   void* (*get_memory_data)(unsigned); size_t (*get_memory_size)(unsigned);
+  void (*cheat_reset)(); void (*cheat_set)(unsigned, bool, const char*);
 } C;
 
 struct Var { std::string value; std::vector<std::string> choices; };
@@ -289,6 +292,7 @@ static bool loadCore(const std::string& path) {
     & sym(C.serialize_size, "retro_serialize_size") & sym(C.serialize, "retro_serialize") & sym(C.unserialize, "retro_unserialize")
     & sym(C.load_game, "retro_load_game") & sym(C.unload_game, "retro_unload_game")
     & sym(C.get_memory_data, "retro_get_memory_data") & sym(C.get_memory_size, "retro_get_memory_size");
+  C.cheat_reset = (void (*)())GetProcAddress(C.dll, "retro_cheat_reset"); C.cheat_set = (void (*)(unsigned, bool, const char*))GetProcAddress(C.dll, "retro_cheat_set");
   return ok;
 }
 
@@ -377,10 +381,35 @@ static void screenshot() {
   if (!shotsQueue.empty()) {
     writeFile(shotsQueue / (std::string(stamp) + ".jpg"), jpg.data(), jpg.size());
     std::string esc; for (char c : title) { if (c == '"' || c == '\\') esc += '\\'; esc += c; }
-    std::string meta = "{\"id\":\"" + gameId + "\",\"title\":\"" + esc + "\",\"console\":\"" + consoleId + "\",\"time\":" + std::to_string((long long)now * 1000) + "}";
+    std::string meta = "{\"id\":\"" + gameId + "\",\"title\":\"" + esc + "\",\"console\":\"" + consoleId + "\",\"w\":" + std::to_string(w) + ",\"h\":" + std::to_string(h) + ",\"time\":" + std::to_string((long long)now * 1000) + "}";
     writeFile(shotsQueue / (std::string(stamp) + ".json"), meta.data(), meta.size());
   }
   toast(tr("Screenshot saved (Pictures > RetroStream)"));
+}
+
+// ------------------------------------------------------------------ cheats (the libretro database list RetroStream downloaded)
+struct Cheat { std::string name, code; bool on = false; };
+static std::vector<Cheat> cheats;
+static void loadCheats() {
+  std::vector<uint8_t> d; if (arg("cheats").empty() || !readFile(P(arg("cheats")), d)) return;
+  std::string s(d.begin(), d.end()); std::map<int, Cheat> byNum; size_t pos = 0;
+  while (pos < s.size()) {
+    size_t nl = s.find('\n', pos); std::string line = s.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos); pos = nl == std::string::npos ? s.size() : nl + 1;
+    if (line.rfind("cheat", 0) != 0) continue;
+    size_t us = line.find('_'), eq = line.find('='); if (us == std::string::npos || eq == std::string::npos) continue;
+    int n = atoi(line.substr(5, us - 5).c_str()); std::string field = line.substr(us + 1, line.find_first_of(" =", us) - us - 1);
+    std::string v = line.substr(eq + 1); while (!v.empty() && (v[0] == ' ' || v[0] == '"')) v.erase(0, 1); while (!v.empty() && (v.back() == ' ' || v.back() == '"' || v.back() == '\r')) v.pop_back();
+    if (field == "desc") byNum[n].name = v; else if (field == "code") byNum[n].code = v;
+  }
+  std::vector<uint8_t> on; std::string onText; if (readFile(P(arg("cheatson")), on)) onText.assign(on.begin(), on.end());
+  for (auto& [n, c] : byNum) if (!c.name.empty() && !c.code.empty()) { c.on = onText.find(c.code + "\n") != std::string::npos; cheats.push_back(c); }
+}
+static void applyCheats() {
+  if (!C.cheat_reset || !C.cheat_set) return;
+  C.cheat_reset(); unsigned i = 0;
+  for (auto& c : cheats) if (c.on) C.cheat_set(i++, true, c.code.c_str());
+  std::string text; for (auto& c : cheats) if (c.on) text += c.code + "\n";
+  if (!arg("cheatson").empty()) writeFile(P(arg("cheatson")), text.data(), text.size());
 }
 
 // ------------------------------------------------------------------ the in-game menu
@@ -411,11 +440,23 @@ static void drawMenu() {
     if (rewindable() && ImGui::Button(tr("Rewind 10 seconds"), full)) { rewindBack(20); toast(tr("Rewound")); closeMenu(); }
     if (ImGui::Button((std::string(tr("Fast forward")) + ": " + (ffToggle ? tr("on") : tr("off"))).c_str(), full)) { ffToggle = !ffToggle; closeMenu(); }
     if (ImGui::Button(tr("Take screenshot"), full)) { closeMenu(); screenshot(); }
+    if (!cheats.empty()) { int n = 0; for (auto& c : cheats) n += c.on; if (ImGui::Button((std::string(tr("Cheats")) + (n ? " (" + std::to_string(n) + " " + tr("on") + ")" : "")).c_str(), full)) { menuPage = "cheats"; focusFirst = true; } }
     if (ImGui::Button(tr("Walkthrough (YouTube)"), full)) walkthrough();
     if (ImGui::Button((std::string(tr("Screen filter")) + ": " + (smooth ? tr("Smooth") : tr("Sharp pixels"))).c_str(), full)) { smooth = !smooth; filterFor(useHw ? fboTex : tex); }
     if (ImGui::Button((std::string(tr("Full screen")) + ": " + (fullscreen ? tr("on") : tr("off")) + "   (F11)").c_str(), full)) { fullscreen = !fullscreen; SDL_SetWindowFullscreen(window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0); }
     if (ImGui::Button(tr("Restart game"), full)) { C.reset(); toast(tr("Restarted")); closeMenu(); }
     if (ImGui::Button(tr("Exit game"), full)) running = false;
+  } else if (menuPage == "cheats") {
+    ImGui::TextWrapped("%s", tr("Tick the cheats you want. Codes marked (M) or Master must be on for the others to work. Save first: cheats can break a game."));
+    ImGui::BeginChild("list", ImVec2(0, ImGui::GetIO().DisplaySize.y * 0.45f), ImGuiChildFlags_Borders);
+    for (size_t i = 0; i < cheats.size(); i++) {
+      ImGui::PushID((int)i);
+      if (focusFirst) { ImGui::SetKeyboardFocusHere(); focusFirst = false; }
+      if (ImGui::Checkbox(cheats[i].name.c_str(), &cheats[i].on)) applyCheats();
+      ImGui::PopID();
+    }
+    ImGui::EndChild();
+    if (ImGui::Button(tr("Back"), full)) { menuPage = "main"; focusFirst = true; }
   } else {
     bool save = menuPage == "save";
     for (int n = 1; n <= 3; n++) {
@@ -515,7 +556,7 @@ int main(int argc, char* argv[]) {
   if (audioDev) SDL_PauseAudioDevice(audioDev, 0);
   double fps = av.timing.fps > 1 ? av.timing.fps : 60.0;
 
-  loadSram();
+  loadSram(); loadCheats();
   bool firstFrame = true;
   printf("{\"event\":\"started\"}\n"); fflush(stdout);
   Uint64 freq = SDL_GetPerformanceFrequency(), next = SDL_GetPerformanceCounter(), playStart = SDL_GetTicks64(), playedMs = 0, lastTick = SDL_GetTicks64();
@@ -574,6 +615,7 @@ int main(int argc, char* argv[]) {
       if (firstFrame) {
         firstFrame = false;
         if (arg("fresh") != "1") { std::error_code ec2; if (fs::exists(statePath("auto"), ec2) && loadState("auto")) toast(tr("Continuing where you left off")); }
+        if (std::any_of(cheats.begin(), cheats.end(), [](const Cheat& c) { return c.on; })) applyCheats();
       }
       if (rewindable() && !wantRewind && ++rewindTick >= 30) { rewindTick = 0; std::vector<uint8_t> s; if (snapshot(s)) { rewindStates.push_back(std::move(s)); if (rewindStates.size() > 60) rewindStates.pop_front(); } }
       if (frameNo % 600 == 0) saveSram(false);

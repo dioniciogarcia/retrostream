@@ -124,3 +124,6 @@ body.kbd .ctile:focus,body.kbd .continue:focus{transform:scale(1.02);transition:
 .menu button span{flex:1}.menu button small{color:#8C95AA}
 #toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1E2433;border:1px solid #323A50;border-radius:12px;padding:12px 18px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:70vw}
 #toast.show{opacity:1}
+
+.hints{display:flex;gap:22px;justify-content:flex-end;padding:10px 32px 14px;border-top:1px solid var(--surface2);color:var(--soft);font-size:13px}
+.hints span{display:flex;align-items:center;gap:8px}.hints b{background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:12px;color:#fff}

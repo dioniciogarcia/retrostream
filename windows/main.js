@@ -6,6 +6,7 @@ const fs = require('fs');
 const { Store } = require('./lib/store');
 const { Drive } = require('./lib/telegram');
 const { Player } = require('./lib/player');
+const { Cloud } = require('./lib/cloud');
 const catalog = require('./lib/catalog');
 const I18N = require('./renderer/i18n');
 
@@ -15,7 +16,8 @@ try { config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), '
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
-let win = null, store = null, drive = null, player = null, t = (s) => s;
+let win = null, store = null, drive = null, player = null, cloud = null, t = (s) => s;
+function toast(text) { send('toast', text); }
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
 
@@ -61,7 +63,17 @@ app.whenReady().then(() => {
       if (info.played > 0) { const pt = store.get('playtime') || {}; pt[info.id] = (pt[info.id] || 0) + info.played; store.set('playtime', pt); }
       send('played', Object.assign(info, { playtime: store.get('playtime') || {} }));
       if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+      // Like the Exit button on Android: the save goes to Telegram right away, then any screenshots.
+      if (drive.stage === 'ready') {
+        (async () => {
+          if (info.entry && cloud.changed(info.entry)) {
+            try { const err = await cloud.upload(info.entry, true); toast(err || t('Save backed up to Telegram')); } catch (e) { toast(t('Save backup failed:') + ' ' + (e.message || e)); }
+          }
+          await cloud.uploadShots();
+        })();
+      }
     } });
+  cloud = new Cloud({ dir, drive, store, t: (s) => t(s) });
   drive.on('state', (changed) => send('state', { drive: drive.snapshot(), games: changed ? store.games() : null }));
   drive.on('file', (info) => { noteFile(info); send('file', info); });
 
@@ -107,9 +119,25 @@ app.whenReady().then(() => {
       let file = (store.get('kept') || {})[game.id];
       if (!file || !fs.existsSync(file)) { const i = await drive.inspect(game.fileId); file = i.path; }
       if (!file || !fs.existsSync(file)) return { error: t('Download the game first.') };
-      await player.play(game, file, Object.assign({}, store.prefs.data, opts || {}));
+      const prep = await player.prepare(game, file);
+      if (drive.stage === 'ready') {
+        // The newest save from the phone or TV first (but never wait more than ~8 seconds for it).
+        const pulled = await Promise.race([cloud.pullNewest(prep.entry).catch(() => ''), new Promise((r) => setTimeout(() => r(''), 8000))]);
+        if (pulled) toast(pulled);
+      }
+      const cheats = await Promise.race([cloud.cheats(game).catch(() => null), new Promise((r) => setTimeout(() => r(null), 6000))]);
+      await player.launch(prep, Object.assign({}, store.prefs.data, opts || {}), cheats);
       return { ok: true };
     } catch (e) { return { error: String(e.message || e) }; }
+  });
+  ipcMain.handle('backups', async (_e, action, arg) => {
+    try {
+      if (action === 'list') return { list: cloud.latestPerGame(await cloud.list()) };
+      if (action === 'all') return await cloud.uploadAll((p) => toast(t('Backing up') + ' ' + p));
+      if (action === 'restore') { await cloud.restore(arg); return { ok: true }; }
+      if (action === 'restoreAll') { const list = cloud.latestPerGame(await cloud.list()); let n = 0; for (const b of list) { try { await cloud.restore(b); n++; } catch (_) { /* next */ } } return { ok: true, n }; }
+    } catch (e) { return { error: String(e.message || e) }; }
+    return {};
   });
   ipcMain.handle('qr', async (_e, text) => require('qrcode').toDataURL(String(text || ''), { margin: 1, width: 400 }));
   ipcMain.handle('open', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });

@@ -51,6 +51,7 @@ class Drive extends EventEmitter {
       case 'updateNewChat': this.chats.set(u.chat.id, u.chat); break;
       case 'updateChatTitle': { const c = this.chats.get(u.chat_id); if (c) c.title = u.title; break; }
       case 'updateFile': this.fileUpdated(u.file); break;
+      case 'updateMessageSendSucceeded': case 'updateMessageSendFailed': this.emit('sent', u); break;
       default: break;
     }
   }
@@ -253,6 +254,52 @@ class Drive extends EventEmitter {
   }
   async cancel(game) { try { await this.invoke({ _: 'cancelDownloadFile', file_id: game.fileId, only_if_pending: false }); } catch (_) { /* ignore */ } }
   async remove(game) { try { await this.invoke({ _: 'deleteFile', file_id: game.fileId }); } catch (_) { /* ignore */ } this.files.delete(game.fileId); this.emit('file', { id: game.fileId, state: 'none' }); }
+
+  // ------------------------------------------------------------------ RetroStream's own channels (save backups, screenshots)
+  norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  /** Finds a channel by its exact name (in the chat lists or by search); creates it when [create] and it doesn't exist. */
+  async ownChannel(title, description, create) {
+    if (this.stage !== 'ready') throw new Error(this.t('Connect Telegram first (Settings > TirsoDrive).'));
+    const want = this.norm(title);
+    const find = () => [...this.chats.values()].find((c) => this.isGroup(c) && this.norm(c.title) === want);
+    let c = find(); if (c) return c.id;
+    await this.loadChats(); c = find(); if (c) return c.id;
+    try {
+      const r = await this.invoke({ _: 'searchChats', query: title, limit: 20 });
+      for (const id of r.chat_ids) { const x = await this.invoke({ _: 'getChat', chat_id: id }); this.chats.set(x.id, x); if (this.isGroup(x) && this.norm(x.title) === want) return x.id; }
+    } catch (_) { /* fall through */ }
+    if (!create) return 0;
+    const made = await this.invoke({ _: 'createNewSupergroupChat', title, is_forum: false, is_channel: true, description, message_auto_delete_time: 0, for_import: false });
+    this.chats.set(made.id, made); return made.id;
+  }
+  /** Sends a message and waits until Telegram has really stored it (uploads included). */
+  sendAndWait(chatId, content) {
+    return new Promise((resolve, reject) => {
+      let tempId = 0; const early = new Map();
+      const done = (u) => {
+        if (u._ === 'updateMessageSendSucceeded' && u.old_message_id === tempId) { this.off('sent', listen); clearTimeout(timer); resolve(u.message); }
+        else if (u._ === 'updateMessageSendFailed' && u.old_message_id === tempId) { this.off('sent', listen); clearTimeout(timer); reject(new Error(u.error ? u.error.message : 'send failed')); }
+      };
+      const listen = (u) => { if (!tempId) early.set(u.old_message_id, u); else done(u); };
+      const timer = setTimeout(() => { this.off('sent', listen); reject(new Error(this.t('Telegram took too long to answer. Try again.'))); }, 10 * 60 * 1000);
+      this.on('sent', listen);
+      this.invoke({ _: 'sendMessage', chat_id: chatId, input_message_content: content }).then((m) => {
+        tempId = m.id; if (early.has(tempId)) done(early.get(tempId));
+      }).catch((e) => { this.off('sent', listen); clearTimeout(timer); reject(e); });
+    });
+  }
+  /** Every document message in a chat, newest first (from Telegram's servers). */
+  async documents(chatId, max) {
+    const out = []; let from = 0;
+    for (let i = 0; i < 200; i++) {
+      const page = await this.invoke({ _: 'searchChatMessages', chat_id: chatId, query: '', from_message_id: from, offset: 0, limit: 100, filter: { _: 'searchMessagesFilterDocument' } });
+      out.push(...page.messages);
+      if (!page.messages.length || !page.next_from_message_id || out.length >= (max || 20000)) break;
+      from = page.next_from_message_id;
+    }
+    return out;
+  }
+  async downloadNow(fileId) { const f = await this.invoke({ _: 'downloadFile', file_id: fileId, priority: 32, offset: 0, limit: 0, synchronous: true }); return f.local.is_downloading_completed ? f.local.path : null; }
 
   snapshot() {
     const sources = {};

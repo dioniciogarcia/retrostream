@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld('rs', {
   fullscreen: () => ipcRenderer.invoke('fullscreen'),
   quit: () => ipcRenderer.invoke('quit'),
   play: (game, opts) => ipcRenderer.invoke('play', game, opts),
-  on: (channel, fn) => { if (['state', 'file', 'kept', 'played'].includes(channel)) ipcRenderer.on(channel, (_e, data) => fn(data)); }
+  backups: (action, arg) => ipcRenderer.invoke('backups', action, arg),
+  on: (channel, fn) => { if (['state', 'file', 'kept', 'played', 'toast'].includes(channel)) ipcRenderer.on(channel, (_e, data) => fn(data)); }
 });

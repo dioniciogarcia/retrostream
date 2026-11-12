@@ -111,12 +111,19 @@ function render() {
     else if (S.page === 'settings') app.append(settings());
     else if (S.page === 'sources') app.append(sources());
     else app.append(home());
+    const hb = hints(); if (hb) app.append(hb);
   }
   if (samePage) app.querySelectorAll('.scroll').forEach((el, i) => { if (scrolls[i]) el.scrollTop = scrolls[i]; });
   if (keep) { const el = app.querySelector(`[data-key="${CSS.escape(keep)}"]`); if (el) el.focus({ preventScroll: true }); }
 }
 function go(page, opts) { Object.assign(S, opts || {}); S.page = page; render(); const f = document.querySelector('#app [data-key]'); if (f && !opts?.keepFocus) f.focus({ preventScroll: true }); }
 
+function hints() {
+  if (!S.padSeen) return null;
+  const items = S.page === 'library' ? [['A', t('Play')], ['Y', t('Options')], ['X', t('Favorite')], ['LB RB', t('Console')], ['B', t('Back')]]
+    : S.page === 'home' ? [['A', t('Open')], ['Y', t('Options')], ['X', t('Favorite')], ['B', t('Back')]] : [['A', t('Choose')], ['B', t('Back')]];
+  return h('footer', { class: 'hints' }, items.map(([k, v]) => h('span', {}, h('b', {}, k), v)));
+}
 function header() {
   const d = S.drive; const nav = [['home', t('Home')], ['library', t('Library')], ['fav', t('Favorites & collections')], ['settings', t('Settings')]];
   const on = (k) => (k === 'fav' ? S.page === 'library' && (S.source === 'fav' || S.source === 'col') : k === 'library' ? S.page === 'library' && S.source !== 'fav' && S.source !== 'col' : S.page === k || (k === 'settings' && S.page === 'sources'));
@@ -137,7 +144,7 @@ function firstConsole() { const withGames = S.consoles.find((c) => S.games.some(
 
 function home() {
   const rec = recent(); const last = rec[0]; const c = last ? byId[last.console] : byId[firstConsole()];
-  const left = h('button', { class: 'continue', style: `background:${c.color}`, 'data-key': 'continue',
+  const left = h('button', { class: 'continue', style: `background:${c.color}`, 'data-key': 'continue', 'data-game': last ? last.id : null, 'data-recent': '1',
     onClick: () => last ? playGame(last) : go('library', { console: c.id, source: 'all' }), onContextmenu: (e) => { if (last) { e.preventDefault(); gameMenu(last, e, true); } } },
   h('span', { class: 'kicker' }, last ? t('CONTINUE') + ' · ' + c.title.toUpperCase() : t('START PLAYING')),
   h('h1', { class: 'display' }, last ? last.title : t('Pick a console')),
@@ -166,7 +173,7 @@ function home() {
 }
 function miniCard(g, prefix, recentMenu) {
   const w = 128; const hh = Math.round(w / (RATIO[g.console] || 1)) > 170 ? 170 : Math.round(w / (RATIO[g.console] || 1));
-  return h('button', { class: 'mini', 'data-key': prefix + '_' + g.id, onClick: () => prefix === 'rec' ? playGame(g) : openGame(g), onContextmenu: (e) => { e.preventDefault(); gameMenu(g, e, recentMenu); } },
+  return h('button', { class: 'mini', 'data-key': prefix + '_' + g.id, 'data-game': g.id, 'data-recent': prefix === 'rec' ? '1' : null, onClick: () => prefix === 'rec' ? playGame(g) : openGame(g), onContextmenu: (e) => { e.preventDefault(); gameMenu(g, e, recentMenu); } },
     cover(g, w, hh), h('div', { class: 't' }, g.title), h('div', { class: 's' }, byId[g.console].title + (playtime(g) ? ' · ' + playtime(g) : '')));
 }
 function openGame(g) { go('library', { console: g.console, source: 'all', query: '', selected: g.id }); }
@@ -193,8 +200,8 @@ function library() {
   const sel = games.find((g) => g.id === S.selected) || games[0];
   for (const g of games.slice(0, 3000)) {
     const r = RATIO[g.console] || 1; const w = 150; const hh = Math.round(w / r);
-    const card = h('button', { class: 'card', role: 'listitem', 'data-key': 'g_' + g.id, onClick: () => { S.selected = g.id; renderPanel(g); }, onDblclick: () => playGame(g),
-      onKeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); playGame(g); } }, onFocus: () => { S.selected = g.id; renderPanel(g); }, onContextmenu: (e) => { e.preventDefault(); gameMenu(g, e, false); } },
+    const card = h('button', { class: 'card', role: 'listitem', 'data-key': 'g_' + g.id, 'data-game': g.id, onClick: () => { S.selected = g.id; playGame(g); },
+      onMouseenter: () => { if (S.selected !== g.id) { S.selected = g.id; renderPanel(g); } }, onFocus: () => { S.selected = g.id; renderPanel(g); }, onContextmenu: (e) => { e.preventDefault(); gameMenu(g, e, false); } },
     cover(g, w, Math.min(hh, 220)), h('div', { class: 't' }, g.title), h('div', { class: 's' }, gameLine(g)));
     card.style.width = '100%'; card.querySelector('.cover').style.width = '100%';
     grid.append(card);
@@ -340,6 +347,7 @@ function settings() {
       h('section', { class: 'group' }, h('h2', {}, t('Library')),
         srow('TirsoDrive', d.stage === 'ready' ? t('Connected as') + ' ' + d.me + ' · ' + t('manage channels') : t('Not connected · sign in'), '#14C9AA', () => d.stage === 'ready' ? go('sources') : (setPref('skipped', false), go('home'))),
         srow(t('Collections'), cols.length + ' ' + t('lists'), '#7A4DFF', () => choose(t('Collections'), cols.length ? cols.map((n) => ({ label: n, pick: () => go('library', { source: 'col', collection: n }) })) : [{ label: t('Long-press or right-click a game and choose "Add to a collection".'), pick: () => {} }])),
+        srow(t('Save backups'), t('In your Telegram channel · shared with the phone and TV'), '#2DE2C8', backupsMenu),
         srow(t('Hidden games'), hidden.size + ' ' + t('hidden'), '#8C95AA', () => {
           const list = S.games.filter((g) => hidden.has(g.id));
           if (!list.length) { toast(t('You have no hidden games.')); return; }
@@ -353,6 +361,19 @@ function settings() {
         srow(t('Open in full screen'), (pref('fullscreen') !== false ? t('On') : t('Off')) + ' · ' + t('F11 switches at any time'), '#38BDF8', () => { setPref('fullscreen', pref('fullscreen') === false); render(); }, 's_full'),
         srow(t('Exit RetroStream'), t('Closes the app'), '#8C95AA', () => window.rs.quit(), 's_exit'),
         d.stage === 'ready' ? srow(t('Sign out of Telegram'), d.me, '#FF4D73', () => confirmBox(t('Sign out of Telegram'), t('The library from your channels is removed from this PC until you sign in again.'), t('Sign out'), () => window.rs.drive('logout'))) : null)));
+}
+function backupsMenu() {
+  if (S.drive.stage !== 'ready') { toast(t('Connect Telegram first (Settings > TirsoDrive).')); return; }
+  choose(t('Save backups'), [
+    { label: t('Back up all saves now'), pick: async () => { toast(t('Backing up…')); const r = await window.rs.backups('all'); toast(r.error || (r.total ? r.ok + ' / ' + r.total + ' ' + t('backed up') + (r.failed ? ' · ' + r.failed : '') : t('Everything is up to date.'))); } },
+    { label: t('Restore a game from Telegram'), pick: async () => {
+      toast(t('Loading…')); const r = await window.rs.backups('list');
+      if (r.error) { toast(r.error); return; }
+      if (!r.list.length) { toast(t('There are no backups in Telegram yet.')); return; }
+      choose(t('Restore a game from Telegram'), r.list.map((b) => ({ label: b.title + ' · ' + b.console + ' · ' + new Date(b.date * 1000).toLocaleString(), pick: () => confirmBox(b.title, t('The saves on this PC for this game are replaced by this backup.'), t('Restore'), async () => { const x = await window.rs.backups('restore', b); toast(x.error || t('Saves restored')); }) })));
+    } },
+    { label: t('Restore everything from Telegram'), pick: () => confirmBox(t('Restore everything from Telegram'), t('Every game gets its newest backup. Saves on this PC are replaced.'), t('Restore'), async () => { toast(t('Restoring…')); const x = await window.rs.backups('restoreAll'); toast(x.error || x.n + ' ' + t('games restored')); }) }
+  ]);
 }
 function sources() {
   const d = S.drive;
@@ -439,21 +460,50 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape' && !document.querySelector('#layer .shade')) goBack();
   else if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && S.page === 'library' && S.selected) { e.preventDefault(); const g = S.games.find((x) => x.id === S.selected); if (g) gameMenu(g, null, false); }
 });
+function focusedGame() { const el = document.activeElement; const id = el && el.dataset && el.dataset.game; return id ? S.games.find((g) => g.id === id) : null; }
+function optionsForFocus() { const g = focusedGame() || (S.page === 'library' && S.games.find((x) => x.id === S.selected)); if (g) { const el = document.activeElement; const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null; gameMenu(g, r ? { clientX: r.left + 20, clientY: r.top + 20 } : null, !!(el && el.dataset && el.dataset.recent)); } }
+/** LB / RB: the previous / next console (or collection) in the library. */
+function switchTab(step) {
+  if (S.page !== 'library') return;
+  if (S.source === 'fav' || S.source === 'col') {
+    const tabs = ['*fav', ...Object.keys(pref('collections') || {})]; const cur = S.source === 'fav' ? 0 : tabs.indexOf(S.collection);
+    const n = tabs[(cur + step + tabs.length) % tabs.length]; go('library', n === '*fav' ? { source: 'fav' } : { source: 'col', collection: n });
+  } else {
+    const ids = S.consoles.map((c) => c.id); const cur = Math.max(0, ids.indexOf(S.console));
+    go('library', { console: ids[(cur + step + ids.length) % ids.length], query: '', selected: null });
+  }
+}
 function goBack() { if (S.page === 'sources') go('settings'); else if (S.page !== 'home') go('home'); }
-const pad = { last: {}, at: 0 };
+const pad = { last: {}, at: {}, first: {} };
 function pollPads() {
   const gp = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(Boolean);
   if (gp) {
     const b = (i) => gp.buttons[i] && gp.buttons[i].pressed;
     const now = performance.now();
     if (gp.buttons.some((x) => x.pressed) || gp.axes.some((v) => Math.abs(v) > 0.6)) kbd(true);
-    const st = { up: b(12) || gp.axes[1] < -0.6, down: b(13) || gp.axes[1] > 0.6, left: b(14) || gp.axes[0] < -0.6, right: b(15) || gp.axes[0] > 0.6, a: b(0), b: b(1), x: b(2), y: b(3), menu: b(9) };
-    for (const k of ['up', 'down', 'left', 'right']) if (st[k] && (!pad.last[k] || now - pad.at > 180)) { moveFocus(k); pad.at = now; }
-    if (st.a && !pad.last.a && document.activeElement) document.activeElement.click();
-    if (st.b && !pad.last.b) { const top = document.querySelector('#layer .shade:last-child'); if (top) top.remove(); else goBack(); }
-    if (st.x && !pad.last.x && S.page === 'library' && S.selected) { toggleIn('favorites', S.selected); render(); }
-    if (st.menu && !pad.last.menu && S.page === 'library' && S.selected) { const g = S.games.find((x) => x.id === S.selected); if (g) gameMenu(g, null, false); }
+    const st = { up: b(12) || gp.axes[1] < -0.6, down: b(13) || gp.axes[1] > 0.6, left: b(14) || gp.axes[0] < -0.6, right: b(15) || gp.axes[0] > 0.6,
+      a: b(0), b: b(1), x: b(2), y: b(3), lb: b(4), rb: b(5), lt: b(6), rt: b(7), view: b(8), menu: b(9) };
+    if (!document.querySelector('#app :focus') && !document.querySelector('#layer :focus') && Object.values(st).some(Boolean)) { const f = document.querySelector('#app [data-key="continue"], #app .card, #app button'); if (f) f.focus(); }
+    // Held directions repeat: a short pause first, then quickly.
+    for (const k of ['up', 'down', 'left', 'right']) {
+      if (!st[k]) continue;
+      if (!pad.last[k]) { moveFocus(k); pad.first[k] = now; pad.at[k] = now; }
+      else if (now - pad.first[k] > 380 && now - pad.at[k] > 110) { moveFocus(k); pad.at[k] = now; }
+    }
+    const press = (k) => st[k] && !pad.last[k];
+    const layerOpen = document.querySelector('#layer .shade');
+    if (press('a') && document.activeElement && document.activeElement !== document.body) document.activeElement.click();
+    if (press('b')) { const top = document.querySelector('#layer .shade:last-child'); if (top) top.remove(); else goBack(); }
+    if (!layerOpen) {
+      if (press('x')) { const g = focusedGame(); if (g) { toggleIn('favorites', g.id); render(); toast(listPref('favorites').has(g.id) ? t('Added to favorites') : t('Removed from favorites')); } }
+      if (press('y') || press('menu')) optionsForFocus();
+      if (press('lb')) switchTab(-1);
+      if (press('rb')) switchTab(1);
+      if (press('lt') || press('rt')) { for (let i = 0; i < 3; i++) moveFocus(press('lt') ? 'up' : 'down'); }
+      if (press('view')) { const s2 = document.querySelector('[data-key="search"]'); if (s2) s2.focus(); }
+    }
     pad.last = st;
+    if (!S.padSeen) { S.padSeen = true; render(); }
   }
   requestAnimationFrame(pollPads);
 }
@@ -484,6 +534,7 @@ function pollPads() {
     if (i.state === 'done') { const p = S.games.find((x) => x.fileId === i.id && x.id === S.pendingPlay); if (p) { S.pendingPlay = null; setTimeout(() => playGame(p), 300); } }
   });
   window.rs.on('kept', (k) => { S.prefs.kept = k; render(); });
+  window.rs.on('toast', (text) => toast(text));
   window.rs.on('played', (i) => { S.prefs.playtime = i.playtime; if (i.error) dialog(t('The game closed'), i.error, []); render(); });
   render();
   requestAnimationFrame(pollPads);
