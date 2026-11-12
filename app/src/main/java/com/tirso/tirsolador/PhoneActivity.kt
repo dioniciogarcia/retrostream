@@ -373,10 +373,24 @@ class PhoneActivity : Activity() {
             val s = drive.sources[c] ?: continue
             val row = horizontal(); row.setPadding(dp(14), dp(10), dp(14), dp(10))
             row.addView(tv(c.title, 15f, p.text, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
-            row.addView(tv(if (s.chatId == 0L) s.issue else s.title, 12f, if (s.chatId == 0L) p.muted else p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END },
+            val n = if (s.chatId != 0L) drive.fileCounts[s.chatId] else null
+            row.addView(tv(if (s.chatId == 0L) s.issue else s.title + (if (n != null) " · $n" else ""), 12f, if (s.chatId == 0L) p.muted else p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END },
                 LinearLayout.LayoutParams(0, -2, 1.2f))
             control(row, "src_${c.name}", p.surface) { chooseSource(c) }
             col.addView(row, LinearLayout.LayoutParams(minOf(dp(520), resources.displayMetrics.widthPixels - dp(32)), -2).apply { topMargin = dp(6) })
+        }
+        if (drive.error.isNotEmpty()) col.addView(tv(drive.error, 13f, 0xFFFF8A95.toInt()).apply { gravity = Gravity.CENTER; setPadding(dp(8), dp(12), dp(8), 0) })
+        val w = minOf(dp(520), resources.displayMetrics.widthPixels - dp(32))
+        if (drive.discovering || drive.syncing) {
+            col.addView(button(T.t("Cancelar actualización"), "w_cancel") { drive.cancelSync() }, LinearLayout.LayoutParams(w, -2).apply { topMargin = dp(18) })
+        } else {
+            col.addView(button(T.t("Escanear todos los canales"), "w_scan") { drive.scanAll() }, LinearLayout.LayoutParams(w, -2).apply { topMargin = dp(18) })
+            col.addView(button(T.t("Actualizar catálogo"), "w_sync") { drive.sync() }, LinearLayout.LayoutParams(w, -2).apply { topMargin = dp(8) })
+            col.addView(button(T.t("Borrar todas las asignaciones"), "w_clear") {
+                AlertDialog.Builder(this).setTitle(T.t("Borrar todas las asignaciones"))
+                    .setMessage(T.t("Se quitarán los canales de todas las consolas y la lista de juegos de Telegram. Tus partidas guardadas y los juegos del teléfono no se tocan."))
+                    .setPositiveButton(T.t("Borrar")) { _, _ -> drive.clearAssignments() }.setNegativeButton(T.t("Cancelar"), null).show()
+            }, LinearLayout.LayoutParams(w, -2).apply { topMargin = dp(8) })
         }
         col.addView(button(T.t("Ir a mi biblioteca"), "w_done", true) { drive.finishOnboarding(); library = Library(this); go("home") },
             LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(18) })
@@ -384,7 +398,7 @@ class PhoneActivity : Activity() {
     private fun chooseSource(c: Console) {
         if (drive.syncing || drive.discovering) return
         val choices = drive.choices(c)
-        val labels = arrayOf(T.t("Sin grupo asignado")) + choices.map { it.title }
+        val labels = arrayOf(T.t("Sin grupo asignado")) + choices.map { it.title + "  ·  " + drive.describe(it) }
         AlertDialog.Builder(this).setTitle(c.title).setItems(labels) { _, w -> if (w == 0) drive.unbind(c) else drive.bind(c, choices[w - 1].id) }.show()
     }
 

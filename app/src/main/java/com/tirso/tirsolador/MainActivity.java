@@ -395,12 +395,16 @@ public class MainActivity extends Activity {
             content=scrollContent();
             for(Console c:Console.all()){
                 TirsoDrive.Source source=drive.sources.get(c);
-                content.addView(button(c.title+"  ·  "+(source.chatId==0?source.issue:source.title),"source_"+c.name(),()->chooseSource(c)));
+                Integer files=source.chatId==0?null:drive.fileCounts.get(source.chatId);
+                content.addView(button(c.title+"  ·  "+(source.chatId==0?source.issue:source.title+(files!=null?" · "+files+T.t(" archivos"):"")),"source_"+c.name(),()->chooseSource(c)));
             }
             if(drive.discovering||drive.syncing)content.addView(button(T.t("Cancelar actualización"),"cancel_sync",drive::cancelSync));
             else{
-                content.addView(button(T.t("Buscar grupos"),"discover_sources",drive::discover));
+                content.addView(button(T.t("Escanear todos los canales"),"scan_sources",drive::scanAll));
                 content.addView(button(T.t("Actualizar catálogo"),"sync_sources",drive::sync));
+                content.addView(button(T.t("Borrar todas las asignaciones"),"clear_sources",()->new AlertDialog.Builder(this).setTitle(T.t("Borrar todas las asignaciones"))
+                    .setMessage(T.t("Se quitarán los canales de todas las consolas y la lista de juegos de Telegram. Tus partidas guardadas y los juegos del teléfono no se tocan."))
+                    .setPositiveButton(T.t("Borrar"),(dd,ww)->drive.clearAssignments()).setNegativeButton(T.t("Cancelar"),null).show()));
                 content.addView(button(T.t("Ir a mi biblioteca"),"open_connected_library",()->{drive.finishOnboarding();library=new Library(this);route("home");}));
             }
             content.addView(button(T.t("Cerrar sesión"),"logout",()->new AlertDialog.Builder(this).setTitle(T.t("Cerrar sesión de Telegram"))
@@ -471,7 +475,7 @@ public class MainActivity extends Activity {
         if(drive.syncing||drive.discovering)return;
         java.util.List<org.drinkless.tdlib.TdApi.Chat> choices=drive.choices(console);
         String[] labels=new String[choices.size()+1];labels[0]=T.t("Sin grupo asignado");
-        for(int i=0;i<choices.size();i++)labels[i+1]=choices.get(i).title+" · ID "+choices.get(i).id;
+        for(int i=0;i<choices.size();i++)labels[i+1]=choices.get(i).title+"  ·  "+drive.describe(choices.get(i));
         new AlertDialog.Builder(this).setTitle(console.title).setItems(labels,(d,w)->{
             if(w==0)drive.unbind(console);else drive.bind(console,choices.get(w-1).id);
         }).setNegativeButton(T.t("Cancelar"),null).show();

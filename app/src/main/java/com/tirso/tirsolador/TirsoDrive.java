@@ -38,6 +38,8 @@ final class TirsoDrive {
     private Listener listener;
     private final Map<Long,TdApi.Chat> chats=new HashMap<>();
     final EnumMap<Console,Source> sources=new EnumMap<>(Console.class);
+    /** Game files counted in each channel by the last full scan (chat id -> files). */
+    final Map<Long,Integer> fileCounts=new HashMap<>();
     private final Map<Integer,TdApi.File> files=new HashMap<>();
     private final Set<Integer> requestedDownloads=new HashSet<>();
     private final Set<Integer> watchedFiles=new HashSet<>();
@@ -258,6 +260,71 @@ final class TirsoDrive {
         if(chat==null||!TelegramCatalog.group(chat)||!TelegramCatalog.selectable(chat.title))return;
         for(Source other:sources.values())if(other.console!=c&&other.chatId==id){error=T.t("Ese grupo ya está asignado a ")+other.console.title+".";publish(false);return;}
         Source source=sources.get(c);source.chatId=id;source.title=chat.title;source.issue=T.t("Asignado");persistBindings();error="";publish(false);
+    }
+    /** "Canal" or "Grupo", plus the file count when a scan has counted it — tells look-alike channels apart. */
+    String describe(TdApi.Chat chat){
+        boolean channel=chat.type instanceof TdApi.ChatTypeSupergroup&&((TdApi.ChatTypeSupergroup)chat.type).isChannel;
+        Integer n=fileCounts.get(chat.id);
+        return (channel?T.t("Canal"):T.t("Grupo"))+(n!=null?" · "+n+T.t(" archivos"):"");
+    }
+    /** Clears every console's channel and the Telegram games list (games on the phone stay). */
+    void clearAssignments(){
+        if(syncing||discovering)return;
+        for(Source s:sources.values()){s.chatId=0;s.title="";s.issue=T.t("Sin grupo asignado");s.candidates.clear();}
+        persistBindings();new Library(context).clearTelegram();
+        error="";status=T.t("Asignaciones borradas. Pulsa Escanear todos los canales para volver a asignarlos.");publish(true);
+    }
+    /**
+     * Looks at every channel and group the account is in, counts the game files in the ones named after a console,
+     * gives each console the one with the most files (a channel wins a tie with its discussion group), then loads the catalog.
+     */
+    void scanAll(){
+        if(stage!=Stage.READY||accountId==0||discovering||syncing)return;
+        discovering=true;error="";status=T.t("Escaneando todos tus canales…");
+        int token=++generation;publish(false);
+        loadList(new TdApi.ChatListMain(),0,token,()->loadList(new TdApi.ChatListArchive(),0,token,()->{
+            List<TdApi.Chat> named=new ArrayList<>();
+            for(TdApi.Chat c:chats.values())if(TelegramCatalog.group(c)&&TelegramCatalog.consoleFor(c.title)!=null)named.add(c);
+            countFiles(named,0,token);
+        }));
+    }
+    private void countFiles(List<TdApi.Chat> list,int i,int token){
+        if(token!=generation||!discovering)return;
+        if(i>=list.size()){chooseBest(list,token);return;}
+        TdApi.Chat chat=list.get(i);Console console=TelegramCatalog.consoleFor(chat.title);
+        status=T.t("Escaneando ")+chat.title+" ("+(i+1)+"/"+list.size()+")";publish(false);
+        send(new TdApi.SearchChatMessages(chat.id,null,"",null,0,0,100,new TdApi.SearchMessagesFilterDocument()),r->{
+            if(token!=generation||!discovering)return;
+            int games=0;
+            if(r instanceof TdApi.FoundChatMessages){
+                TdApi.FoundChatMessages page=(TdApi.FoundChatMessages)r;
+                for(TdApi.Message m:page.messages)if(TelegramCatalog.game(accountId,console,m)!=null)games++;
+                // The first page is a sample; scale it up to the channel's total of files.
+                if(page.messages.length>0&&page.totalCount>page.messages.length)games=(int)Math.round((double)games*page.totalCount/page.messages.length);
+            }
+            fileCounts.put(chat.id,games);
+            countFiles(list,i+1,token);
+        });
+    }
+    private void chooseBest(List<TdApi.Chat> list,int token){
+        if(token!=generation)return;
+        int found=0;StringBuilder empty=new StringBuilder();
+        for(Source source:sources.values()){
+            source.candidates.clear();TdApi.Chat best=null;int bestCount=0;
+            for(TdApi.Chat c:list){
+                if(TelegramCatalog.consoleFor(c.title)!=source.console)continue;
+                source.candidates.add(c);
+                int n=fileCounts.containsKey(c.id)?fileCounts.get(c.id):0;
+                boolean channel=c.type instanceof TdApi.ChatTypeSupergroup&&((TdApi.ChatTypeSupergroup)c.type).isChannel;
+                boolean bestChannel=best!=null&&best.type instanceof TdApi.ChatTypeSupergroup&&((TdApi.ChatTypeSupergroup)best.type).isChannel;
+                if(n>0&&(best==null||n>bestCount||(n==bestCount&&channel&&!bestChannel))){best=c;bestCount=n;}
+            }
+            if(best!=null){source.chatId=best.id;source.title=best.title;source.issue=T.t("Asignado");found++;}
+            else{source.chatId=0;source.title="";source.issue=source.candidates.isEmpty()?T.t("Sin grupo asignado"):T.t("Canal sin juegos");}
+        }
+        persistBindings();discovering=false;
+        status=found+T.t(" consolas asignadas automáticamente");publish(false);
+        if(found>0)sync();
     }
     void unbind(Console c){if(syncing||discovering)return;Source s=sources.get(c);s.chatId=0;s.title="";s.issue=T.t("Sin grupo asignado");persistBindings();publish(false);}
     void sync(){

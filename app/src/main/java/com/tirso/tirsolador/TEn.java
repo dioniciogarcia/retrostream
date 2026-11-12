@@ -38,6 +38,17 @@ final class TEn {
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
+        m.put("Canal", "Channel");
+        m.put("Grupo", "Group");
+        m.put(" archivos", " files");
+        m.put("Asignaciones borradas. Pulsa Escanear todos los canales para volver a asignarlos.", "Assignments cleared. Tap Scan all channels to assign them again.");
+        m.put("Escaneando todos tus canales…", "Scanning all your channels…");
+        m.put("Escaneando ", "Scanning ");
+        m.put("Canal sin juegos", "Channel has no games");
+        m.put(" consolas asignadas automáticamente", " consoles assigned automatically");
+        m.put("Escanear todos los canales", "Scan all channels");
+        m.put("Borrar todas las asignaciones", "Clear all assignments");
+        m.put("Se quitarán los canales de todas las consolas y la lista de juegos de Telegram. Tus partidas guardadas y los juegos del teléfono no se tocan.", "This removes the channel from every console and clears the Telegram games list. Your saves and the games on your phone are not touched.");
         m.put(": este grupo oculta los mensajes anteriores a los nuevos miembros. El dueño debe abrir el grupo en Telegram > Editar > Historial para nuevos miembros > Visible.", ": this group hides earlier messages from new members. The owner must open the group in Telegram > Edit > Chat history for new members > Visible.");
         m.put("Juega con tus amigos", "Play with your friends");
         m.put("jugando", "playing");
