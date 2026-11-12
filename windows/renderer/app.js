@@ -104,6 +104,7 @@ const RATIO = { NES: 0.72, SNES: 1.38, MD: 0.72, GB: 1, GBC: 1, GBA: 1, N64: 1.3
 // ------------------------------------------------------------------ screens
 function render() {
   const app = document.getElementById('app'); const keep = document.activeElement && document.activeElement.dataset.key;
+  const caret = document.activeElement && document.activeElement.tagName === 'INPUT' ? document.activeElement.selectionStart : null;
   const scrolls = [...app.querySelectorAll('.scroll')].map((el) => el.scrollTop); const samePage = render.page === S.page; render.page = S.page;
   app.replaceChildren();
   const d = S.drive;
@@ -121,7 +122,7 @@ function render() {
     const hb = hints(); if (hb) app.append(hb);
   }
   if (samePage) app.querySelectorAll('.scroll').forEach((el, i) => { if (scrolls[i]) el.scrollTop = scrolls[i]; });
-  if (keep) { const el = app.querySelector(`[data-key="${CSS.escape(keep)}"]`); if (el) el.focus({ preventScroll: true }); }
+  if (keep) { const el = app.querySelector(`[data-key="${CSS.escape(keep)}"]`); if (el) { el.focus({ preventScroll: true }); if (caret != null && el.setSelectionRange) try { el.setSelectionRange(caret, caret); } catch (_) { /* not text */ } } }
 }
 function go(page, opts) { Object.assign(S, opts || {}); S.page = page; render(); const f = document.querySelector('#app [data-key]'); if (f && !opts?.keepFocus) f.focus({ preventScroll: true }); }
 
@@ -134,12 +135,23 @@ function hints() {
 function header() {
   const d = S.drive; const nav = [['home', t('Home')], ['library', t('Library')], ['fav', t('Favorites & collections')], ['settings', t('Settings')]];
   const on = (k) => (k === 'fav' ? S.page === 'library' && (S.source === 'fav' || S.source === 'col') : k === 'library' ? S.page === 'library' && S.source !== 'fav' && S.source !== 'col' : S.page === k || (k === 'settings' && (S.page === 'sources' || S.page === 'engines' || !!PAGES[S.page])));
-  const input = h('input', { placeholder: t('Search all games  (Ctrl+F)'), value: S.query, 'aria-label': t('Search games'), 'data-key': 'search',
-    onKeydown: (e) => { if (e.key === 'Enter') { go('library', { query: e.target.value.trim(), console: null, source: 'all' }); } } });
+  // What is being typed survives the screen redrawing itself (downloads, friends and Telegram updates redraw it).
+  const input = h('input', { placeholder: t('Search all games  (Ctrl+F)'), value: S.searchDraft != null ? S.searchDraft : S.query, 'aria-label': t('Search games'), 'data-key': 'search',
+    onInput: (e) => { S.searchDraft = e.target.value; },
+    onKeydown: (e) => {
+      if (e.key === 'Enter') {
+        // preventDefault: otherwise the same Enter press also "clicks" the button that gets the focus next (Home).
+        e.preventDefault(); e.stopPropagation();
+        const q = e.target.value.trim(); S.searchDraft = null;
+        go('library', { query: q, console: q ? null : (S.console || firstConsole()), source: 'all', keepFocus: true });
+        const box = document.querySelector('[data-key="search"]'); if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+      } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); S.searchDraft = null; e.target.value = ''; if (S.query) go('library', { query: '', console: S.console || firstConsole(), keepFocus: true }); e.target.blur(); }
+    } });
+
   return h('header', { class: 'top' },
     h('div', { class: 'brand' }, h('div', { class: 'logo' }, svg(ICON.pad, 22, '#fff')), 'RetroStream'),
     h('nav', { class: 'nav', 'aria-label': t('Main') }, nav.map(([k, label]) => h('button', { class: on(k) ? 'on' : '', 'data-key': 'nav_' + k,
-      onClick: () => k === 'fav' ? go('library', { source: 'fav', console: null, query: '' }) : k === 'library' ? go('library', { source: 'all', console: S.console || firstConsole(), query: '' }) : go(k) }, label))),
+      onClick: () => (S.searchDraft = null, k === 'fav') ? go('library', { source: 'fav', console: null, query: '' }) : k === 'library' ? go('library', { source: 'all', console: S.console || firstConsole(), query: '' }) : go(k) }, label))),
     h('label', { class: 'search' }, svg(ICON.search, 16, '#9AA3B8'), input),
     h('button', { class: 'iconbtn', 'aria-label': t('Downloads'), 'data-key': 'downloads', onClick: showDownloads }, svg(ICON.down, 20, '#E9ECF5'),
       activeDownloads().length ? h('span', { class: 'badge' }, activeDownloads().length) : null),
