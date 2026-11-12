@@ -192,8 +192,11 @@ static bool RETRO_CALLCONV env(unsigned cmd, void* data) {
 }
 
 static inline uint32_t pack(unsigned r, unsigned g, unsigned b) { return r | (g << 8) | (b << 16) | 0xFF000000u; }
+static int videoCalls = 0, dupCalls = 0;
 static void RETRO_CALLCONV videoRefresh(const void* data, unsigned w, unsigned h, size_t pitch) {
-  if (!data) return;  // same picture as before
+  videoCalls++;
+  if (videoCalls <= 4) logf("picture %d: %ux%u %s", videoCalls, w, h, !data ? "(same as before)" : data == RETRO_HW_FRAME_BUFFER_VALID ? "(graphics card)" : "(memory)");
+  if (!data) { dupCalls++; return; }  // same picture as before
   fw = w; fh = h;
   if (data == RETRO_HW_FRAME_BUFFER_VALID) { hwFrame = true; fresh = true; return; }
   hwFrame = false; rgba.resize((size_t)w * h);
@@ -574,7 +577,9 @@ int main(int argc, char* argv[]) {
     if (!coreCtx) { logf("engine context: %s", SDL_GetError()); printf("{\"event\":\"error\",\"reason\":\"graphics\"}\n"); fflush(stdout); return 6; }
     SDL_GL_MakeCurrent(window, coreCtx);
     if (!makeFbo(std::max(av.geometry.max_width, 1u), std::max(av.geometry.max_height, 1u))) logf("framebuffer not complete");
+    logf("engine context: %s · %s", (const char*)glGetString(GL_VERSION), (const char*)glGetString(GL_RENDERER));
     if (hw.context_reset) hw.context_reset();
+    logf("engine context ready (error %u)", (unsigned)glGetError());
   }
 
   // Sound at the engine's own rate; the game's speed follows the sound.
@@ -639,6 +644,11 @@ int main(int argc, char* argv[]) {
       if (varsChanged) { /* engine reads them in retro_run */ }
       if (useHw) pBindFramebuffer(GL_FRAMEBUFFER, fbo);
       C.run(); frameNo++;
+      if (useHw && (frameNo <= 3 || frameNo % 600 == 0)) {
+        GLenum err = glGetError(); unsigned char px[4] = {0, 0, 0, 0};
+        pBindFramebuffer(GL_FRAMEBUFFER, fbo); glReadPixels(fw / 2, fh / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        logf("frame %d: %ux%u, %d pictures (%d repeats), GL error %u, centre pixel %u,%u,%u", frameNo, fw, fh, videoCalls, dupCalls, (unsigned)err, px[0], px[1], px[2]);
+      }
       if (useHw) pBindFramebuffer(GL_FRAMEBUFFER, 0);
       if (firstFrame) {
         firstFrame = false;
