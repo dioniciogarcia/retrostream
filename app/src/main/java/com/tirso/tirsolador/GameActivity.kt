@@ -257,6 +257,7 @@ open class GameActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        window.decorView.removeCallbacks(rewindTick); window.decorView.removeCallbacks(rewindStep)
         super.onDestroy()
         val ws = workspace; val lease = romLease; val source = sourceRom; val app = applicationContext
         val kill = isolated
@@ -392,6 +393,7 @@ open class GameActivity : AppCompatActivity() {
         lifecycleScope.launch {
             view.getGLRetroEvents().filter { it is GLRetroView.GLRetroEvents.FrameRendered }.first()
             if (!isDolphin) cheats.ensure { if (cheats.enabled.isNotEmpty() && retroView === view) cheats.apply(view) }
+            if (rewindable) { window.decorView.removeCallbacks(rewindTick); window.decorView.postDelayed(rewindTick, 1500) }
             delay(if (isDolphin) 8000 else 1500)
             if (cheats.enabled.isNotEmpty() && retroView === view) cheats.apply(view)
         }
@@ -512,11 +514,16 @@ open class GameActivity : AppCompatActivity() {
             pictureArea = area
             retroView?.let { setPictureArea(it, area) }
         }
+        // Touch controls editor: size, lift and see-through, per console.
+        pad = (pad * touchSize()).toInt()
+        val lift = (h * touchLift()).toInt()
         for (v in listOf(left, right)) {
+            v.alpha = touchOpacity()
             val lp = v.layoutParams as FrameLayout.LayoutParams
-            if (lp.width != pad || lp.height != pad) {
+            if (lp.width != pad || lp.height != pad || lp.bottomMargin != lift) {
                 lp.width = pad
                 lp.height = pad
+                lp.bottomMargin = lift
                 v.layoutParams = lp
             }
         }
@@ -652,6 +659,13 @@ open class GameActivity : AppCompatActivity() {
         // Select + Start together opens the menu, for controllers without a Home/Mode button.
         if (event.keyCode == KeyEvent.KEYCODE_BUTTON_SELECT) selectDown = event.action == KeyEvent.ACTION_DOWN
         if (event.keyCode == KeyEvent.KEYCODE_BUTTON_START) startDown = event.action == KeyEvent.ACTION_DOWN
+        // Select + L1 (hold): rewind.
+        if (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 && rewindable) {
+            if (selectDown && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && !menuOpen) {
+                retroView?.sendKeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_SELECT); startRewind(); return true
+            }
+            if (rewinding && event.action == KeyEvent.ACTION_UP) { stopRewind(); return true }
+        }
         // Select + R1: screenshot. Select + R2: fast forward on/off.
         if (selectDown && event.action == KeyEvent.ACTION_DOWN && !menuOpen && event.repeatCount == 0 &&
             (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R2)) {
@@ -796,6 +810,8 @@ open class GameActivity : AppCompatActivity() {
         entries += "Resume" to { closeMenu() }
         entries += "Game information" to { showGameInfo() }
         entries += "Walkthrough" to { walkthrough() }
+        if (rewindable) entries += "Rewind 10 seconds (hold Select + L1)" to { closeMenu(); window.decorView.postDelayed({ rewindTen() }, 200) }
+        if (hasTouch) entries += "Touch controls" to { closeMenu(); window.decorView.postDelayed({ touchEditor() }, 200) }
         entries += "Take screenshot (Select + R1)" to { closeMenu(); window.decorView.postDelayed({ takeScreenshot() }, 450) }
         entries += (if (fastSpeed > 1) "Fast forward: ${fastSpeed}x (Select + R2)" else "Fast forward: off (Select + R2)") to { closeMenu(); toggleFastForward() }
         if (cheats.available()) {
@@ -844,6 +860,74 @@ open class GameActivity : AppCompatActivity() {
     private fun batteryTemp(): String {
         val t = registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
         return if (t > 0) " · ${t / 10}°C" else ""
+    }
+
+    // ------------------------------------------------------------------ touch controls editor
+    private fun touchKey(k: String) = "touch_${k}_${console.name}"
+    private fun touchSize() = prefs.getFloat(touchKey("size"), 1f)
+    private fun touchOpacity() = prefs.getFloat(touchKey("alpha"), 1f)
+    private fun touchLift() = prefs.getFloat(touchKey("lift"), 0f)
+    private fun relayout() { val w = window.decorView.width; val h = window.decorView.height; if (w > 0 && h > 0) arrangeScreen(w, h) }
+    private fun touchEditor() {
+        val box = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; val pd = (20 * resources.displayMetrics.density).toInt(); setPadding(pd, pd / 2, pd, 0) }
+        fun slider(label: String, min: Float, max: Float, value: Float, set: (Float) -> Unit) {
+            val t = TextView(this).apply { text = label; setTextColor(0xFFE9ECF5.toInt()) }
+            val bar = android.widget.SeekBar(this).apply { this.max = 100; progress = ((value - min) / (max - min) * 100).toInt().coerceIn(0, 100) }
+            bar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(b: android.widget.SeekBar?, v: Int, fromUser: Boolean) { set(min + (max - min) * v / 100f); relayout() }
+                override fun onStartTrackingTouch(b: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(b: android.widget.SeekBar?) {}
+            })
+            box.addView(t); box.addView(bar)
+        }
+        slider(tr("Size"), 0.7f, 1.3f, touchSize()) { prefs.edit().putFloat(touchKey("size"), it).apply() }
+        slider(tr("See-through"), 0.25f, 1f, touchOpacity()) { prefs.edit().putFloat(touchKey("alpha"), it).apply() }
+        slider(tr("Height"), 0f, 0.3f, touchLift()) { prefs.edit().putFloat(touchKey("lift"), it).apply() }
+        AlertDialog.Builder(this).setTitle(tr("Touch controls") + " · " + console.title).setView(box)
+            .setPositiveButton(tr("Done"), null)
+            .setNeutralButton(tr("Reset")) { _, _ -> prefs.edit().remove(touchKey("size")).remove(touchKey("alpha")).remove(touchKey("lift")).apply(); relayout() }
+            .show()
+    }
+
+    // ------------------------------------------------------------------ rewind (small consoles: the last ~30 seconds)
+    private val rewindable get() = console in setOf(Console.NES, Console.SNES, Console.MD, Console.GB, Console.GBC, Console.GBA)
+    private val rewindStates = kotlin.collections.ArrayDeque<ByteArray>()
+    private var rewinding = false
+    private val rewindTick = object : Runnable {
+        override fun run() {
+            val view = retroView
+            if (view != null && !menuOpen && !rewinding) {
+                runCatching { view.serializeState(useEmulationThread = true) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let {
+                    rewindStates.addLast(it); while (rewindStates.size > 60) rewindStates.removeFirst()
+                }
+            }
+            window.decorView.postDelayed(this, 500)
+        }
+    }
+    private val rewindStep = object : Runnable {
+        override fun run() {
+            if (!rewinding) return
+            val view = retroView ?: return
+            val state = rewindStates.removeLastOrNull() ?: run { rewinding = false; return }
+            runCatching { view.unserializeState(state, useEmulationThread = true) }
+            window.decorView.postDelayed(this, 120)
+        }
+    }
+    private fun startRewind() {
+        if (!rewindable) { toast("Rewind isn't available for this console"); return }
+        if (rewindStates.isEmpty()) { toast("Nothing to rewind yet"); return }
+        rewinding = true; window.decorView.post(rewindStep)
+    }
+    private fun stopRewind() { rewinding = false }
+    /** Touch/menu rewind: jumps back about 10 seconds. */
+    private fun rewindTen() {
+        if (!rewindable) { toast("Rewind isn't available for this console"); return }
+        val view = retroView ?: return
+        var state: ByteArray? = null
+        repeat(20) { rewindStates.removeLastOrNull()?.let { state = it } }
+        val s = state ?: run { toast("Nothing to rewind yet"); return }
+        runCatching { view.unserializeState(s, useEmulationThread = true) }
+        toast("Rewound")
     }
 
     // ------------------------------------------------------------------ screenshots and fast forward
