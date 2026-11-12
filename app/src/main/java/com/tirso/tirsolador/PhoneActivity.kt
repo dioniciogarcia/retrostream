@@ -79,6 +79,8 @@ class PhoneActivity : Activity() {
     private var source = "all"       // all | telegram | phone
     private var query = ""
     private var selected: Game? = null
+    private var freshStart = false        // "Play from the start": don't load where you left off
+    private var downloadedOnly = false
     private var lastFocus = ""
     private val driveListener = TirsoDrive.Listener { catalog -> onDrive(catalog) }
 
@@ -102,6 +104,7 @@ class PhoneActivity : Activity() {
         }
         if (state == null && !drive.onboarded() && !drive.skipped()) page = "welcome"
         drive.attach(driveListener); drive.start()
+        scrape()
         if (PhoneGames.scanOn(this) && PhoneGames.folders(this).isNotEmpty() && PhoneGames.canReadFolders()) scanFolders()
         render()
         if (intent?.hasExtra("play_game") == true) root.post { playFromShortcut() }
@@ -135,7 +138,7 @@ class PhoneActivity : Activity() {
     override fun onNewIntent(i: Intent) { super.onNewIntent(i); setIntent(i); playFromShortcut() }
 
     private fun onDrive(catalog: Boolean) {
-        if (catalog) library = Library(this)
+        if (catalog) { library = Library(this); scrape() }
         if (!drive.skipped() && (drive.stage == TirsoDrive.Stage.QR || drive.stage == TirsoDrive.Stage.PHONE ||
                 drive.stage == TirsoDrive.Stage.CODE || drive.stage == TirsoDrive.Stage.PASSWORD) && page != "welcome") page = "welcome"
         when (page) {
@@ -410,7 +413,7 @@ class PhoneActivity : Activity() {
     }
     private fun recent(): List<Pair<Game, Long>> {
         val seen = HashSet<String>(); val out = mutableListOf<Pair<Game, Long>>()
-        for (r in library.plays()) { val g = r[0] as Game; if (seen.add(g.id)) out += g to (r[1] as Long); if (out.size >= 12) break }
+        for (r in library.recentPlays()) { val g = r[0] as Game; if (seen.add(g.id)) out += g to (r[1] as Long); if (out.size >= 12) break }
         return out
     }
 
@@ -489,6 +492,8 @@ class PhoneActivity : Activity() {
         if (g != null) {
             val resume = tv("▶  " + T.t("Reanudar"), 15f, if (filled) 0xFF14161E.toInt() else p.onPrimary, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(16), dp(9), dp(16), dp(9)) }
             control(resume, "resume", if (filled) Color.WHITE else p.primary, 12f, false) { play(g) }
+            resume.setOnLongClickListener { selected = g; gameMore(g, true); true }
+            card.setOnLongClickListener { selected = g; gameMore(g, true); true }
             card.addView(resume, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { setMargins(dp(16), 0, 0, dp(16)) })
         }
         return card
@@ -578,7 +583,7 @@ class PhoneActivity : Activity() {
             val pt = PlayTime.label(this, g.id)
             if (pt.isNotEmpty()) cell.addView(tv(pt, 10f, p.muted).apply { setPadding(dp(2), dp(1), dp(2), 0) })
             control(cell, "recent_${g.id}", Color.TRANSPARENT, 12f, false) { play(g) }
-            cell.setOnLongClickListener { selected = g; gameMore(g); true }
+            cell.setOnLongClickListener { selected = g; gameMore(g, true); true }
             row.addView(cell, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(10) })
         }
         parent.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) })
@@ -587,7 +592,8 @@ class PhoneActivity : Activity() {
     /** Upright only: a few games to try, picked at random from the library (new picks each day, unplayed first). */
     private fun suggestedBlock(parent: LinearLayout) {
         val played = recent().map { it.first.id }.toSet()
-        val pool = library.games.filter { library.visible(it.console) && it.id !in played }
+        val hidden = library.hidden()
+        val pool = library.games.filter { library.visible(it.console) && it.id !in played && it.id !in hidden }
         if (pool.isEmpty()) return
         val day = System.currentTimeMillis() / 86_400_000L
         val picks = pool.shuffled(java.util.Random(day)).take(9)
@@ -647,11 +653,14 @@ class PhoneActivity : Activity() {
     private fun gamesShown(): List<Game> {
         val fav = source == "fav"
         val all = library.filtered(console, fav, query)
-        return when (source) {
+        val shown = when (source) {
             "telegram" -> all.filter { it.telegramAccount != 0L }
             "phone" -> all.filter { it.id.startsWith("local:") }
             else -> all
         }
+        if (!downloadedOnly) return shown
+        val kept = PhoneGames.kept(this).map { it[0] as String }.toSet()
+        return shown.filter { it.id.startsWith("local:") || it.id in kept || drive.file(it)?.local?.isDownloadingCompleted == true }
     }
     private fun libraryPage() {
         val c = console
@@ -665,6 +674,8 @@ class PhoneActivity : Activity() {
             chips.addView(chip(T.t("Todos") + " ${base.size}", source == "all", "chip_all") { source = "all"; render() })
             chips.addView(chip("Telegram $tg", source == "telegram", "chip_tg") { source = "telegram"; render() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
             if (ph > 0 || source == "phone") chips.addView(chip(T.t("Teléfono") + " $ph", source == "phone", "chip_ph") { source = "phone"; render() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+            chips.addView(chip("✓ " + T.t("Descargados"), downloadedOnly, "chip_dl") { downloadedOnly = !downloadedOnly; render() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+            chips.addView(chip("⇅ " + sortLabel(), false, "chip_sort") { chooseSort() }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
             outer.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) })
         }
         val games = gamesShown()
@@ -690,6 +701,16 @@ class PhoneActivity : Activity() {
         } else outer.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(outer)
     }
+    private val sorts = listOf("name" to "Nombre A-Z", "name_desc" to "Nombre Z-A", "added" to "Añadidos recientemente", "played" to "Más jugados", "recent" to "Jugados recientemente")
+    private fun sortKey() = if (library.sort() == "name" && library.descending()) "name_desc" else library.sort()
+    private fun sortLabel() = T.t(sorts.firstOrNull { it.first == sortKey() }?.second ?: "Nombre A-Z")
+    private fun chooseSort() {
+        AlertDialog.Builder(this).setTitle(T.t("Ordenar por")).setSingleChoiceItems(sorts.map { T.t(it.second) }.toTypedArray(), sorts.indexOfFirst { it.first == sortKey() }) { d, w ->
+            val k = sorts[w].first
+            if (k.startsWith("name")) { library.sort("name"); library.descending(k == "name_desc") } else library.sort(k)
+            d.dismiss(); render()
+        }.show()
+    }
     private fun sourceIcon(g: Game, kept: Boolean): Pair<String, Int> = when {
         g.id.startsWith("local:") -> "▣" to 0xFFF0B455.toInt()
         kept -> "✓" to 0xFF22C55E.toInt()
@@ -705,6 +726,9 @@ class PhoneActivity : Activity() {
         art.addView(iv, FrameLayout.LayoutParams(-1, -1))
         artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles")
         if (library.favorite(g)) art.addView(tv("★", 14f, 0xFFFFB400.toInt()).apply { setPadding(dp(6), dp(4), dp(6), 0) }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END))
+        if (kept || g.id.startsWith("local:")) art.addView(tv("✓", 11f, Color.WHITE, bold = true).apply {
+            gravity = Gravity.CENTER; background = round(0xFF22C55E.toInt(), 20f); contentDescription = T.t("En el teléfono") },
+            FrameLayout.LayoutParams(dp(20), dp(20), Gravity.TOP or Gravity.START).apply { setMargins(dp(5), dp(5), 0, 0) })
         cell.addView(art, LinearLayout.LayoutParams(-1, -2))
         val info = horizontal(); info.setPadding(dp(4), dp(6), dp(4), dp(2))
         info.addView(tv(g.title, 12f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -868,6 +892,7 @@ class PhoneActivity : Activity() {
             .putExtra("description", g.description).putExtra("console", g.console.name).putExtra("cover", g.coverName)
             .putExtra("gameid", g.id).putExtra("meta", GameMeta.info(this, g).toString()).putExtra("fileId", g.fileId).putExtra("account", g.telegramAccount)
         if (parts != null) intent.putExtra("parts", parts)
+        if (freshStart) { intent.putExtra("fresh", true); freshStart = false }
         drive.playing(g)
         page = if (landscape || console != null) "library" else "detail"
         lastFocus = "game_${g.id}"; render()
@@ -912,13 +937,15 @@ class PhoneActivity : Activity() {
     }
 
     // ------------------------------------------------------------------ more: screenshots, shortcut, info
-    private fun gameMore(g: Game) {
-        val items = mutableListOf(T.t("Capturas de pantalla"), T.t("Añadir a la pantalla de inicio"),
-            if (library.favorite(g)) T.t("Quitar de favoritos") else T.t("Añadir a favoritos"))
-        AlertDialog.Builder(this).setTitle(g.title).setItems(items.toTypedArray()) { _, w ->
-            when (w) { 0 -> showShots(g); 1 -> pinShortcut(g); else -> { library.toggleFavorite(g); render() } }
-        }.show()
+    private val menuHost = object : GameMenu.Host {
+        override fun refresh() { library = Library(this@PhoneActivity); if (selected != null) selected = library.games.firstOrNull { it.id == selected!!.id } ?: selected; render() }
+        override fun play(g: Game, fresh: Boolean) { freshStart = fresh; this@PhoneActivity.play(g) }
+        override fun shots(g: Game) = showShots(g)
+        override fun pin(g: Game) = pinShortcut(g)
     }
+    private fun gameMore(g: Game, recent: Boolean = false) = GameMenu.show(this, g, library, drive, recent, menuHost)
+    /** Looks up names, covers and descriptions for games that don't have them yet. */
+    private fun scrape() = GameMeta.refresh(this, library.games) { if (!isFinishing && !isDestroyed) { library = Library(this); if (page == "home" || page == "library" || page == "detail") render() } }
     /** Home screen shortcut: the game's logo on white (box cover if there is no logo); opens straight into the game. */
     private fun pinShortcut(g: Game) {
         val sm = getSystemService(android.content.pm.ShortcutManager::class.java) ?: return
@@ -1052,6 +1079,8 @@ class PhoneActivity : Activity() {
         row(l, T.t("Consolas"), "$shown" + T.t(" de ") + Console.all().size + T.t(" visibles"), "s_consoles", 0xFF2F6DF6.toInt()) { go("set_consoles") }
         row(l, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "s_art", 0xFFFF9A2E.toInt()) { openEmbedded("artwork") }
         row(l, T.t("Limpiar grupos vacíos"), T.t("Borra grupos TD duplicados sin archivos"), "s_clean", 0xFFFF4D73.toInt()) { cleanupGroups() }
+        row(l, T.t("Juegos sin información"), T.t("Busca a mano la información o portada que falta"), "s_missing", 0xFFF0B455.toInt()) { GameMenu.missing(this, menuHost) }
+        row(l, T.t("Juegos ocultos"), library.hidden().size.toString() + T.t(" ocultos"), "s_hidden", 0xFF8C93A8.toInt()) { GameMenu.hidden(this, menuHost) }
 
         val gm = group(col, T.t("Juegos"))
         row(gm, T.t("Resolución"), T.t("Por consola"), "s_res", 0xFF2F6DF6.toInt()) { go("set_resolution") }
@@ -1062,6 +1091,7 @@ class PhoneActivity : Activity() {
 
         val st = group(col, T.t("Teléfono"))
         row(st, T.t("Teléfono y almacenamiento"), T.t("Carpetas, juegos guardados, Wi-Fi"), "s_storage", 0xFF38BDF8.toInt()) { go("set_storage") }
+        row(st, T.t("Espacio usado"), T.t("Descargas, portadas, partidas · liberar espacio"), "s_space", 0xFF22C55E.toInt()) { GameMenu.storage(this, drive, menuHost) }
 
         val ap = group(col, T.t("Aplicación"))
         row(ap, T.t("Actualizaciones"), T.t("Buscar e instalar la última versión"), "s_update", 0xFF7A4DFF.toInt()) { openEmbedded("settings", "updates") }

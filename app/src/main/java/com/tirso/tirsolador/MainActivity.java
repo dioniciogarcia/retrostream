@@ -277,7 +277,7 @@ public class MainActivity extends Activity {
             focusableWith(st, "nav_drive", f -> { GradientDrawable g = new GradientDrawable(); g.setShape(GradientDrawable.OVAL); g.setColor(dotColor); if (f) g.setStroke(px(5), Color.WHITE); return g; }, this::connectScreen);
             LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(px(30), px(30)); sl.rightMargin = px(26); h.addView(st, sl);
             if (!welcome) {
-                if (page.equals("library")) { h.addView(icon("sort", T.t("Ordenar juegos: ") + (library.descending() ? "Z a A" : "A a Z"), "sort", this::sortGames)); h.addView(icon("refresh", T.t("Refrescar catálogo"), "refresh", this::refreshCatalog)); }
+                if (page.equals("library")) { h.addView(icon("sort", T.t("Ordenar por"), "sort", this::sortGames)); h.addView(icon("refresh", T.t("Refrescar catálogo"), "refresh", this::refreshCatalog)); }
                 h.addView(icon("search", T.t("Buscar juegos"), "search", this::search));
                 h.addView(icon("star", T.t("Favoritos"), "nav_favorites", this::openFavorites));
                 h.addView(friendsIcon());
@@ -737,7 +737,7 @@ public class MainActivity extends Activity {
             TextView code = tv(console == null ? "ALL" : console.name(), 24, accent, fMono); code.setLetterSpacing(.1f); titles.addView(code);
         }
         String src = console != null && drive.sources.get(console) != null && drive.sources.get(console).chatId != 0 ? drive.sources.get(console).title : "";
-        TextView sub = tv(games.size() + T.t(" juegos · ") + (library.descending() ? "Z–A" : "A–Z") + (src.isEmpty() ? "" : T.t(" · de «") + src + "»") + (query.isEmpty() ? "" : " · " + query), 24, muted, fBody);
+        TextView sub = tv(games.size() + T.t(" juegos · ") + (!library.sort().equals("name") ? T.t(library.sort().equals("added") ? "Añadidos recientemente" : library.sort().equals("played") ? "Más jugados" : "Jugados recientemente") : library.descending() ? "Z–A" : "A–Z") + (src.isEmpty() ? "" : T.t(" · de «") + src + "»") + (query.isEmpty() ? "" : " · " + query), 24, muted, fBody);
         sub.setSingleLine(true); sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
         if (!gba) {
             LinearLayout nameRow = horizontal();
@@ -778,6 +778,7 @@ public class MainActivity extends Activity {
             cell.setPadding(px(7), px(7), px(7), px(7));
             final int ringColor = focusRing();
             focusableWith(cell, "game_" + game.id, f -> { GradientDrawable g = round(0, 28); if (f) g.setStroke(px(6), ringColor); return g; }, () -> selectGame(game));
+            cell.setOnLongClickListener(v -> { gameMore(game); return true; });
             View.OnFocusChangeListener base = cell.getOnFocusChangeListener();
             cell.setOnFocusChangeListener((v, has) -> { base.onFocusChange(v, has); if (has) showInfo(game); });
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2); p.setMargins(gap / 2, gap / 4, gap / 2, gap / 4); row.addView(cell, p); index++;
@@ -828,13 +829,15 @@ public class MainActivity extends Activity {
         infoPanel.addView(actions);
     }
     // ------------------------------------------------------------------ more options: screenshots, home screen shortcut
-    private void gameMore(Game game) {
-        java.util.List<String> items = new java.util.ArrayList<>(); items.add(T.t("Capturas de pantalla"));
-        boolean pin = android.os.Build.VERSION.SDK_INT >= 26 && getSystemService(android.content.pm.ShortcutManager.class) != null
-            && getSystemService(android.content.pm.ShortcutManager.class).isRequestPinShortcutSupported();
-        if (pin) items.add(T.t("Añadir a la pantalla de inicio"));
-        new AlertDialog.Builder(this).setTitle(game.title).setItems(items.toArray(new String[0]), (d, w) -> { if (w == 0) showShots(game); else pinShortcut(game); }).show();
-    }
+    private boolean freshStart;   // "Play from the start": don't load where you left off
+    private final GameMenu.Host menuHost = new GameMenu.Host() {
+        @Override public void refresh() { if (isFinishing()) return; rememberLibrary(); library = new Library(MainActivity.this); render(); }
+        @Override public void play(Game g, boolean fresh) { freshStart = fresh; startPlay(g); }
+        @Override public void shots(Game g) { showShots(g); }
+        @Override public void pin(Game g) { pinShortcut(g); }
+    };
+    private void gameMore(Game game) { gameMore(game, false); }
+    private void gameMore(Game game, boolean recent) { GameMenu.show(this, game, library, drive, recent, menuHost); }
     private void pinShortcut(Game game) {
         if (android.os.Build.VERSION.SDK_INT < 26) return;
         android.content.pm.ShortcutManager sm = getSystemService(android.content.pm.ShortcutManager.class);
@@ -888,18 +891,7 @@ public class MainActivity extends Activity {
             if (row != null && row.getChildCount() == 1) row.addView(new View(this), new LinearLayout.LayoutParams(0, dp(110), 1));
         });
     }
-    private void showFullInfo(Game game) {
-        Toast.makeText(this, T.t("Cargando información…"), Toast.LENGTH_SHORT).show();
-        new Thread(() -> {
-            Artwork art = new Artwork(getApplicationContext());
-            android.graphics.Bitmap box = null; java.util.List<android.graphics.Bitmap> shots = new java.util.ArrayList<>();
-            try { java.io.File f = art.cachedCover(game); if (f != null) box = android.graphics.BitmapFactory.decodeFile(f.getPath()); } catch (Exception ignored) { }
-            try { android.graphics.Bitmap b1 = art.snapshot(game, "Named_Snaps"); if (b1 != null) shots.add(b1); android.graphics.Bitmap b2 = art.snapshot(game, "Named_Titles"); if (b2 != null) shots.add(b2); } catch (Exception ignored) { }
-            art.close();
-            final android.graphics.Bitmap boxFinal = box;
-            runOnUiThread(() -> { if (!isFinishing()) GameInfo.INSTANCE.show(this, GameMeta.info(this, game), boxFinal, shots, () -> kotlin.Unit.INSTANCE); });
-        }, "game-info").start();
-    }
+    private void showFullInfo(Game game) { GameMenu.info(this, game); }
     private void selectGame(Game game) {
         libraryFocus = "game_" + game.id; showInfo(game);
         if (infoPanel != null) { View play = infoPanel.findViewWithTag("panel_play"); if (play != null) play.requestFocusFromTouch(); }
@@ -986,9 +978,13 @@ public class MainActivity extends Activity {
         else connectScreen();
     }
     private void sortGames() {
-        new AlertDialog.Builder(this).setTitle(T.t("Orden alfabético"))
-            .setSingleChoiceItems(new String[]{T.t("Título: A → Z"),T.t("Título: Z → A")},library.descending()?1:0,(dialog,which)->{
-                library.descending(which==1);libraryScroll=0;lastFocus="sort";dialog.dismiss();render();
+        String[] keys={"name","name_desc","added","played","recent"};
+        String[] labels={T.t("Nombre A-Z"),T.t("Nombre Z-A"),T.t("Añadidos recientemente"),T.t("Más jugados"),T.t("Jugados recientemente")};
+        String now=library.sort().equals("name")&&library.descending()?"name_desc":library.sort();
+        new AlertDialog.Builder(this).setTitle(T.t("Ordenar por"))
+            .setSingleChoiceItems(labels,java.util.Arrays.asList(keys).indexOf(now),(dialog,which)->{
+                String k=keys[which];if(k.startsWith("name")){library.sort("name");library.descending(k.equals("name_desc"));}else library.sort(k);
+                libraryScroll=0;lastFocus="sort";dialog.dismiss();render();
             }).setNegativeButton(T.t("Cancelar"),null).show();
     }
     private String cachedRom(Game game){
@@ -1040,6 +1036,7 @@ public class MainActivity extends Activity {
         pendingPlay="";library.addRecent(selected);page="library";lastFocus="game_"+selected.id;libraryFocus=lastFocus;render();
         Intent intent=new Intent(this,Console.ownProcess(selected.console)?GameActivityN64.class:GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
         if(parts!=null)intent.putExtra("parts",parts);
+        if(freshStart){intent.putExtra("fresh",true);freshStart=false;}
         drive.playing(selected);
         launchWithNewestSave(intent,selected);
     }
@@ -1149,6 +1146,9 @@ public class MainActivity extends Activity {
         sItem(b, T.t("Consolas"), shownConsoles + T.t(" de ") + Console.all().length + T.t(" visibles"), "consoles_page", 0xFF2F6DF6, null, () -> route("consoles"));
         sItem(b, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "artwork_dl", 0xFFFF9A2E, null, () -> route("artwork"));
         sItem(b, T.t("Limpiar grupos vacíos"), T.t("Borra grupos TD duplicados sin archivos"), "cleanup_groups", 0xFFFF4D73, null, this::cleanupGroups);
+        sItem(b, T.t("Juegos sin información"), T.t("Busca a mano la información o portada que falta"), "missing_info", 0xFFF0B455, null, () -> GameMenu.missing(this, menuHost));
+        sItem(b, T.t("Juegos ocultos"), library.hidden().size() + T.t(" ocultos"), "hidden_games", 0xFF8C93A8, null, () -> GameMenu.hidden(this, menuHost));
+        sItem(b, T.t("Espacio usado"), T.t("Descargas, portadas, partidas · liberar espacio"), "space_used", 0xFF22C55E, null, () -> GameMenu.storage(this, drive, menuHost));
 
         LinearLayout c = sGroup(T.t("Juegos"));
         String resSummary = null; boolean resMixed = false;
@@ -1278,7 +1278,7 @@ public class MainActivity extends Activity {
 
     // ------------------------------------------------------------------ TV home, option A: Continue card + rows
     private void homeA(java.util.List<Console> visible) {
-        java.util.List<Object[]> plays = library.plays();
+        java.util.List<Object[]> plays = library.recentPlays();
         java.util.LinkedHashMap<String, Game> recent = new java.util.LinkedHashMap<>();
         for (Object[] r : plays) { Game g = (Game) r[0]; if (!recent.containsKey(g.id)) recent.put(g.id, g); if (recent.size() >= 12) break; }
         java.util.List<Game> rec = new java.util.ArrayList<>(recent.values());
@@ -1354,6 +1354,7 @@ public class MainActivity extends Activity {
         int bg = filled ? c.color : surface;
         focusableWith(card, "home_continue", f -> { GradientDrawable d = round(bg, radius); if (f) d.setStroke(px(6), focusRing()); else if (!filled) d.setStroke(px(th.equals("gba") ? 4 : 2), th.equals("gba") ? ink : c.color); return d; },
             () -> { if (g != null) startPlay(g); else openConsole(c); });
+        if (g != null) card.setOnLongClickListener(v -> { gameMore(g, true); return true; });
         return card;
     }
     private View recentCardTv(Game g) {
@@ -1366,6 +1367,7 @@ public class MainActivity extends Activity {
         TextView t = tv(g.title, 21, text, fBody); t.setSingleLine(true); t.setEllipsize(android.text.TextUtils.TruncateAt.END); t.setPadding(px(2), px(8), px(2), 0); cell.addView(t);
         String pt = PlayTime.label(this, g.id); if (!pt.isEmpty()) { TextView m = tv(pt, 18, muted, fBody); m.setPadding(px(2), px(2), 0, 0); cell.addView(m); }
         focusableWith(cell, "home_recent_" + g.id, f -> { GradientDrawable d = round(0, 20); if (f) d.setStroke(px(5), focusRing()); return d; }, () -> startPlay(g));
+        cell.setOnLongClickListener(v -> { gameMore(g, true); return true; });
         return cell;
     }
     private View consoleChipTv(Console c) {

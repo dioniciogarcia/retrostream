@@ -23,7 +23,10 @@ internal object GameMeta {
     private val SYSTEM = mapOf(
         Console.N64 to 23, Console.GBA to 20, Console.GBC to 21, Console.GB to 19, Console.NDS to 24,
         Console.SNES to 26, Console.NES to 25, Console.MD to 33, Console.MAME to 2,
+        Console.PSP to 39, Console.GC to 22,   // PS2 and Wii aren't in OpenVGDB: covers/names come from libretro's list, text from Wikipedia
     )
+    /** Games the lookup handles: Telegram ones and games found in the phone's folders. */
+    private fun ours(g: Game) = g.telegramAccount != 0L || g.id.startsWith("local:")
     private val main = Handler(Looper.getMainLooper())
     private var cache = JSONObject()
     private var loaded = false
@@ -111,7 +114,7 @@ internal object GameMeta {
     // ------------------------------------------------------------------ applying results
     /** The game with its clean name, description and the cover name that matches libretro's thumbnails. */
     @JvmStatic fun apply(ctx: Context, g: Game): Game {
-        if (g.telegramAccount == 0L) return g
+        if (!ours(g)) return g
         load(ctx)
         val m = cache.optJSONObject(g.id)
         val title = m?.optString("t")?.takeIf { it.isNotBlank() } ?: clean(stemOf(g))
@@ -209,7 +212,8 @@ internal object GameMeta {
 
     private fun platform(c: Console) = when (c) {
         Console.N64 -> "Nintendo 64"; Console.NDS -> "Nintendo DS"; Console.GBA -> "Game Boy Advance"; Console.GBC -> "Game Boy Color"
-        Console.GB -> "Game Boy"; Console.SNES -> "Super Nintendo"; Console.NES -> "Nintendo Entertainment System"; Console.MD -> "Mega Drive"; else -> "arcade"
+        Console.GB -> "Game Boy"; Console.SNES -> "Super Nintendo"; Console.NES -> "Nintendo Entertainment System"; Console.MD -> "Mega Drive"
+        Console.PSP -> "PlayStation Portable"; Console.PS2 -> "PlayStation 2"; Console.GC -> "GameCube"; Console.WII -> "Wii"; else -> "arcade"
     }
 
     /** Wikipedia's intro for a game the database doesn't know (null when nothing convincing is found). */
@@ -257,11 +261,96 @@ internal object GameMeta {
         }.getOrNull()
     }
 
+    // ------------------------------------------------------------------ libretro's list of pictures
+    /** Every box art name libretro has for a console (kept for two weeks; call off the main thread). */
+    @JvmStatic fun names(ctx: Context, console: Console): List<String> {
+        val f = File(ctx.filesDir, "thumbs/${console.name}.txt")
+        if (f.isFile && f.length() > 0 && System.currentTimeMillis() - f.lastModified() < 14L * 86_400_000) return f.readLines().filter { it.isNotBlank() }
+        val list = runCatching {
+            val url = "https://thumbnails.libretro.com/" + android.net.Uri.encode(console.thumbnailSystem) + "/Named_Boxarts/"
+            val c = URL(url).openConnection() as HttpURLConnection
+            c.connectTimeout = 10000; c.readTimeout = 30000; c.setRequestProperty("User-Agent", "RetroStream/1.0")
+            if (c.responseCode != 200) return@runCatching null
+            val html = c.inputStream.use { it.readBytes().decodeToString() }
+            Regex("<a href=\"[^\"]+\">([^<]+)\\.png</a>").findAll(html).map { android.text.Html.fromHtml(it.groupValues[1], 0).toString().trim() }.filter { it.isNotEmpty() }.distinct().toList()
+        }.getOrNull()
+        if (list.isNullOrEmpty()) return if (f.isFile) f.readLines().filter { it.isNotBlank() } else emptyList()
+        runCatching { f.parentFile?.mkdirs(); f.writeText(list.joinToString("\n")) }
+        return list
+    }
+    /** The libretro picture name that best fits a file name (null when nothing is close enough). */
+    private fun artMatch(names: List<String>, stem: String): String? {
+        if (names.isEmpty()) return null
+        val k = key(stem); val reg = regionOf(stem)
+        fun score(n: String) = (if (reg.isNotEmpty() && n.contains("($reg)")) 2 else 0) + (if (n.contains("(USA)")) 1 else 0) - (if (n.contains("(Beta") || n.contains("(Demo") || n.contains("(Proto")) 3 else 0)
+        names.filter { key(it) == k }.maxByOrNull { score(it) }?.let { return it }
+        val w = words(fix(stem)); if (w.isEmpty()) return null
+        var best: String? = null; var bs = 0.0
+        for (n in names) {
+            val ws = words(n); if (ws.isEmpty()) continue
+            val j = w.intersect(ws).size.toDouble() / w.union(ws).size + score(n) * 0.01
+            if (j > bs) { bs = j; best = n }
+        }
+        return if (bs >= 0.6) best else null
+    }
+
+    // ------------------------------------------------------------------ manual search and fixes
+    /**
+     * Games that fit what you typed, from the game database and from libretro's pictures (call off the main thread).
+     * Each result: t (name), c (picture name), and when known y (year), r (region), d (description), g, dev, pub.
+     */
+    @JvmStatic fun search(ctx: Context, console: Console, query: String): List<JSONObject> {
+        val want = words(fix(query)); if (want.isEmpty()) return emptyList()
+        val out = ArrayList<Pair<Double, JSONObject>>(); val seen = HashSet<String>()
+        val app = ctx.applicationContext
+        SYSTEM[console]?.let { sid ->
+            database(app)?.let { file ->
+                SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                    val dummy = Game("search", query, console, "", query)
+                    for ((ws, r) in index(db, sid).wl) {
+                        if (!ws.containsAll(want)) continue
+                        val e = entry(dummy, r.rom, r)
+                        val c = e.optString("c"); if (c.isEmpty() || !seen.add(c.lowercase())) continue
+                        out += (want.size.toDouble() / ws.size + (if (r.desc.isNotBlank()) 0.2 else 0.0)) to e
+                    }
+                }
+            }
+        }
+        for (n in runCatching { names(app, console) }.getOrDefault(emptyList())) {
+            val ws = words(n); if (!ws.containsAll(want) || !seen.add(n.lowercase())) continue
+            out += (want.size.toDouble() / ws.size) to JSONObject().put("t", clean(n)).put("c", n)
+        }
+        return out.sortedByDescending { it.first }.take(60).map { it.second }
+    }
+    /** Uses a search result for this game (fills in the description from Wikipedia when it has none; call off the main thread). */
+    @JvmStatic fun choose(ctx: Context, g: Game, pick: JSONObject) {
+        val app = ctx.applicationContext; load(app)
+        val e = JSONObject(pick.toString()).put("manual", true)
+        if (e.optString("d").isBlank() && g.console != Console.MAME) wiki(e.optString("t"), g.console)?.let { e.put("d", it) }
+        synchronized(this) { cache.put(g.id, e) }; save(app)
+    }
+    @JvmStatic fun rename(ctx: Context, g: Game, title: String) = edit(ctx, g) { it.put("t", title.trim()) }
+    @JvmStatic fun setCover(ctx: Context, g: Game, name: String) = edit(ctx, g) { it.put("c", name) }
+    private fun edit(ctx: Context, g: Game, change: (JSONObject) -> Unit) {
+        val app = ctx.applicationContext; load(app)
+        synchronized(this) {
+            val e = cache.optJSONObject(g.id) ?: JSONObject().put("t", g.title)
+            change(e); e.put("manual", true); cache.put(g.id, e)
+        }
+        save(app)
+    }
+    /** Forgets what was found or chosen for a game, so the automatic lookup runs again. */
+    @JvmStatic fun reset(ctx: Context, g: Game) { val app = ctx.applicationContext; load(app); synchronized(this) { cache.remove(g.id) }; save(app) }
+    /** True when the game has a description. */
+    @JvmStatic fun described(ctx: Context, g: Game): Boolean { load(ctx.applicationContext); return cache.optJSONObject(g.id)?.optString("d").orEmpty().isNotBlank() }
+    /** True when the lookup has already been tried for this game. */
+    @JvmStatic fun looked(ctx: Context, g: Game): Boolean { load(ctx.applicationContext); return cache.has(g.id) }
+
     /** Looks up every game that hasn't been looked up yet (in the background). [done] runs on the main thread when something new was found. */
     @JvmStatic fun refresh(ctx: Context, games: List<Game>, done: Runnable) {
         val app = ctx.applicationContext
         load(app)
-        val todo = synchronized(this) { games.filter { it.telegramAccount != 0L && !cache.has(it.id) } }
+        val todo = synchronized(this) { games.filter { ours(it) && !cache.has(it.id) } }
         if (todo.isEmpty() || running) return
         running = true
         Thread {
@@ -270,12 +359,18 @@ internal object GameMeta {
                 val db = SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY)
                 db.use {
                     for ((console, list) in todo.groupBy { it.console }) {
-                        val sid = SYSTEM[console] ?: continue
-                        val idx = index(db, sid)
+                        val sid = SYSTEM[console]
+                        val idx = if (sid != null) index(db, sid) else null
+                        var art: List<String>? = null
                         for (g in list) {
                             val stem = stemOf(g)
-                            val row = runCatching { match(idx, stem) }.getOrNull()
+                            val row = idx?.let { runCatching { match(it, stem) }.getOrNull() }
                             val e = entry(g, stem, row)
+                            if (row == null && console != Console.MAME) {
+                                // Not in the database: libretro's own list of cover names usually still has the game.
+                                if (art == null) art = runCatching { names(app, console) }.getOrDefault(emptyList())
+                                artMatch(art!!, stem)?.let { name -> e.put("c", name); e.put("t", clean(name)) }
+                            }
                             if ((row == null || row.desc.isBlank()) && console != Console.MAME) wiki(e.optString("t"), console)?.let { e.put("d", it) }
                             synchronized(this) { cache.put(g.id, e) }
                         }

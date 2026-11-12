@@ -379,7 +379,7 @@ open class GameActivity : AppCompatActivity() {
                 // Older GameCube/Wii players saved this from the wrong thread, which broke some textures.
                 saves.deleteAutoState()
             }
-            if (config.autoResume) {
+            if (config.autoResume && !intent.getBooleanExtra("fresh", false)) {   // "Play from the start" skips it
                 saves.readAutoState()?.let { state ->
                     val ok = runCatching { view.unserializeState(state) }.getOrDefault(false)
                     if (ok) toast("Continuing where you left off")

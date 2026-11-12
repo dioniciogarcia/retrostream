@@ -15,9 +15,11 @@ import java.util.Set;
 
 public final class Library {
     private final SharedPreferences prefs;
+    private final Context context;
     public final List<Game> games = new ArrayList<>();
     public boolean demo;
     public Library(Context context) {
+        this.context = context.getApplicationContext();
         prefs = context.getSharedPreferences("tirsolador", Context.MODE_PRIVATE);
         // Big Console in dark mode is the default look (applied once to existing installs too).
         if (!prefs.getBoolean("default_console_dark", false)) prefs.edit().putString("theme", "Consola completa").putBoolean("dark_console", true).putBoolean("default_console_dark", true).apply();
@@ -89,13 +91,38 @@ public final class Library {
         prefs.edit().putStringSet("favorites", f).apply();
     }
     public List<Game> filtered(Console c, boolean favorite, String query) {
-        List<Game> result = new ArrayList<>();
-        for (Game g : games) if (visible(g.console) && (c == null || c == g.console)
+        List<Game> result = new ArrayList<>(); Set<String> hidden = hidden();
+        for (Game g : games) if (visible(g.console) && (c == null || c == g.console) && !hidden.contains(g.id)
                 && (!favorite || favorite(g)) && g.title.toLowerCase(java.util.Locale.ROOT)
                 .contains(query.toLowerCase(java.util.Locale.ROOT))) result.add(g);
-        if (descending()) java.util.Collections.reverse(result);
+        String sort = sort();
+        if (sort.equals("added")) java.util.Collections.sort(result, (a, b) -> Long.compare(b.messageId, a.messageId));
+        else if (sort.equals("played")) { java.util.Map<String, Long> t = new java.util.HashMap<>(); for (Game g : result) t.put(g.id, PlayTime.get(context, g.id));
+            java.util.Collections.sort(result, (a, b) -> Long.compare(t.get(b.id), t.get(a.id))); }
+        else if (sort.equals("recent")) { java.util.List<String> r = recent();
+            java.util.Collections.sort(result, (a, b) -> { int x = r.indexOf(a.id), y = r.indexOf(b.id); return Integer.compare(x < 0 ? Integer.MAX_VALUE : x, y < 0 ? Integer.MAX_VALUE : y); }); }
+        else if (descending()) java.util.Collections.reverse(result);
         return result;
     }
+    /** How games are ordered: name (A-Z / Z-A), added (newest in Telegram first), played (most time), recent (last played). */
+    public String sort() { return prefs.getString("sort", "name"); }
+    public void sort(String value) { prefs.edit().putString("sort", value).apply(); }
+    /** Games you hid: they stay in Telegram but don't show in the library. */
+    public Set<String> hidden() { return new HashSet<>(prefs.getStringSet("hidden", new HashSet<>())); }
+    public void hide(Game g, boolean hide) { Set<String> h = hidden(); if (hide) h.add(g.id); else h.remove(g.id); prefs.edit().putStringSet("hidden", h).apply(); }
+    public List<Game> hiddenGames() { Set<String> h = hidden(); List<Game> out = new ArrayList<>(); for (Game g : games) if (h.contains(g.id)) out.add(g); return out; }
+    /** Takes a game off "Recently played" (its play history stays); playing it again brings it back. */
+    public void removeRecent(Game g) {
+        java.util.List<String> ids = recent(); ids.remove(g.id);
+        prefs.edit().putString("recent", android.text.TextUtils.join("\n", ids)).putLong("unrecent_" + g.id, System.currentTimeMillis()).apply();
+    }
+    /** "Recently played": the play history minus what you took off it. */
+    public java.util.List<Object[]> recentPlays() {
+        java.util.List<Object[]> out = new ArrayList<>(); long all = prefs.getLong("unrecent_all", 0);
+        for (Object[] r : plays()) { long t = (Long) r[1]; if (t > all && t > prefs.getLong("unrecent_" + ((Game) r[0]).id, 0)) out.add(r); }
+        return out;
+    }
+    public void clearRecents() { prefs.edit().remove("recent").putLong("unrecent_all", System.currentTimeMillis()).apply(); }
     public java.util.List<String> recent() {
         java.util.List<String> out = new ArrayList<>(); String raw = prefs.getString("recent", "");
         for (String id : raw.split("\n")) if (!id.isEmpty()) out.add(id); return out;
