@@ -1011,15 +1011,52 @@ class PhoneActivity : Activity() {
             root.postDelayed(this, if (page == "remote") 2500 else 6000)
         }
     }
-    private fun startPolling() { if (!polling) { polling = true; root.post(poller) } }
+    // Live screen: a small picture of the TV / PC every two seconds while the remote is open.
+    private val liveBitmaps = mutableMapOf<String, android.graphics.Bitmap>()
+    private var liveView: ImageView? = null
+    private var liveBusy = false
+    private val framer = object : Runnable {
+        override fun run() {
+            if (!polling || page != "remote") return
+            val d = remoteDevice?.let { fresh(it) }
+            val s = d?.let { castStatus[it.id] }
+            val can = s?.optJSONArray("controls")?.toString()?.contains("\"frame\"") == true
+            if (d != null && s?.optString("state") == "playing" && can && !liveBusy) {
+                liveBusy = true
+                RemoteClient.call(d, JSONObject().put("cmd", "control").put("action", "frame"), 6000) { r ->
+                    liveBusy = false
+                    val b64 = r.optString("jpg"); if (b64.isEmpty()) return@call
+                    val bytes = runCatching { android.util.Base64.decode(b64, android.util.Base64.DEFAULT) }.getOrNull() ?: return@call
+                    val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@call
+                    liveBitmaps[d.id] = bmp
+                    liveView?.let { it.setImageBitmap(bmp); it.visibility = View.VISIBLE }
+                }
+            }
+            root.postDelayed(this, 2000)
+        }
+    }
+    private fun startPolling() { RemoteClient.init(this); misses = 0; lastSearch = 0; if (!polling) { polling = true; root.post(poller) } }
     private fun stopPolling() { polling = false; root.removeCallbacks(poller) }
+    private var misses = 0
+    private var lastSearch = 0L
+    /** If a paired TV / PC stops answering (phone asleep, Wi-Fi back, its address changed), look for it again on the Wi-Fi. */
+    private fun findAgain() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastSearch < 10000) return
+        lastSearch = now
+        RemoteClient.discover(this) { if (!isFinishing && !isDestroyed) { misses = 0; pollDevices() } }
+    }
+    /** The saved copy of a device (its address may have been updated). */
+    private fun fresh(d: RemoteClient.Device) = RemoteClient.saved(this).firstOrNull { it.id == d.id } ?: d
     private fun pollDevices() {
         val list = RemoteClient.saved(this).filter { it.paired }
         if (list.isEmpty()) { if (castStatus.isNotEmpty()) { castStatus.clear(); castChanged() }; return }
         for (d in list) RemoteClient.call(d, JSONObject().put("cmd", "status"), 3500) { r ->
             if (isFinishing || isDestroyed) return@call
             val before = castStatus[d.id]
-            if (r.optBoolean("ok")) castStatus[d.id] = r else castStatus.remove(d.id)
+            if (r.optString("error") == "offline") { if (++misses >= 2) findAgain() } else misses = 0
+            // One missed answer doesn't hide what is playing; two do.
+            if (r.optBoolean("ok")) castStatus[d.id] = r else if (r.optString("error") != "offline" || misses >= 2) castStatus.remove(d.id)
             val key = { o: JSONObject? -> if (o == null) "" else o.optString("state") + o.optJSONObject("game")?.optString("id") + o.optBoolean("paused") + o.optBoolean("ff") }
             if (key(before) != key(castStatus[d.id])) castChanged()
         }
@@ -1189,17 +1226,19 @@ class PhoneActivity : Activity() {
     }
     private fun briefOf(g: Game) = JSONObject().put("id", g.id).put("title", g.title).put("console", g.console.name)
         .put("chatId", g.chatId).put("messageId", g.messageId).put("fileName", g.fileName ?: "")
-    private fun castPlay(d: RemoteClient.Device, g: Game, fresh: Boolean) {
+    private fun castPlay(d0: RemoteClient.Device, g: Game, fromStart: Boolean) {
+        val d = fresh(d0)
         toast(T.t("Abriendo en ") + d.name + "…")
-        RemoteClient.call(d, JSONObject().put("cmd", "play").put("game", briefOf(g)).put("fresh", fresh), 30000) { r ->
+        RemoteClient.call(d, JSONObject().put("cmd", "play").put("game", briefOf(g)).put("fresh", fromStart), 30000) { r ->
             RemoteClient.problem(r)?.let { toast(it); if (r.optString("error") == "unpaired") { d.token = ""; RemoteClient.remember(this, d) }; return@call }
             remoteDevice = d
             castStatus[d.id] = JSONObject().put("ok", true).put("state", "loading").put("game", briefOf(g)).put("since", System.currentTimeMillis())
             go("remote"); root.postDelayed({ pollDevices() }, 1500)
         }
     }
-    private fun castControl(d: RemoteClient.Device, action: String, slot: Int = 1) {
-        RemoteClient.call(d, JSONObject().put("cmd", "control").put("action", action).put("slot", slot), if (action == "backup") 30000 else 10000) { r ->
+    private fun castControl(d0: RemoteClient.Device, action: String, slot: Int = 1, value: String = "") {
+        val d = fresh(d0)
+        RemoteClient.call(d, JSONObject().put("cmd", "control").put("action", action).put("slot", slot).put("value", value), if (action == "backup") 30000 else 10000) { r ->
             val bad = RemoteClient.problem(r)
             if (bad != null) toast(bad)
             else when (action) {
@@ -1208,6 +1247,7 @@ class PhoneActivity : Activity() {
                 "shot" -> toast(T.t("Captura tomada"))
                 "backup" -> toast(T.t("Partida copiada a Telegram"))
                 "exit" -> toast(T.t("Juego cerrado"))
+                "res" -> toast(T.t("Cambiando la resolución: el juego se cierra un momento y sigue donde estaba."))
             }
             // The answer arrives a moment before the TV / PC updates its state.
             root.postDelayed({ pollDevices() }, 400)
@@ -1221,7 +1261,7 @@ class PhoneActivity : Activity() {
 
     /** The remote: what is playing on a TV / PC and its controls. */
     private fun remotePage() {
-        val d = remoteDevice ?: castNow()?.first ?: RemoteClient.saved(this).firstOrNull { it.paired } ?: run { page = "home"; home(); return }
+        val d = (remoteDevice ?: castNow()?.first ?: RemoteClient.saved(this).firstOrNull { it.paired } ?: run { page = "home"; home(); return }).let { fresh(it) }
         remoteDevice = d
         val s = castStatus[d.id]
         val state = s?.optString("state") ?: "offline"
@@ -1247,12 +1287,19 @@ class PhoneActivity : Activity() {
         val art = FrameLayout(this); art.background = round(p.surface2, 24f); art.clipToOutline = true
         art.addView(tv(j?.optString("title") ?: d.name, 20f, p.muted, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(24), dp(24), dp(24), dp(24)) }, FrameLayout.LayoutParams(-1, -1))
         if (g != null) { val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.FIT_CENTER; art.addView(iv, FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Snaps", "Named_Titles") }
+        // The live picture covers the box art as soon as the first one arrives.
+        val live = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; setBackgroundColor(Color.BLACK); contentDescription = T.t("Pantalla en vivo") }
+        val lastFrame = liveBitmaps[d.id]
+        if (playing && lastFrame != null) live.setImageBitmap(lastFrame) else live.visibility = View.GONE
+        art.addView(live, FrameLayout.LayoutParams(-1, -1))
+        liveView = if (playing) live else null
         fun badge(text: String, bg: Int, where: Int) = art.addView(tv(text, 13f, Color.WHITE, bold = true).apply { setPadding(dp(10), dp(5), dp(10), dp(5)); background = round(bg, 10f) },
             FrameLayout.LayoutParams(-2, -2, where).apply { setMargins(dp(12), dp(12), dp(12), dp(12)) })
         if (playing) {
             badge(ago(s!!.optLong("since")), 0xCC000000.toInt(), Gravity.BOTTOM or Gravity.END)
             if (paused) badge(T.t("En pausa"), 0xE6F59E0B.toInt(), Gravity.TOP or Gravity.START)
             if (s.optBoolean("ff")) badge(T.t("Avance rápido"), 0xE62F6DF6.toInt(), Gravity.TOP or Gravity.END)
+            else if ("frame" in can) badge("● " + T.t("EN VIVO"), 0xE6DC2626.toInt(), Gravity.TOP or Gravity.END)
         }
         col.addView(art, LinearLayout.LayoutParams(-1, dp(if (landscape) 140 else 190), 1f).apply { topMargin = dp(4) })
 
@@ -1306,6 +1353,40 @@ class PhoneActivity : Activity() {
                 if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = dp(10) })
                 col.addView(row)
             }
+            // Emulator settings while playing.
+            val st = s!!.optJSONObject("settings") ?: JSONObject()
+            val resOptions = st.optJSONArray("resOptions")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList()
+            val filters = st.optJSONArray("filters")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList()
+            if (("res" in can && resOptions.isNotEmpty()) || ("filter" in can && filters.isNotEmpty())) {
+                val card = vertical(); card.setPadding(dp(14), dp(14), dp(14), dp(14)); card.background = round(p.surface2, 18f)
+                if ("res" in can && resOptions.isNotEmpty()) {
+                    card.addView(tv(T.t("Resolución"), 13f, p.muted).apply { setPadding(dp(2), 0, 0, dp(8)) })
+                    val seg = horizontal(); seg.background = round(p.bg, 14f); seg.setPadding(dp(3), dp(3), dp(3), dp(3))
+                    val names = mapOf("low" to T.t("Baja"), "medium" to T.t("Media"), "high" to T.t("Alta"))
+                    for (v in resOptions) {
+                        val on = st.optString("res") == v
+                        val b = tv(names[v] ?: v, 14f, if (on) p.onPrimary else p.text, bold = true).apply { gravity = Gravity.CENTER; setPadding(0, dp(11), 0, dp(11)) }
+                        control(b, "r_res_$v", if (on) p.primary else Color.TRANSPARENT, 12f, false) {
+                            if (!on) AlertDialog.Builder(this).setTitle(T.t("Resolución: ") + (names[v] ?: v))
+                                .setMessage(T.t("El juego se cierra un momento y vuelve a abrir donde estaba (se guarda solo)."))
+                                .setPositiveButton(T.t("Cambiar")) { _, _ -> castControl(d, "res", value = v) }.setNegativeButton(T.t("Cancelar"), null).show()
+                        }
+                        seg.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
+                    }
+                    card.addView(seg)
+                }
+                if ("filter" in can && filters.isNotEmpty()) {
+                    card.addView(tv(T.t("Filtro de pantalla"), 13f, p.muted).apply { setPadding(dp(2), dp(if (card.childCount > 0) 14 else 0), 0, dp(8)) })
+                    val names = mapOf("default" to T.t("Original"), "sharp" to T.t("Píxeles nítidos"), "smooth" to T.t("Suavizado"), "smooth2" to T.t("Suavizado fuerte"), "lcd" to T.t("LCD portátil"), "crt" to T.t("TV CRT"))
+                    val row = horizontal()
+                    for ((i, v) in filters.withIndex()) {
+                        val c = chip(names[v] ?: v, st.optString("filter") == v, "r_filter_$v") { castControl(d, "filter", value = v); st.put("filter", v); render() }
+                        row.addView(c, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) marginStart = dp(8) })
+                    }
+                    card.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) })
+                }
+                col.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
+            }
             if (!can.contains("pause")) col.addView(tv(T.t("Esta consola usa su propio programa en el PC: desde el teléfono puedes ver qué se juega y cerrarlo."), 13f, p.muted).apply { setPadding(0, dp(12), 0, 0) })
         }
 
@@ -1333,6 +1414,7 @@ class PhoneActivity : Activity() {
         root.addView(scroll(col))
         lastFocus = lastFocus.ifEmpty { "r_pause" }
         pollDevices()
+        root.removeCallbacks(framer); if (playing) root.postDelayed(framer, 300)
     }
 
     // ------------------------------------------------------------------ more: screenshots, shortcut, info

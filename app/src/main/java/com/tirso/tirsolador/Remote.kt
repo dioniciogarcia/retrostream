@@ -62,6 +62,8 @@ object Remote {
     @Volatile private var paused = false
     @Volatile private var ff = false
     @Volatile private var controls = JSONArray()
+    @Volatile private var settings = JSONObject()
+    @Volatile private var relaunch: String? = null
     @Volatile private var pending: JSONObject? = null
     @Volatile private var pendingAt = 0L
     @Volatile private var answer: JSONObject? = null
@@ -126,10 +128,26 @@ object Remote {
                     .put("chatId", if (parts.size == 4) parts[2].toLongOrNull() ?: 0 else 0).put("messageId", if (parts.size == 4) parts[3].toLongOrNull() ?: 0 else 0)
                 since = System.currentTimeMillis(); paused = false; ff = false; pending = null
                 controls = JSONArray(i.getStringArrayExtra("controls")?.toList() ?: listOf("pause", "resume", "save", "load", "shot", "ff", "reset", "backup", "exit"))
+                settings = JSONObject().put("res", i.getStringExtra("res") ?: "").put("filter", i.getStringExtra("filter") ?: "")
+                    .put("resOptions", JSONArray(if (controls.toString().contains("\"res\"")) listOf("low", "medium", "high") else emptyList()))
+                    .put("filters", JSONArray(i.getStringArrayExtra("filters")?.toList() ?: emptyList()))
             }
-            "state" -> { paused = i.getBooleanExtra("paused", paused); ff = i.getBooleanExtra("ff", ff) }
-            "exited" -> { now = null; paused = false; ff = false }
-            "done" -> { answer = JSONObject().put("ok", i.getBooleanExtra("ok", false)).put("error", i.getStringExtra("error") ?: ""); answerLatch?.countDown() }
+            "state" -> { paused = i.getBooleanExtra("paused", paused); ff = i.getBooleanExtra("ff", ff); i.getStringExtra("filter")?.let { if (it.isNotEmpty()) settings.put("filter", it) } }
+            "exited" -> {
+                val was = now; now = null; paused = false; ff = false
+                // Resolution changed from the phone: open the game again (it continues where it was).
+                val again = relaunch; relaunch = null
+                if (again != null && was?.optString("id") == again) { pending = was; pendingAt = System.currentTimeMillis() }
+                if (again != null && was?.optString("id") == again) main.postDelayed({
+                    runCatching { app.startActivity(Intent(app, MainActivity::class.java).putExtra("play_game", again)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
+                }, 900)
+            }
+            "done" -> {
+                answer = JSONObject().put("ok", i.getBooleanExtra("ok", false)).put("error", i.getStringExtra("error") ?: "")
+                    .also { a -> i.getByteArrayExtra("jpg")?.let { a.put("jpg", android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP)) } }
+                answerLatch?.countDown()
+            }
         }
     }
     /** The TV's own screen is about to download / start this game (asked from the phone or not). */
@@ -214,7 +232,7 @@ object Remote {
         val n = now
         if (pending != null && System.currentTimeMillis() - pendingAt > 15 * 60000) pending = null
         when {
-            n != null -> o.put("state", "playing").put("game", n).put("since", since).put("paused", paused).put("ff", ff).put("controls", controls)
+            n != null -> o.put("state", "playing").put("game", n).put("since", since).put("paused", paused).put("ff", ff).put("controls", controls).put("settings", settings)
             pending != null -> o.put("state", "loading").put("game", pending).put("since", pendingAt)
             else -> o.put("state", "menu")
         }
@@ -238,17 +256,21 @@ object Remote {
         }
         return JSONObject().put("ok", true)
     }
-    private fun control(req: JSONObject): JSONObject {
+    @Synchronized private fun control(req: JSONObject): JSONObject {
         if (now == null) return JSONObject().put("error", "not playing")
         val action = req.optString("action")
-        val waits = action == "save" || action == "load" || action == "backup"
+        val waits = action == "save" || action == "load" || action == "backup" || action == "frame" || action == "res"
         val latch = CountDownLatch(1)
         if (waits) { answer = null; answerLatch = latch }
-        app.sendBroadcast(Intent(ACTION_CMD).setPackage(app.packageName).putExtra("action", action).putExtra("slot", req.optInt("slot", 1)))
+        val value = req.optString("value")
+        if (action == "res") { relaunch = now?.optString("id"); settings.put("res", value) }
+        if (action == "filter") settings.put("filter", value)
+        app.sendBroadcast(Intent(ACTION_CMD).setPackage(app.packageName).putExtra("action", action).putExtra("slot", req.optInt("slot", 1)).putExtra("value", value))
         if (!waits) return JSONObject().put("ok", true)
         latch.await(if (action == "backup") 25 else 8, TimeUnit.SECONDS)
         val a = answer ?: return JSONObject().put("error", "timeout")
-        return if (a.optBoolean("ok")) JSONObject().put("ok", true) else JSONObject().put("error", a.optString("error").ifEmpty { "failed" })
+        if (action == "res" && !a.optBoolean("ok")) relaunch = null
+        return if (a.optBoolean("ok")) JSONObject().put("ok", true).also { r -> if (a.has("jpg")) r.put("jpg", a.getString("jpg")) } else JSONObject().put("error", a.optString("error").ifEmpty { "failed" })
     }
 
     // ------------------------------------------------------------------ the pairing code on the TV

@@ -3,6 +3,19 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("Cambiando la resolución: el juego se cierra un momento y sigue donde estaba.", "Changing the resolution: the game closes for a moment and continues where it was.");
+        m.put("Pantalla en vivo", "Live screen");
+        m.put("EN VIVO", "LIVE");
+        m.put("Resolución: ", "Resolution: ");
+        m.put("El juego se cierra un momento y vuelve a abrir donde estaba (se guarda solo).", "The game closes for a moment and opens again where it was (it saves by itself).");
+        m.put("Cambiar", "Change");
+        m.put("Filtro de pantalla", "Screen filter");
+        m.put("Original", "Original");
+        m.put("Píxeles nítidos", "Sharp pixels");
+        m.put("Suavizado", "Smooth");
+        m.put("Suavizado fuerte", "Smooth, strong");
+        m.put("LCD portátil", "Handheld LCD");
+        m.put("TV CRT", "CRT TV");
         m.put("Copia en Telegram", "Back up to Telegram");
         m.put("Jugar en TV o PC", "Play on TV or PC");
         m.put("Jugar aquí", "Play here");

@@ -814,24 +814,57 @@ open class GameActivity : AppCompatActivity() {
     private fun listenToPhone() {
         if (BuildConfig.PHONE) return
         val r = object : android.content.BroadcastReceiver() {
-            override fun onReceive(c: android.content.Context, i: Intent) { runCatching { fromPhone(i.getStringExtra("action") ?: "", i.getIntExtra("slot", 1)) } }
+            override fun onReceive(c: android.content.Context, i: Intent) { runCatching { fromPhone(i.getStringExtra("action") ?: "", i.getIntExtra("slot", 1), i.getStringExtra("value") ?: "") } }
         }
         androidx.core.content.ContextCompat.registerReceiver(this, r, android.content.IntentFilter(Remote.ACTION_CMD), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         phoneReceiver = r
     }
-    private fun tellPhone(event: String, ok: Boolean = true, error: String = "") {
+    private fun tellPhone(event: String, ok: Boolean = true, error: String = "", jpg: ByteArray? = null) {
         if (BuildConfig.PHONE) return
         val i = Intent(Remote.ACTION_STATE).setPackage(packageName).putExtra("event", event)
         when (event) {
             "started" -> i.putExtra("gameid", intent.getStringExtra("gameid") ?: gameId).putExtra("title", gameTitle).putExtra("console", console.name)
                 .putExtra("filename", intent.getStringExtra("filename") ?: "")
-                .putExtra("controls", (listOf("pause", "resume", "save", "load", "shot", "ff", "reset", "exit") + if (isolated) emptyList() else listOf("backup")).toTypedArray())
-            "state" -> i.putExtra("paused", glPaused || menuOpen).putExtra("ff", fastSpeed > 1)
-            "done" -> i.putExtra("ok", ok).putExtra("error", error)
+                .putExtra("controls", (listOf("pause", "resume", "save", "load", "shot", "ff", "reset", "exit", "frame") + (if (isolated) emptyList() else listOf("backup"))
+                    + (if (console != Console.MAME && console != Console.NDS) listOf("res") else emptyList()) + (if (isDolphin) emptyList() else listOf("filter"))).toTypedArray())
+                .putExtra("res", Presets.gameResolution(this, intent.getStringExtra("gameid") ?: "") ?: Presets.resolution(this, console))
+                .putExtra("filter", if (isDolphin) "" else screenFilter)
+                .putExtra("filters", if (isDolphin) emptyArray() else SCREEN_FILTERS.map { it.first }.toTypedArray())
+            "state" -> i.putExtra("paused", glPaused || menuOpen).putExtra("ff", fastSpeed > 1).putExtra("filter", if (isDolphin) "" else screenFilter)
+            "done" -> { i.putExtra("ok", ok).putExtra("error", error); if (jpg != null) i.putExtra("jpg", jpg) }
         }
         runCatching { sendBroadcast(i) }
     }
-    private fun fromPhone(action: String, slot: Int) {
+    /** A small JPEG of the picture for the phone's "live screen". */
+    private fun liveFrame() {
+        val view = retroView
+        if (view == null || view.width <= 0 || view.height <= 0) { tellPhone("done", false, "no picture"); return }
+        val w = minOf(480, view.width); val h = maxOf(1, view.height * w / view.width)
+        val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        try {
+            android.view.PixelCopy.request(view, bmp, { result ->
+                if (result != android.view.PixelCopy.SUCCESS) { tellPhone("done", false, "no picture"); return@request }
+                val out = java.io.ByteArrayOutputStream(); bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, out)
+                tellPhone("done", true, "", out.toByteArray())
+            }, android.os.Handler(android.os.Looper.getMainLooper()))
+        } catch (e: Exception) { tellPhone("done", false, "no picture") }
+    }
+    private fun fromPhone(action: String, slot: Int, value: String) {
+        when (action) {
+            "frame" -> { liveFrame(); return }
+            "filter" -> {
+                if (isDolphin || SCREEN_FILTERS.none { it.first == value }) return
+                prefs.edit().putString(if (ownSettings) "screen_filter_g_$gid" else "screen_filter", value).apply()
+                retroView?.shader = shaderFor(value); tellPhone("state"); return
+            }
+            "res" -> {
+                // The engine reads the resolution when the game starts: save where it is, close, and the TV app opens it again.
+                if (value !in listOf("low", "medium", "high")) { tellPhone("done", false, "unknown action"); return }
+                Presets.setGameResolution(this, intent.getStringExtra("gameid") ?: "", value)
+                tellPhone("done", true, "relaunch")
+                menuOpen = false; exitGame(); return
+            }
+        }
         val view = retroView
         if (view == null && action != "exit") { tellPhone("done", false, "not ready"); return }
         when (action) {

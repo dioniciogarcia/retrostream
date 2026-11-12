@@ -97,11 +97,14 @@ class Remote extends EventEmitter {
   }
   status() {
     if (this.pending && Date.now() - this.pending.at > 15 * 60000) this.pending = null;
-    if (this.now) return { state: 'playing', game: this.now.game, since: this.now.since, paused: this.state.paused, ff: this.state.ff, controls: this.now.controls };
+    if (this.now) {
+      const st = Object.assign({}, this.now.settings || {}); if (this.state.filter && st.filters && st.filters.length) st.filter = this.state.filter;
+      return { state: 'playing', game: this.now.game, since: this.now.since, paused: this.state.paused, ff: this.state.ff, controls: this.now.controls, settings: st };
+    }
     if (this.pending) return { state: 'loading', game: this.pending.game, since: this.pending.at, progress: this.pending.progress || 0 };
     return { state: 'menu' };
   }
-  playing(game, controls) { this.pending = null; this.state = { paused: false, ff: false }; this.now = { game: brief(game), since: Date.now(), controls }; }
+  playing(game, controls, settings) { this.pending = null; this.state = { paused: false, ff: false }; this.now = { game: brief(game), since: Date.now(), controls, settings: settings || {} }; }
   stopped() { this.now = null; this.state = { paused: false, ff: false }; }
   close() { try { this.server && this.server.close(); } catch (_) { /* gone */ } try { this.udp && this.udp.close(); } catch (_) { /* gone */ } }
 }

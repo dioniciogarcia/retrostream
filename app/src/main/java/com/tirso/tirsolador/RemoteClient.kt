@@ -27,6 +27,18 @@ object RemoteClient {
 
     private val main = Handler(Looper.getMainLooper())
     private val pool = Executors.newCachedThreadPool()
+    @Volatile private var app: Context? = null
+    fun init(ctx: Context) { app = ctx.applicationContext }
+
+    /**
+     * The Wi-Fi network itself. After the phone sleeps, Android may send an app's traffic over mobile data
+     * (which can't reach a TV at home), so every socket is tied to the Wi-Fi when there is one.
+     */
+    @Suppress("DEPRECATION")
+    private fun wifi(): android.net.Network? = runCatching {
+        val cm = app?.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return null
+        cm.allNetworks.firstOrNull { cm.getNetworkCapabilities(it)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true }
+    }.getOrNull()
 
     // ------------------------------------------------------------------ devices remembered on this phone
     fun saved(ctx: Context): MutableList<Device> {
@@ -47,10 +59,12 @@ object RemoteClient {
     /** Asks the whole Wi-Fi who runs RetroStream; [done] gets every device that answered (saved ones get their new address). */
     fun discover(ctx: Context, done: (List<Device>) -> Unit) {
         val app = ctx.applicationContext
+        init(app)
         pool.execute {
             val found = linkedMapOf<String, Device>()
             runCatching {
                 DatagramSocket().use { u ->
+                    wifi()?.let { n -> runCatching { n.bindSocket(u) } }
                     u.broadcast = true; u.soTimeout = 400
                     val msg = "RSDISCOVER1".toByteArray()
                     val targets = mutableSetOf<InetAddress>(InetAddress.getByName("255.255.255.255"))
@@ -93,6 +107,7 @@ object RemoteClient {
         pool.execute {
             val res = runCatching {
                 Socket().use { s ->
+                    wifi()?.let { n -> runCatching { n.bindSocket(s) } }
                     s.connect(InetSocketAddress(host, port), 2500); s.soTimeout = timeoutMs
                     s.getOutputStream().write((req.toString() + "\n").toByteArray(Charsets.UTF_8)); s.getOutputStream().flush()
                     val line = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8)).readLine() ?: error("no answer")

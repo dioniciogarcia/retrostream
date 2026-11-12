@@ -130,7 +130,7 @@ static void toast(const std::string& s) { toastText = s; toastUntil = SDL_GetTic
 // Commands from the app (sent by the phone remote): one word per line on stdin, e.g. "pause", "save 2", "exit".
 static std::mutex cmdLock; static std::deque<std::string> cmds;
 static void readCommands() { std::string line; while (std::getline(std::cin, line)) { std::lock_guard<std::mutex> g(cmdLock); cmds.push_back(line); } }
-static void tellState() { printf("{\"event\":\"state\",\"paused\":%s,\"ff\":%s}\n", menuOpen ? "true" : "false", ffToggle ? "true" : "false"); fflush(stdout); }
+static void tellState() { printf("{\"event\":\"state\",\"paused\":%s,\"ff\":%s,\"filter\":\"%s\"}\n", menuOpen ? "true" : "false", ffToggle ? "true" : "false", smooth ? "smooth" : "sharp"); fflush(stdout); }
 
 // ------------------------------------------------------------------ libretro callbacks
 static void RETRO_CALLCONV coreLog(enum retro_log_level level, const char* fmt, ...) {
@@ -396,6 +396,19 @@ static bool grab(std::vector<uint32_t>& out, unsigned& w, unsigned& h) {
   return true;
 }
 static void pngWriter(void* ctx, void* data, int size) { auto* v = (std::vector<uint8_t>*)ctx; v->insert(v->end(), (uint8_t*)data, (uint8_t*)data + size); }
+/** Phone remote: a small JPEG of the current picture (the "live screen" on the phone). */
+static void jpgWriter(void* ctx, void* data, int size) { auto* v = (std::vector<uint8_t>*)ctx; v->insert(v->end(), (uint8_t*)data, (uint8_t*)data + size); }
+static bool liveFrame(const std::string& file) {
+  std::vector<uint32_t> px; unsigned w, h; if (!grab(px, w, h)) return false;
+  unsigned ow = std::min(w, 480u), oh = std::max(1u, (unsigned)((uint64_t)h * ow / w));
+  std::vector<uint8_t> rgb((size_t)ow * oh * 3);
+  for (unsigned y = 0; y < oh; y++) for (unsigned x = 0; x < ow; x++) {
+    uint32_t c = px[(size_t)(y * h / oh) * w + (x * w / ow)]; uint8_t* o = &rgb[((size_t)y * ow + x) * 3];
+    o[0] = c & 0xFF; o[1] = (c >> 8) & 0xFF; o[2] = (c >> 16) & 0xFF;
+  }
+  std::vector<uint8_t> jpg; if (!stbi_write_jpg_to_func(jpgWriter, &jpg, ow, oh, 3, rgb.data(), 70)) return false;
+  return writeFile(fs::u8path(file), jpg.data(), jpg.size());
+}
 static void screenshot() {
   std::vector<uint32_t> px; unsigned w, h; if (!grab(px, w, h)) return;
   time_t now = time(nullptr); char stamp[32]; strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", localtime(&now));
@@ -468,7 +481,7 @@ static void drawMenu() {
     if (ImGui::Button(tr("Take screenshot"), full)) { closeMenu(); screenshot(); }
     if (!cheats.empty()) { int n = 0; for (auto& c : cheats) n += c.on; if (ImGui::Button((std::string(tr("Cheats")) + (n ? " (" + std::to_string(n) + " " + tr("on") + ")" : "")).c_str(), full)) { menuPage = "cheats"; focusFirst = true; } }
     if (ImGui::Button(tr("Walkthrough (YouTube)"), full)) walkthrough();
-    if (ImGui::Button((std::string(tr("Screen filter")) + ": " + (smooth ? tr("Smooth") : tr("Sharp pixels"))).c_str(), full)) { smooth = !smooth; filterFor(useHw ? fboTex : tex); }
+    if (ImGui::Button((std::string(tr("Screen filter")) + ": " + (smooth ? tr("Smooth") : tr("Sharp pixels"))).c_str(), full)) { smooth = !smooth; filterFor(useHw ? fboTex : tex); tellState(); }
     if (ImGui::Button((std::string(tr("Full screen")) + ": " + (fullscreen ? tr("on") : tr("off")) + "   (F11)").c_str(), full)) { fullscreen = !fullscreen; SDL_SetWindowFullscreen(window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0); }
     if (ImGui::Button(tr("Restart game"), full)) { C.reset(); toast(tr("Restarted")); closeMenu(); }
     if (ImGui::Button(tr("Exit game"), full)) running = false;
@@ -652,6 +665,8 @@ int main(int argc, char* argv[]) {
       else if (word == "shot") screenshot();
       else if (word == "ff") { ffToggle = !ffToggle; toast(ffToggle ? std::string(tr("Fast forward")) + " 3x" : tr("Normal speed")); tellState(); }
       else if (word == "reset") { C.reset(); toast(tr("Restarted")); }
+      else if (word == "frame") { bool ok = c.size() > 6 && liveFrame(c.substr(6)); printf("{\"event\":\"done\",\"what\":\"frame\",\"ok\":%s}\n", ok ? "true" : "false"); fflush(stdout); }
+      else if (word == "filter") { smooth = c.find("smooth") != std::string::npos; filterFor(useHw ? fboTex : tex); tellState(); }
       else if (word == "flush") { saveSram(true); printf("{\"event\":\"done\",\"what\":\"flush\",\"ok\":true}\n"); fflush(stdout); }
     }
     // Controller shortcuts: Guide or Select+Start opens the menu; Select+R1 screenshot; Select+R2 fast forward; hold Select+L1 to rewind.

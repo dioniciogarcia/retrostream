@@ -125,6 +125,17 @@ function applyLinks(before) {
   for (const [id, p] of Object.entries(now)) kept[id] = p;
   store.set('kept', kept); send('kept', kept);
 }
+/** What the phone remote can change for this game while it plays (resolution restarts it for a moment). */
+function remoteSettings(game, ext) {
+  if (ext) return {};
+  const own = (store.get('gameSettings') || {})[game.id] || {};
+  const flat = ['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA'].includes(game.console);
+  const res = own.res || (store.get('resolution') || {})[game.console] || 'medium';
+  return {
+    res: ['MAME', 'NDS'].includes(game.console) ? '' : res, resOptions: ['MAME', 'NDS'].includes(game.console) ? [] : ['low', 'medium', 'high'],
+    filter: own.filter || (flat ? (res === 'high' ? 'smooth' : 'sharp') : 'smooth'), filters: ['sharp', 'smooth']
+  };
+}
 function gameById(id) { return allGames().find((g) => g.id === id); }
 
 app.whenReady().then(() => {
@@ -138,11 +149,14 @@ app.whenReady().then(() => {
       if (info.played > 0) { const pt = store.get('playtime') || {}; pt[info.id] = (pt[info.id] || 0) + info.played; store.set('playtime', pt); }
       send('played', Object.assign(info, { playtime: store.get('playtime') || {} }));
       if (friends) friends.inMenu();
-      if (remote) remote.stopped();
+      if (remote) {
+        remote.stopped();
+        if (remote.relaunch && remote.relaunch === info.id) { const id = remote.relaunch; remote.relaunch = null; const g0 = gameById(id); if (g0) remote.pending = { game: brief(g0), at: Date.now() }; setTimeout(() => send('launch', { id }), 900); }
+      }
       if (info.entry) { const m = store.get('saveOf') || {}; m[info.id] = info.entry; store.set('saveOf', m); }
       // "Keep downloaded games" off: the game file is deleted after playing (it stays in Telegram).
       const g = gameById(info.id);
-      if (store.get('keep') === false && g && !g.local && !(store.get('pcLinked') || {})[g.id]) {
+      if (store.get('keep') === false && g && !g.local && !(remote && remote.pending && remote.pending.game.id === g.id) && !(store.get('pcLinked') || {})[g.id]) {
         setTimeout(async () => {
           await drive.remove(g); const kept = store.get('kept') || {};
           if (kept[g.id]) { try { fs.unlinkSync(kept[g.id]); } catch (_) { /* gone */ } delete kept[g.id]; store.set('kept', kept); send('kept', kept); }
@@ -191,6 +205,23 @@ app.whenReady().then(() => {
     }
     if (!player.child) { done({ error: 'not playing' }); return; }
     if (['pause', 'resume', 'shot', 'ff', 'reset', 'exit'].includes(a)) { await player.command(a); done({ ok: true }); return; }
+    if (a === 'frame') {
+      const f = path.join(app.getPath('temp'), 'retrostream-live.jpg');
+      const r = await player.command('frame ' + f);
+      if (!r.ok) { done({ error: 'no picture' }); return; }
+      try { done({ ok: true, jpg: fs.readFileSync(f).toString('base64') }); } catch (_) { done({ error: 'no picture' }); }
+      return;
+    }
+    if (a === 'filter' || a === 'res') {
+      const v = String(req.value || ''); const id = remote.now.game.id;
+      if (a === 'filter' && !['sharp', 'smooth'].includes(v)) { done({ error: 'unknown action' }); return; }
+      if (a === 'res' && !['low', 'medium', 'high'].includes(v)) { done({ error: 'unknown action' }); return; }
+      const all = store.get('gameSettings') || {}; all[id] = Object.assign({}, all[id], { [a]: v }); store.set('gameSettings', all);
+      if (a === 'filter') { await player.command('filter ' + v); remote.now.settings.filter = v; done({ ok: true }); return; }
+      // Resolution: the engine reads it when the game starts, so the game closes (saving where it is) and opens again.
+      remote.now.settings.res = v; remote.relaunch = id;
+      await player.command('exit'); done({ ok: true, restarting: true }); return;
+    }
     if (a === 'save' || a === 'load') { const r = await player.command(a + ' ' + slot); done(r.ok ? { ok: true } : { error: a === 'load' ? 'empty slot' : 'failed' }); return; }
     if (a === 'backup') {
       await player.command('flush');
@@ -269,7 +300,7 @@ app.whenReady().then(() => {
       }
       if (entry) { const m = store.get('saveOf') || {}; m[game.id] = entry; store.set('saveOf', m); }
       friends.playing(game);
-      remote.playing(game, ext ? ['exit'] : ['pause', 'resume', 'save', 'load', 'shot', 'ff', 'reset', 'backup', 'exit']);
+      remote.playing(game, ext ? ['exit'] : ['pause', 'resume', 'save', 'load', 'shot', 'ff', 'reset', 'backup', 'exit', 'frame', 'res', 'filter'], remoteSettings(game, !!ext));
       if (ext) { await external.launch(prep, Object.assign({}, store.prefs.data, opts || {}), afterGame); return { ok: true }; }
       const cheats = await Promise.race([cloud.cheats(game).catch(() => null), new Promise((r) => setTimeout(() => r(null), 6000))]);
       await player.launch(prep, Object.assign({}, store.prefs.data, opts || {}), cheats);
