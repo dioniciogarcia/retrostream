@@ -534,19 +534,23 @@ int main(int argc, char* argv[]) {
   if (consoleId == "N64") C.set_controller_port_device(0, RETRO_DEVICE_ANALOG);
 
   // Window and OpenGL context (core profile for engines that draw with the graphics card).
-  // Engines asking for plain OpenGL get a compatibility context (3.3 or newer); the others a core one.
+  // OpenGL: the newest version the graphics card offers (a "3.3" request on AMD gives exactly 3.3, which is too old for the
+  // PS2 and GameCube/Wii engines' shaders). Engines asking for plain OpenGL get a compatibility context.
   bool compat = useHw && hw.context_type == RETRO_HW_CONTEXT_OPENGL;
-  unsigned major = useHw && hw.version_major >= 3 ? hw.version_major : 3, minor = useHw && hw.version_major >= 3 ? hw.version_minor : 3;
-  if (major == 3 && minor < 3) minor = 3;
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, compat ? SDL_GL_CONTEXT_PROFILE_COMPATIBILITY : SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, major);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minor);
-  if (useHw) logf("engine draws with the graphics card: depth=%d stencil=%d bottom_left=%d", (int)hw.depth, (int)hw.stencil, (int)hw.bottom_left_origin);
-  logf("graphics: hw=%d type=%d version=%u.%u compat=%d", (int)useHw, useHw ? (int)hw.context_type : -1, major, minor, (int)compat);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1); SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24); SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, compat ? SDL_GL_CONTEXT_PROFILE_COMPATIBILITY : SDL_GL_CONTEXT_PROFILE_CORE);
   window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 960,
     SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
-  SDL_GLContext gl = window ? SDL_GL_CreateContext(window) : nullptr; uiCtx = gl;
+  SDL_GLContext gl = nullptr;
+  static const int versions[][2] = { {4, 6}, {4, 5}, {4, 3}, {4, 1}, {4, 0}, {3, 3} };
+  for (auto& v : versions) {
+    if (!window) break;
+    if (useHw && (unsigned)v[0] * 10 + v[1] < hw.version_major * 10 + hw.version_minor) break;
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, v[0]); SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, v[1]);
+    gl = SDL_GL_CreateContext(window);
+    if (gl) { logf("graphics: hw=%d type=%d asked %u.%u, got OpenGL %d.%d%s", (int)useHw, useHw ? (int)hw.context_type : -1, hw.version_major, hw.version_minor, v[0], v[1], compat ? " compatibility" : " core"); break; }
+  }
+  uiCtx = gl;
   if (!gl) { logf("OpenGL: %s", SDL_GetError()); printf("{\"event\":\"error\",\"reason\":\"graphics\"}\n"); fflush(stdout); return 6; }
   SDL_GL_MakeCurrent(window, gl); SDL_GL_SetSwapInterval(0);
   pGenFramebuffers = (PFNGLGENFRAMEBUFFERSPROC)SDL_GL_GetProcAddress("glGenFramebuffers"); pBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)SDL_GL_GetProcAddress("glBindFramebuffer");
