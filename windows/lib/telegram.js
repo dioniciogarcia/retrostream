@@ -1,0 +1,265 @@
+'use strict';
+// The Telegram side (same behaviour as the Android app's TirsoDrive): sign-in, finding the console channels,
+// reading their game files, downloads.
+const fs = require('fs');
+const path = require('path');
+const EventEmitter = require('events');
+const tdl = require('tdl');
+const catalog = require('./catalog');
+
+function tdjsonPath() {
+  const { getTdjson } = require('prebuilt-tdlib');
+  // Inside the installed app the library is unpacked next to the archive.
+  return getTdjson().replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
+}
+
+class Drive extends EventEmitter {
+  constructor({ dir, store, apiId, apiHash, version, t }) {
+    super();
+    Object.assign(this, { dir, store, apiId, apiHash, version, t });
+    this.stage = 'connecting';       // connecting | signin | qr | code | password | ready | error
+    this.qrLink = ''; this.hint = ''; this.error = ''; this.status = '';
+    this.account = 0; this.me = '';
+    this.chats = new Map();
+    this.files = new Map();            // file id -> TDLib file
+    this.counts = {};                  // chat id -> games counted by the last scan
+    this.busy = false;                 // scanning or reading channels
+    this.sources = {};
+    for (const c of catalog.CONSOLES) this.sources[c.id] = { chatId: 0, title: '', candidates: [] };
+    this.client = null; this.restarting = false;
+  }
+
+  // ------------------------------------------------------------------ connection and sign-in
+  start() {
+    if (!this.apiHash) { this.stage = 'error'; this.error = this.t('This build has no Telegram key. Download the official RetroStream installer.'); this.publish(); return; }
+    tdl.configure({ tdjson: tdjsonPath(), verbosityLevel: 1 });
+    this.client = tdl.createClient({
+      apiId: this.apiId, apiHash: this.apiHash,
+      databaseDirectory: path.join(this.dir, 'telegram', 'database'),
+      filesDirectory: path.join(this.dir, 'telegram', 'files'),
+      tdlibParameters: { device_model: 'Windows PC', system_language_code: 'es', application_version: this.version, use_file_database: true, use_chat_info_database: true, use_message_database: true }
+    });
+    this.client.on('error', (e) => { this.error = String((e && e.message) || e); this.publish(); });
+    this.client.on('update', (u) => { try { this.onUpdate(u); } catch (e) { this.error = String(e.message || e); this.publish(); } });
+  }
+  invoke(q) { return this.client.invoke(q); }
+  publish(catalogChanged) { this.emit('state', catalogChanged === true); }
+
+  onUpdate(u) {
+    switch (u._) {
+      case 'updateAuthorizationState': this.auth(u.authorization_state); break;
+      case 'updateNewChat': this.chats.set(u.chat.id, u.chat); break;
+      case 'updateChatTitle': { const c = this.chats.get(u.chat_id); if (c) c.title = u.title; break; }
+      case 'updateFile': this.fileUpdated(u.file); break;
+      default: break;
+    }
+  }
+  auth(s) {
+    switch (s._) {
+      case 'authorizationStateWaitPhoneNumber':
+        this.stage = 'signin'; this.qrLink = '';
+        if (this.pendingPhone) { const n = this.pendingPhone; this.pendingPhone = null; this.invoke({ _: 'setAuthenticationPhoneNumber', phone_number: n }).catch((e) => this.fail(e)); }
+        else if (this.wantQr) this.requestQr();
+        break;
+      case 'authorizationStateWaitOtherDeviceConfirmation': this.stage = 'qr'; this.qrLink = s.link; break;
+      case 'authorizationStateWaitCode': this.stage = 'code'; break;
+      case 'authorizationStateWaitPassword': this.stage = 'password'; this.hint = s.password_hint || ''; break;
+      case 'authorizationStateReady': this.stage = 'ready'; this.error = ''; this.ready(); break;
+      case 'authorizationStateClosed':
+        if (this.restarting) { this.restarting = false; this.stage = 'connecting'; this.start(); }
+        break;
+      default: break;
+    }
+    this.publish();
+  }
+  /** QR sign-in (Telegram on the phone: Settings > Devices > Link Desktop Device). */
+  requestQr() {
+    this.wantQr = true;
+    if (this.stage === 'qr') return;
+    if (this.stage !== 'signin') { this.restart(); return; }
+    this.invoke({ _: 'requestQrCodeAuthentication', other_user_ids: [] }).catch((e) => this.fail(e));
+  }
+  /** Phone number sign-in: the number with its country code, e.g. +591 70000000. */
+  async phone(number) {
+    this.wantQr = false; this.error = '';
+    const n = String(number || '').replace(/[^\d+]/g, '');
+    if (n.replace(/\D/g, '').length < 8 || !n.startsWith('+')) { this.error = this.t('Write the number with its country code, for example +591 70000000.'); this.publish(); return; }
+    if (this.stage === 'qr') { this.pendingPhone = n; this.restart(); return; }
+    try { await this.invoke({ _: 'setAuthenticationPhoneNumber', phone_number: n }); } catch (e) { this.fail(e); }
+  }
+  async code(c) { this.error = ''; try { await this.invoke({ _: 'checkAuthenticationCode', code: String(c || '').trim() }); } catch (e) { this.fail(e); } }
+  async password(p) { this.error = ''; try { await this.invoke({ _: 'checkAuthenticationPassword', password: String(p || '') }); } catch (e) { this.fail(e); } }
+  /** Leaves the QR screen (TDLib can't switch from QR to a phone number without starting over). */
+  restart() {
+    if (!this.client) return;
+    this.restarting = true;
+    this.client.close().catch(() => {});
+  }
+  async logout() {
+    try { await this.invoke({ _: 'logOut' }); } catch (_) { /* ignore */ }
+    this.store.replaceGames([]); this.account = 0; this.restarting = true;
+  }
+  fail(e) {
+    const m = String((e && e.message) || e);
+    const known = {
+      PHONE_NUMBER_INVALID: 'That phone number is not valid. Check the country code.',
+      PHONE_CODE_INVALID: 'That code is not right. Check the latest code Telegram sent.',
+      PHONE_CODE_EXPIRED: 'That code expired. Ask for a new one.',
+      PASSWORD_HASH_INVALID: 'That password is not right.',
+      FLOOD_WAIT: 'Telegram asks to wait a moment before trying again.'
+    };
+    const key = Object.keys(known).find((k) => m.includes(k));
+    this.error = key ? this.t(known[key]) : m;
+    this.publish();
+  }
+
+  // ------------------------------------------------------------------ after sign-in
+  async ready() {
+    try {
+      const me = await this.invoke({ _: 'getMe' });
+      this.account = me.id; this.me = [me.first_name, me.last_name].filter(Boolean).join(' ');
+      this.publish();
+      await this.discover();
+    } catch (e) { this.fail(e); }
+  }
+  async loadChats() {
+    for (const list of [{ _: 'chatListMain' }, { _: 'chatListArchive' }]) {
+      for (let i = 0; i < 1000; i++) {
+        try { await this.invoke({ _: 'loadChats', chat_list: list, limit: 100 }); } catch (e) { if (e && (e.code === 404 || String(e.message).includes('404'))) break; throw e; }
+      }
+      const res = await this.invoke({ _: 'getChats', chat_list: list, limit: 10000 });
+      for (const id of res.chat_ids) if (!this.chats.has(id)) { try { this.chats.set(id, await this.invoke({ _: 'getChat', chat_id: id })); } catch (_) { /* skip */ } }
+    }
+  }
+  isGroup(c) { return c && c.type && (c.type._ === 'chatTypeBasicGroup' || c.type._ === 'chatTypeSupergroup'); }
+  bindings() { return (this.store.get('bindings') || {})[this.account] || {}; }
+  saveBindings() {
+    const all = this.store.get('bindings') || {}; const mine = {};
+    for (const [id, s] of Object.entries(this.sources)) if (s.chatId) mine[id] = s.chatId;
+    all[this.account] = mine; this.store.set('bindings', all);
+  }
+  /** Finds the console channels by name (keeps the ones you picked before), then reads them. */
+  async discover() {
+    if (this.busy) return;
+    this.busy = true; this.status = this.t('Looking for your TD - ROMs channels…'); this.publish();
+    try {
+      await this.loadChats();
+      const saved = this.bindings(); let found = 0;
+      for (const [id, s] of Object.entries(this.sources)) {
+        s.candidates = [...this.chats.values()].filter((c) => this.isGroup(c) && catalog.consoleFor(c.title) === id);
+        const keep = saved[id] && this.chats.get(saved[id]);
+        if (keep) { s.chatId = keep.id; s.title = keep.title; }
+        else if (s.candidates.length === 1) { s.chatId = s.candidates[0].id; s.title = s.candidates[0].title; }
+        else { s.chatId = 0; s.title = ''; }
+        if (s.chatId) found++;
+      }
+      this.saveBindings();
+      this.busy = false;
+      if (found === 0 && Object.values(this.sources).some((s) => s.candidates.length > 1)) await this.scanAll();
+      else await this.sync();
+    } catch (e) { this.busy = false; this.fail(e); }
+  }
+  /** Counts the games in every channel named after a console and gives each console the fullest one. */
+  async scanAll() {
+    if (this.busy || this.stage !== 'ready') return;
+    this.busy = true; this.error = '';
+    try {
+      await this.loadChats();
+      const named = [...this.chats.values()].filter((c) => this.isGroup(c) && catalog.consoleFor(c.title));
+      let i = 0;
+      for (const c of named) {
+        i++; this.status = this.t('Scanning') + ' ' + c.title + ` (${i}/${named.length})`; this.publish();
+        const id = catalog.consoleFor(c.title); let n = 0;
+        try {
+          const page = await this.invoke({ _: 'searchChatMessages', chat_id: c.id, query: '', from_message_id: 0, offset: 0, limit: 100, filter: { _: 'searchMessagesFilterDocument' } });
+          for (const m of page.messages) if (catalog.game(this.account, id, m)) n++;
+          if (page.messages.length > 0 && page.total_count > page.messages.length) n = Math.round(n * page.total_count / page.messages.length);
+        } catch (_) { /* unreadable channel */ }
+        this.counts[c.id] = n;
+      }
+      for (const [id, s] of Object.entries(this.sources)) {
+        s.candidates = named.filter((c) => catalog.consoleFor(c.title) === id);
+        let best = null;
+        for (const c of s.candidates) {
+          const n = this.counts[c.id] || 0; const b = best ? this.counts[best.id] || 0 : -1;
+          const channel = c.type._ === 'chatTypeSupergroup' && c.type.is_channel;
+          if (n > 0 && (!best || n > b || (n === b && channel))) best = c;
+        }
+        s.chatId = best ? best.id : 0; s.title = best ? best.title : '';
+      }
+      this.saveBindings();
+    } catch (e) { this.fail(e); }
+    this.busy = false;
+    await this.sync();
+  }
+  bind(consoleId, chatId) {
+    const chat = this.chats.get(chatId); if (!chat) return;
+    for (const [id, s] of Object.entries(this.sources)) if (id !== consoleId && s.chatId === chatId) { this.error = this.t('That channel is already assigned to') + ' ' + catalog.BY_ID[id].title; this.publish(); return; }
+    Object.assign(this.sources[consoleId], { chatId, title: chat.title }); this.saveBindings(); this.publish();
+  }
+  unbind(consoleId) { Object.assign(this.sources[consoleId], { chatId: 0, title: '' }); this.saveBindings(); this.publish(); }
+  clearAll() {
+    for (const s of Object.values(this.sources)) Object.assign(s, { chatId: 0, title: '', candidates: [] });
+    this.saveBindings(); this.store.replaceGames([]); this.status = this.t('Assignments cleared. Tap Scan all channels to assign them again.'); this.publish(true);
+  }
+  choices(consoleId) {
+    const s = this.sources[consoleId];
+    const list = s.candidates.length > 1 ? s.candidates : [...this.chats.values()].filter((c) => this.isGroup(c) && catalog.consoleFor(c.title));
+    return list.map((c) => ({ id: c.id, title: c.title, channel: !!(c.type && c.type.is_channel), files: this.counts[c.id] })).sort((a, b) => a.title.localeCompare(b.title));
+  }
+  /** Reads every assigned channel's files from Telegram's servers, page by page. */
+  async sync() {
+    if (this.busy || this.stage !== 'ready') return;
+    const bound = Object.entries(this.sources).filter(([, s]) => s.chatId);
+    if (bound.length === 0) { this.status = this.t('No channels assigned. Choose your consoles’ channels in Settings > TirsoDrive.'); this.publish(); return; }
+    this.busy = true; this.error = '';
+    const games = [];
+    try {
+      for (const [id, s] of bound) {
+        let from = 0; const seen = new Set();
+        for (let pages = 0; pages < 2000; pages++) {
+          this.status = this.t('Reading') + ' ' + catalog.BY_ID[id].title + ' · ' + games.length + ' ' + this.t('games found'); this.publish();
+          const page = await this.invoke({ _: 'searchChatMessages', chat_id: s.chatId, query: '', from_message_id: from, offset: 0, limit: 100, filter: { _: 'searchMessagesFilterDocument' } });
+          for (const m of page.messages) { if (seen.has(m.id)) continue; seen.add(m.id); const g = catalog.game(this.account, id, m); if (g) games.push(g); }
+          if (page.messages.length === 0 || !page.next_from_message_id) break;
+          from = page.next_from_message_id;
+        }
+        this.counts[s.chatId] = games.filter((g) => g.chatId === s.chatId).length;
+      }
+      this.store.replaceGames(games);
+      this.status = this.t('Catalog updated:') + ' ' + games.length + ' ' + this.t('games');
+      this.busy = false; this.publish(true);
+    } catch (e) { this.busy = false; this.fail(e); }
+  }
+
+  // ------------------------------------------------------------------ downloads
+  fileUpdated(f) {
+    this.files.set(f.id, f);
+    this.emit('file', this.fileInfo(f.id));
+  }
+  fileInfo(id) {
+    const f = this.files.get(id); if (!f) return { id, state: 'none' };
+    const done = f.local.is_downloading_completed && f.local.path && fs.existsSync(f.local.path);
+    return { id, state: done ? 'done' : f.local.is_downloading_active ? 'downloading' : 'none', have: f.local.downloaded_size, size: f.expected_size || f.size, path: done ? f.local.path : '' };
+  }
+  async inspect(fileId) { try { this.fileUpdated(await this.invoke({ _: 'getFile', file_id: fileId })); } catch (_) { /* unknown */ } return this.fileInfo(fileId); }
+  async download(game) {
+    if (this.stage !== 'ready' || game.account !== this.account) { this.error = this.t('Connect the Telegram account of this game first.'); this.publish(); return null; }
+    const info = await this.inspect(game.fileId);
+    if (info.state === 'done') return info;
+    try { this.fileUpdated(await this.invoke({ _: 'downloadFile', file_id: game.fileId, priority: 16, offset: 0, limit: 0, synchronous: false })); }
+    catch (e) { this.fail(e); return null; }
+    return this.fileInfo(game.fileId);
+  }
+  async cancel(game) { try { await this.invoke({ _: 'cancelDownloadFile', file_id: game.fileId, only_if_pending: false }); } catch (_) { /* ignore */ } }
+  async remove(game) { try { await this.invoke({ _: 'deleteFile', file_id: game.fileId }); } catch (_) { /* ignore */ } this.files.delete(game.fileId); this.emit('file', { id: game.fileId, state: 'none' }); }
+
+  snapshot() {
+    const sources = {};
+    for (const [id, s] of Object.entries(this.sources)) sources[id] = { chatId: s.chatId, title: s.title, files: s.chatId ? this.counts[s.chatId] : undefined, choices: s.candidates.length };
+    return { stage: this.stage, qrLink: this.qrLink, hint: this.hint, error: this.error, status: this.status, busy: this.busy, me: this.me, account: this.account, sources };
+  }
+  async close() { if (this.client) { try { await this.client.close(); } catch (_) { /* ignore */ } } }
+}
+
+module.exports = { Drive };

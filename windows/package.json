@@ -1,0 +1,64 @@
+{
+  "name": "retrostream-windows",
+  "productName": "RetroStream",
+  "version": "1.0.0",
+  "description": "RetroStream for Windows: your retro library from Telegram",
+  "main": "main.js",
+  "author": "RetroStream",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "prebuilt-tdlib": "0.1008070.0",
+    "qrcode": "^1.5.4",
+    "tdl": "^8.1.0"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.tirso.retrostream.windows",
+    "productName": "RetroStream",
+    "artifactName": "RetroStream-Setup.exe",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "config.json",
+      "lib/**",
+      "renderer/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node",
+      "**/*.dll",
+      "**/prebuilt-tdlib/**",
+      "**/@prebuilt-tdlib/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "RetroStream"
+    },
+    "npmRebuild": false
+  }
+}

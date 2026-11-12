@@ -1,0 +1,59 @@
+name: Build RetroStream for Windows
+on:
+  push:
+    branches: [main]
+    paths: ['windows/**', '.github/workflows/build-windows.yml']
+  workflow_dispatch:
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install packages
+        run: npm ci --no-audit --no-fund
+      - name: Telegram key
+        env:
+          TIRSO_TELEGRAM_API_HASH: ${{ secrets.TIRSO_TELEGRAM_API_HASH }}
+        run: node -e "require('fs').writeFileSync('config.json', JSON.stringify({apiHash: process.env.TIRSO_TELEGRAM_API_HASH || ''}))"
+      - name: Version
+        run: |
+          BUILD=$((100 + GITHUB_RUN_NUMBER))
+          npm pkg set version="1.0.$BUILD"
+          echo "BUILD=$BUILD" >> $GITHUB_ENV
+      - name: Check the Telegram library loads
+        run: node -e "const {getTdjson}=require('prebuilt-tdlib');const p=getTdjson();console.log(p);if(!require('fs').existsSync(p))process.exit(1)"
+      - name: Build installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win nsis --x64 --publish never
+      - name: Package
+        run: |
+          mkdir -p out
+          cp dist/RetroStream-Setup.exe out/RetroStream-Setup.exe
+          (cd out && sha256sum RetroStream-Setup.exe > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RetroStream-Windows
+          path: windows/out/*
+      - name: Publish release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf 'RetroStream for Windows (automatic build of the latest commit).\nDownload RetroStream-Setup.exe and run it.\n\nbuild:%s\n\n<!-- checksums -->\n' "$BUILD" > notes.md
+          cat out/SHA256SUMS.txt >> notes.md
+          gh release delete windows-latest --yes --cleanup-tag || true
+          gh release create windows-latest out/RetroStream-Setup.exe out/SHA256SUMS.txt --title "RetroStream for Windows (latest build)" --notes-file notes.md --latest=false
