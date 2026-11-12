@@ -37,6 +37,23 @@ jobs:
       - name: Check the Telegram library loads
         run: |
           node -e "const {getTdjson}=require('prebuilt-tdlib');const p=getTdjson();console.log(p);if(!require('fs').existsSync(p))process.exit(1)"
+      - name: Build the game player
+        run: |
+          cmake -S player -B player-build -A x64
+          cmake --build player-build --config Release --parallel
+          mkdir -p res/player
+          cp player-build/Release/rs-player.exe res/player/
+      - name: Download the game engines (libretro, Windows x64)
+        run: |
+          mkdir -p res/cores cores-dl
+          get() { for name in "$@"; do
+              url="https://buildbot.libretro.com/nightly/windows/x86_64/latest/${name}_libretro.dll.zip"
+              if curl -fsSL --retry 3 -o "cores-dl/$name.zip" "$url"; then 7z x -y -o"res/cores" "cores-dl/$name.zip" > /dev/null && echo "got $name" && return 0; fi
+              echo "not found: $name"
+            done; return 1; }
+          get fceumm; get snes9x; get genesis_plus_gx; get mgba; get mupen64plus_next; get mame2003_plus
+          get melondsds || get melonds
+          ls -la res/cores
       - name: Build installer
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

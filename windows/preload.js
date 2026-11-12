@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld('rs', {
   open: (url) => ipcRenderer.invoke('open', url),
   fullscreen: () => ipcRenderer.invoke('fullscreen'),
   quit: () => ipcRenderer.invoke('quit'),
-  on: (channel, fn) => { if (['state', 'file', 'kept'].includes(channel)) ipcRenderer.on(channel, (_e, data) => fn(data)); }
+  play: (game, opts) => ipcRenderer.invoke('play', game, opts),
+  on: (channel, fn) => { if (['state', 'file', 'kept', 'played'].includes(channel)) ipcRenderer.on(channel, (_e, data) => fn(data)); }
 });

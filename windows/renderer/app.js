@@ -43,6 +43,7 @@ function toggleIn(k, id) { const s = listPref(k); if (s.has(id)) s.delete(id); e
 
 // ------------------------------------------------------------------ the library
 function visibleGames() { const hidden = listPref('hidden'); return S.games.filter((g) => !hidden.has(g.id)); }
+function playtime(g) { const m = Math.floor(((pref('playtime') || {})[g.id] || 0) / 60000); return m < 1 ? '' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; }
 function kept(g) { return !!(pref('kept') || {})[g.id]; }
 function plays() { return (pref('plays') || []).map((p) => ({ game: S.games.find((g) => g.id === p.id), at: p.at })).filter((p) => p.game); }
 function recent() { const seen = new Set(); const out = []; for (const p of plays()) if (!seen.has(p.game.id)) { seen.add(p.game.id); out.push(p.game); if (out.length >= 12) break; } return out; }
@@ -140,6 +141,7 @@ function home() {
     onClick: () => last ? playGame(last) : go('library', { console: c.id, source: 'all' }), onContextmenu: (e) => { if (last) { e.preventDefault(); gameMenu(last, e, true); } } },
   h('span', { class: 'kicker' }, last ? t('CONTINUE') + ' · ' + c.title.toUpperCase() : t('START PLAYING')),
   h('h1', { class: 'display' }, last ? last.title : t('Pick a console')),
+  last && playtime(last) ? h('span', { class: 'pill' }, playtime(last) + ' ' + t('played')) : null,
   last ? h('div', { class: 'art' }, cover(last, 230, Math.round(230 / (RATIO[last.console] || 1)), false)) : null,
   h('div', { class: 'actions' }, h('span', { class: 'btn white' }, svg(ICON.play, 14, '#14161E', '#14161E'), last ? t('Resume') : t('Open library'))));
   const rows = h('div', { class: 'rows' });
@@ -165,7 +167,7 @@ function home() {
 function miniCard(g, prefix, recentMenu) {
   const w = 128; const hh = Math.round(w / (RATIO[g.console] || 1)) > 170 ? 170 : Math.round(w / (RATIO[g.console] || 1));
   return h('button', { class: 'mini', 'data-key': prefix + '_' + g.id, onClick: () => prefix === 'rec' ? playGame(g) : openGame(g), onContextmenu: (e) => { e.preventDefault(); gameMenu(g, e, recentMenu); } },
-    cover(g, w, hh), h('div', { class: 't' }, g.title), h('div', { class: 's' }, byId[g.console].title));
+    cover(g, w, hh), h('div', { class: 't' }, g.title), h('div', { class: 's' }, byId[g.console].title + (playtime(g) ? ' · ' + playtime(g) : '')));
 }
 function openGame(g) { go('library', { console: g.console, source: 'all', query: '', selected: g.id }); }
 
@@ -222,15 +224,16 @@ function renderPanel(g) {
 // ------------------------------------------------------------------ playing and downloading
 function pct(i) { return i && i.size ? Math.min(100, Math.round(i.have * 100 / i.size)) : 0; }
 function activeDownloads() { return S.games.filter((g) => (S.files[g.fileId] || {}).state === 'downloading'); }
-async function playGame(g) {
+async function playGame(g, fresh) {
   if (!kept(g)) {
     if (S.drive.stage !== 'ready') { toast(t('Connect Telegram first (Settings > TirsoDrive).')); return; }
     const i = await window.rs.game('download', g); if (i) S.files[g.fileId] = i;
     toast(t('Downloading') + ' ' + g.title + '…'); S.pendingPlay = g.id; render(); return;
   }
-  // Stage 1: the game player arrives in the next update.
+  toast(t('Starting') + ' ' + g.title + '…');
+  const r = await window.rs.play(g, { fresh: !!fresh });
+  if (r && r.error) { toast(r.error); return; }
   const p = (pref('plays') || []).filter((x) => Date.now() - x.at < 400 * 86400000); p.unshift({ id: g.id, at: Date.now() }); setPref('plays', p.slice(0, 300));
-  toast(t('Downloaded and ready. The game player arrives in the next update.'));
 }
 /** Downloads window: updates itself while it is open. */
 function showDownloads() {
@@ -270,6 +273,7 @@ function gameMenu(g, e, recentMenu) {
   if (kept(g)) items.push([t('Delete downloaded file'), '', () => confirmBox(g.title, t('It is deleted from this PC to free up space. The game stays in Telegram and in your library.'), t('Delete'), async () => { await window.rs.game('remove', g); toast(t('File deleted')); })]);
   items.push([t('Hide game'), '', () => confirmBox(g.title, t("It won't show in your library. You can show it again in Settings > Hidden games."), t('Hide'), () => { toggleIn('hidden', g.id); render(); })]);
   if (recentMenu) {
+    items.push([t('Play from the start'), '', () => confirmBox(g.title, t("The game starts without loading where you left off. Your saves are not deleted."), t('Play'), () => playGame(g, true))]);
     items.push([t('Remove from recents'), '', () => { setPref('plays', (pref('plays') || []).filter((p) => p.id !== g.id)); render(); }]);
   }
   const layer = document.getElementById('layer'); const shade = h('div', { class: 'shade', style: 'background:transparent;display:block', onMousedown: (ev) => { if (ev.target === shade) close(); } });
@@ -342,7 +346,7 @@ function settings() {
           choose(t('Hidden games'), list.map((g) => ({ label: g.title + ' · ' + byId[g.console].title, pick: () => { toggleIn('hidden', g.id); toast(t('Showing again:') + ' ' + g.title); render(); } })));
         })),
       h('section', { class: 'group' }, h('h2', {}, t('Coming next')),
-        srow(t('Game player'), t('Playing games, in-game menu, saves and backups · next update'), '#2F6DF6', () => {}),
+        srow(t('PSP, PS2, GameCube and Wii'), t('Next update'), '#2F6DF6', () => {}),
         srow(t('PS3 and Switch'), t('RPCS3 and Eden setup · later update'), '#B23A3A', () => {})),
       h('section', { class: 'group' }, h('h2', {}, t('App')),
         srow(t('Updates'), 'RetroStream ' + S.version + ' · ' + t('open the downloads page'), '#7A4DFF', () => window.rs.open('https://github.com/dioniciogarcia/retrostream/releases/tag/windows-latest')),
@@ -480,6 +484,7 @@ function pollPads() {
     if (i.state === 'done') { const p = S.games.find((x) => x.fileId === i.id && x.id === S.pendingPlay); if (p) { S.pendingPlay = null; setTimeout(() => playGame(p), 300); } }
   });
   window.rs.on('kept', (k) => { S.prefs.kept = k; render(); });
+  window.rs.on('played', (i) => { S.prefs.playtime = i.playtime; if (i.error) dialog(t('The game closed'), i.error, []); render(); });
   render();
   requestAnimationFrame(pollPads);
 })();

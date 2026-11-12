@@ -13,7 +13,8 @@
   "dependencies": {
     "prebuilt-tdlib": "0.1008070.0",
     "qrcode": "^1.5.4",
-    "tdl": "^8.1.0"
+    "tdl": "^8.1.0",
+    "7zip-bin": "^5.2.0"
   },
   "devDependencies": {
     "electron": "^38.0.0",
@@ -39,7 +40,8 @@
       "**/*.node",
       "**/*.dll",
       "**/prebuilt-tdlib/**",
-      "**/@prebuilt-tdlib/**"
+      "**/@prebuilt-tdlib/**",
+      "**/7zip-bin/**"
     ],
     "win": {
       "target": [
@@ -59,6 +61,16 @@
       "createDesktopShortcut": true,
       "shortcutName": "RetroStream"
     },
-    "npmRebuild": false
+    "npmRebuild": false,
+    "extraResources": [
+      {
+        "from": "res/player",
+        "to": "player"
+      },
+      {
+        "from": "res/cores",
+        "to": "cores"
+      }
+    ]
   }
 }

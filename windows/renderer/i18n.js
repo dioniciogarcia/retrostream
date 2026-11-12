@@ -2,6 +2,23 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+"Starting": "Iniciando",
+"Play from the start": "Jugar desde el principio",
+"The game starts without loading where you left off. Your saves are not deleted.": "El juego empieza sin cargar dónde lo dejaste. Tus partidas no se borran.",
+"The game closed": "El juego se cerró",
+"played": "jugadas",
+"PSP, PS2, GameCube and Wii": "PSP, PS2, GameCube y Wii",
+"Next update": "Próxima actualización",
+"This console arrives in a later update.": "Esta consola llega en una próxima actualización.",
+"Download the game first.": "Primero descarga el juego.",
+"The zip file has no game for this console inside.": "El zip no tiene un juego de esta consola.",
+"A game is already running.": "Ya hay un juego abierto.",
+"The game player is missing. Reinstall RetroStream.": "Falta el reproductor de juegos. Vuelve a instalar RetroStream.",
+"The game engine could not be loaded.": "No se pudo cargar el motor del juego.",
+"The game file could not be read.": "No se pudo leer el archivo del juego.",
+"The engine could not open this game. The file may be damaged or for another region/console.": "El motor no pudo abrir este juego. El archivo puede estar dañado o ser de otra consola.",
+"Your graphics card could not start OpenGL 3.3.": "Tu tarjeta gráfica no pudo iniciar OpenGL 3.3.",
+"The game closed unexpectedly.": "El juego se cerró inesperadamente.",
 "game": "juego",
 "Open in full screen": "Abrir en pantalla completa",
 "On": "Sí",

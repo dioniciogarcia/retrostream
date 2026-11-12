@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { Store } = require('./lib/store');
 const { Drive } = require('./lib/telegram');
+const { Player } = require('./lib/player');
 const catalog = require('./lib/catalog');
 const I18N = require('./renderer/i18n');
 
@@ -14,7 +15,7 @@ try { config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), '
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
-let win = null, store = null, drive = null, t = (s) => s;
+let win = null, store = null, drive = null, player = null, t = (s) => s;
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
 
@@ -55,6 +56,12 @@ app.whenReady().then(() => {
   if (!store.get('lang')) store.set('lang', app.getLocale().toLowerCase().startsWith('es') ? 'es' : 'en');
   t = I18N.make(store.get('lang'));
   drive = new Drive({ dir, store, apiId: API_ID, apiHash: String(config.apiHash || '').trim(), version: app.getVersion(), t });
+  player = new Player({ dir, resources: app.isPackaged ? process.resourcesPath : path.join(__dirname, 'res'), t: (s) => t(s),
+    onExit: (info) => {
+      if (info.played > 0) { const pt = store.get('playtime') || {}; pt[info.id] = (pt[info.id] || 0) + info.played; store.set('playtime', pt); }
+      send('played', Object.assign(info, { playtime: store.get('playtime') || {} }));
+      if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+    } });
   drive.on('state', (changed) => send('state', { drive: drive.snapshot(), games: changed ? store.games() : null }));
   drive.on('file', (info) => { noteFile(info); send('file', info); });
 
@@ -93,6 +100,16 @@ app.whenReady().then(() => {
       }
       default: return null;
     }
+  });
+  ipcMain.handle('play', async (_e, game, opts) => {
+    try {
+      if (!player.supported(game.console)) return { error: t('This console arrives in a later update.') };
+      let file = (store.get('kept') || {})[game.id];
+      if (!file || !fs.existsSync(file)) { const i = await drive.inspect(game.fileId); file = i.path; }
+      if (!file || !fs.existsSync(file)) return { error: t('Download the game first.') };
+      await player.play(game, file, Object.assign({}, store.prefs.data, opts || {}));
+      return { ok: true };
+    } catch (e) { return { error: String(e.message || e) }; }
   });
   ipcMain.handle('qr', async (_e, text) => require('qrcode').toDataURL(String(text || ''), { margin: 1, width: 400 }));
   ipcMain.handle('open', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
