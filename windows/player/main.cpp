@@ -166,6 +166,7 @@ static bool RETRO_CALLCONV env(unsigned cmd, void* data) {
       h->get_current_framebuffer = hwFramebuffer; h->get_proc_address = hwProc;
       hw = *h; useHw = true; return true;
     }
+    case RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT: return true;
     case RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER: *(unsigned*)data = RETRO_HW_CONTEXT_OPENGL_CORE; return true;
     case RETRO_ENVIRONMENT_SET_GEOMETRY: av.geometry = *(retro_game_geometry*)data; return true;
     case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: av = *(retro_system_av_info*)data; avChanged = true; return true;
@@ -510,16 +511,21 @@ int main(int argc, char* argv[]) {
   std::string romPath = arg("rom"); std::vector<uint8_t> romData;
   retro_game_info game = {}; game.path = romPath.c_str();
   if (!info.need_fullpath) { if (!readFile(P(romPath), romData)) { logf("could not read the game file"); printf("{\"event\":\"error\",\"reason\":\"file\"}\n"); fflush(stdout); return 4; } game.data = romData.data(); game.size = romData.size(); }
+  logf("engine loaded: %s %s, need_fullpath=%d", info.library_name ? info.library_name : "?", info.library_version ? info.library_version : "", (int)info.need_fullpath);
   if (!C.load_game(&game)) { logf("the engine could not open the game"); printf("{\"event\":\"error\",\"reason\":\"game\"}\n"); fflush(stdout); C.deinit(); return 5; }
   C.get_system_av_info(&av);
   for (unsigned p = 0; p < 4; p++) C.set_controller_port_device(p, RETRO_DEVICE_JOYPAD);
   if (consoleId == "N64") C.set_controller_port_device(0, RETRO_DEVICE_ANALOG);
 
   // Window and OpenGL context (core profile for engines that draw with the graphics card).
+  // Engines asking for plain OpenGL get a compatibility context (3.3 or newer); the others a core one.
   bool compat = useHw && hw.context_type == RETRO_HW_CONTEXT_OPENGL;
+  unsigned major = useHw && hw.version_major >= 3 ? hw.version_major : 3, minor = useHw && hw.version_major >= 3 ? hw.version_minor : 3;
+  if (major == 3 && minor < 3) minor = 3;
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, compat ? SDL_GL_CONTEXT_PROFILE_COMPATIBILITY : SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, compat ? 2 : std::max(3u, useHw ? hw.version_major : 3u));
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, compat ? 1 : (useHw && hw.version_major > 3 ? hw.version_minor : 3));
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, major);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minor);
+  logf("graphics: hw=%d type=%d version=%u.%u compat=%d", (int)useHw, useHw ? (int)hw.context_type : -1, major, minor, (int)compat);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1); SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24); SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
   window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 960,
     SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
@@ -545,8 +551,9 @@ int main(int argc, char* argv[]) {
   st.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.184f, 0.427f, 0.965f, 1); st.Colors[ImGuiCol_ButtonActive] = ImVec4(0.15f, 0.36f, 0.85f, 1);
   st.Colors[ImGuiCol_NavHighlight] = ImVec4(1, 1, 1, 1); st.Colors[ImGuiCol_Border] = ImVec4(0.16f, 0.19f, 0.27f, 1);
   ImGui_ImplSDL2_InitForOpenGL(window, gl);
-  ImGui_ImplOpenGL3_Init(compat ? "#version 120" : "#version 330");
+  ImGui_ImplOpenGL3_Init(compat ? "#version 130" : "#version 330");
 
+  logf("game loaded: %ux%u max %ux%u, %.2f fps, %.0f Hz", av.geometry.base_width, av.geometry.base_height, av.geometry.max_width, av.geometry.max_height, av.timing.fps, av.timing.sample_rate);
   if (useHw) { if (!makeFbo(std::max(av.geometry.max_width, 1u), std::max(av.geometry.max_height, 1u))) logf("framebuffer not complete"); if (hw.context_reset) hw.context_reset(); }
 
   // Sound at the engine's own rate; the game's speed follows the sound.

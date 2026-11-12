@@ -2,6 +2,7 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+"Details for support:": "Detalles para soporte:",
 "Options": "Opciones",
 "Console": "Consola",
 "Open": "Abrir",

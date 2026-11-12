@@ -15,7 +15,7 @@ function options(consoleId, res) {
   switch (consoleId) {
     case 'N64': return {
       'mupen64plus-rdp-plugin': 'gliden64', 'mupen64plus-cpucore': 'dynamic_recompiler', 'mupen64plus-aspect': '4:3', 'mupen64plus-pak1': 'memory',
-      'mupen64plus-EnableCopyDepthToRDRAM': 'Off', 'mupen64plus-EnableCopyColorToRDRAM': 'Async', 'mupen64plus-ThreadedRenderer': 'True',
+      'mupen64plus-EnableCopyDepthToRDRAM': 'Off', 'mupen64plus-EnableCopyColorToRDRAM': 'Off', 'mupen64plus-ThreadedRenderer': 'False', 'mupen64plus-FrameDuping': 'True',
       'mupen64plus-EnableShadersStorage': 'True', 'mupen64plus-43screensize': RES.N64[res] || RES.N64.medium
     };
     case 'GB': case 'GBC': case 'GBA': return { mgba_use_bios: 'OFF', mgba_skip_bios: 'ON', mgba_idle_optimization: 'Remove Known', mgba_interframe_blending: 'mix_smart', mgba_color_correction: 'OFF', mgba_frameskip: 'disabled' };
@@ -109,7 +109,8 @@ class Player {
       try { fs.writeFileSync(path.join(this.dir, 'last-player.log'), log.join('')); } catch (_) { /* ignore */ }
       if (fs.existsSync(work)) fs.rmSync(work, { recursive: true, force: true });
       const reasons = { engine: 'The game engine could not be loaded.', file: 'The game file could not be read.', game: 'The engine could not open this game. The file may be damaged or for another region/console.', graphics: 'Your graphics card could not start OpenGL 3.3.' };
-      this.onExit({ id: game.id, entry: prep.entry, played, error: error ? this.t(reasons[error] || 'The game closed unexpectedly.') : (code && !played ? this.t('The game closed unexpectedly.') : '') });
+      const tail = log.join('').split(/\r?\n/).filter(Boolean).slice(-6).join('\n');
+      this.onExit({ id: game.id, entry: prep.entry, played, details: (error || (code && !played)) ? 'code ' + code + (tail ? '\n' + tail : '') : '', error: error ? this.t(reasons[error] || 'The game closed unexpectedly.') : (code && !played ? this.t('The game closed unexpectedly.') : '') });
     });
     return true;
   }

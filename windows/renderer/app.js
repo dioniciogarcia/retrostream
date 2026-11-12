@@ -216,7 +216,7 @@ function renderPanel(g) {
   const p = document.getElementById('panel'); if (!p) return;
   const info = S.files[g.fileId] || {};
   const r = RATIO[g.console] || 1;
-  p.replaceChildren(
+  p.replaceChildren(...[
     cover(g, 300, Math.min(Math.round(300 / r), 300)),
     h('h2', {}, g.title),
     h('div', { class: 'meta' }, [byId[g.console].title, g.fileName, size(g.size)].filter(Boolean).join(' · ')),
@@ -224,7 +224,7 @@ function renderPanel(g) {
     h('div', { class: 'actions' },
       h('button', { class: 'btn primary', style: 'flex:1;justify-content:center', 'data-key': 'p_play', onClick: () => playGame(g) }, svg(ICON.play, 14, '#fff', '#fff'), kept(g) ? t('Play') : t('Download and play')),
       h('button', { class: 'iconbtn', 'aria-label': t('Favorite'), 'data-key': 'p_fav', onClick: () => { toggleIn('favorites', g.id); render(); } }, svg(ICON.star, 18, '#FFC94D', listPref('favorites').has(g.id) ? '#FFC94D' : 'none')),
-      h('button', { class: 'iconbtn', 'aria-label': t('More options'), 'data-key': 'p_more', onClick: (e) => gameMenu(g, e, false) }, svg(ICON.more, 22, '#E9ECF5'))));
+      h('button', { class: 'iconbtn', 'aria-label': t('More options'), 'data-key': 'p_more', onClick: (e) => gameMenu(g, e, false) }, svg(ICON.more, 22, '#E9ECF5')))].filter(Boolean));
   if (g.fileId && !S.files[g.fileId]) window.rs.game('inspect', g).then((i) => { S.files[g.fileId] = i; });
 }
 
@@ -535,7 +535,7 @@ function pollPads() {
   });
   window.rs.on('kept', (k) => { S.prefs.kept = k; render(); });
   window.rs.on('toast', (text) => toast(text));
-  window.rs.on('played', (i) => { S.prefs.playtime = i.playtime; if (i.error) dialog(t('The game closed'), i.error, []); render(); });
+  window.rs.on('played', (i) => { S.prefs.playtime = i.playtime; if (i.error) dialog(t('The game closed'), i.error + (i.details ? '\n\n' + t('Details for support:') + '\n' + i.details : ''), []); render(); });
   render();
   requestAnimationFrame(pollPads);
 })();
