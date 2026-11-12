@@ -1052,7 +1052,8 @@ class PhoneActivity : Activity() {
             if (r.optString("error") == "offline") { if (++misses >= 2) findAgain() } else misses = 0
             // One missed answer doesn't hide what is playing; two do.
             if (r.optBoolean("ok")) castStatus[d.id] = r else if (r.optString("error") != "offline" || misses >= 2) castStatus.remove(d.id)
-            val key = { o: JSONObject? -> if (o == null) "" else o.optString("state") + o.optJSONObject("game")?.optString("id") + o.optBoolean("paused") + o.optBoolean("ff") }
+            val key = { o: JSONObject? -> if (o == null) "" else o.optString("state") + o.optJSONObject("game")?.optString("id") + o.optBoolean("paused") + o.optBoolean("ff") +
+                o.optJSONObject("settings")?.let { it.optString("res") + it.optString("filter") } }
             if (key(before) != key(castStatus[d.id])) castChanged()
         }
     }
@@ -1248,6 +1249,49 @@ class PhoneActivity : Activity() {
             root.postDelayed({ pollDevices() }, 400)
         }
     }
+    // ------------------------------------------------------------------ updates, shown over the phone's own screens
+    private fun checkUpdates() {
+        Toast.makeText(this, T.t("Buscando actualizaciones…"), Toast.LENGTH_SHORT).show()
+        Thread {
+            try {
+                val info = Updater.check()
+                runOnUiThread {
+                    if (isFinishing) return@runOnUiThread
+                    if (info.build <= BuildConfig.VERSION_CODE) {
+                        AlertDialog.Builder(this).setTitle(T.t("Actualizaciones")).setMessage(T.t("Ya tienes la última versión (build ") + BuildConfig.VERSION_CODE + ").").setPositiveButton(T.t("Cerrar"), null).show()
+                        return@runOnUiThread
+                    }
+                    AlertDialog.Builder(this).setTitle(T.t("Nueva versión disponible"))
+                        .setMessage("Build " + info.build + " · " + (info.size / (1024 * 1024)) + " MB\n\n" + info.notes + T.t("\n\nTus partidas y la sesión de Telegram se conservan."))
+                        .setPositiveButton(T.t("Actualizar ahora")) { _, _ -> startUpdate(info) }.setNegativeButton(T.t("Más tarde"), null).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { AlertDialog.Builder(this).setTitle(T.t("Actualizaciones")).setMessage(T.t("No se pudo comprobar: ") + e.message).setPositiveButton(T.t("Cerrar"), null).show() }
+            }
+        }.start()
+    }
+    private fun startUpdate(info: Updater.Info) {
+        if (!packageManager.canRequestPackageInstalls()) {
+            AlertDialog.Builder(this).setTitle(T.t("Permiso necesario"))
+                .setMessage(T.t("Android pide permiso una sola vez para que RetroStream pueda instalar su propia actualización. Activa «Permitir de esta fuente» y vuelve a pulsar Actualizar."))
+                .setPositiveButton(T.t("Abrir ajustes")) { _, _ -> runCatching { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:$packageName"))) } }
+                .setNegativeButton(T.t("Cancelar"), null).show()
+            return
+        }
+        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); bar.max = 100; bar.progressDrawable?.setTint(p.primary)
+        val box = vertical(); box.setPadding(dp(24), dp(16), dp(24), dp(8)); box.addView(bar)
+        val dialog = AlertDialog.Builder(this).setTitle(T.t("Descargando actualización…")).setView(box).setCancelable(false).show()
+        Thread {
+            try {
+                val apk = Updater.download(this, info) { done, total -> val pct = (done * 100 / maxOf(1L, total)).toInt(); runOnUiThread { bar.progress = pct } }
+                runOnUiThread { dialog.dismiss(); Toast.makeText(this, T.t("Instalando…"), Toast.LENGTH_LONG).show() }
+                Updater.install(this, apk)
+            } catch (e: Exception) {
+                runOnUiThread { dialog.dismiss(); AlertDialog.Builder(this).setTitle(T.t("Actualizaciones")).setMessage(e.message).setPositiveButton(T.t("Cerrar"), null).show() }
+            }
+        }.start()
+    }
+
     /** The game's cheats on the TV / PC: tick to turn on or off, or all off. */
     private fun cheatsDialog(d0: RemoteClient.Device) {
         val d = fresh(d0)
@@ -1393,7 +1437,11 @@ class PhoneActivity : Activity() {
                     val names = mapOf("default" to T.t("Original"), "sharp" to T.t("Píxeles nítidos"), "smooth" to T.t("Suavizado"), "smooth2" to T.t("Suavizado fuerte"), "lcd" to T.t("LCD portátil"), "crt" to T.t("TV CRT"))
                     val row = horizontal()
                     for ((i, v) in filters.withIndex()) {
-                        val c = chip(names[v] ?: v, st.optString("filter") == v, "r_filter_$v") { castControl(d, "filter", value = v); st.put("filter", v); render() }
+                        val c = chip(names[v] ?: v, st.optString("filter") == v, "r_filter_$v") {
+                            castControl(d, "filter", value = v)
+                            // Show the choice now, on the newest copy of the TV / PC's state (not the one this screen was drawn from).
+                            castStatus[d.id]?.optJSONObject("settings")?.put("filter", v); lastFocus = "r_filter_$v"; render()
+                        }
                         c.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f); c.setPadding(dp(11), dp(6), dp(11), dp(6))
                         row.addView(c, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) marginStart = dp(6) })
                     }
@@ -1599,7 +1647,7 @@ class PhoneActivity : Activity() {
         row(st, T.t("Espacio usado"), T.t("Descargas, portadas, partidas · liberar espacio"), "s_space", 0xFF22C55E.toInt()) { GameMenu.storage(this, drive, menuHost) }
 
         val ap = group(col, T.t("Aplicación"))
-        row(ap, T.t("Actualizaciones"), T.t("Buscar e instalar la última versión"), "s_update", 0xFF7A4DFF.toInt()) { openEmbedded("settings", "updates") }
+        row(ap, T.t("Actualizaciones"), T.t("Buscar e instalar la última versión"), "s_update", 0xFF7A4DFF.toInt()) { checkUpdates() }
         row(ap, T.t("Informe de problemas"), T.t("Qué registró Android si un juego falla"), "s_report", 0xFFFF9A2E.toInt()) { openEmbedded("settings", "report") }
         row(ap, T.t("Licencias y créditos"), T.t("Motores, fuentes y bases de datos"), "s_lic", 0xFF4DB36B.toInt()) { openEmbedded("settings", "licenses") }
         row(ap, "RetroStream", BuildConfig.VERSION_NAME + " · build " + BuildConfig.VERSION_CODE, "s_about", 0xFF2AA8FF.toInt()) { }
