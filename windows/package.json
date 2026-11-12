@@ -11,10 +11,11 @@
     "dist": "electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
+    "7zip-bin": "^5.2.0",
     "prebuilt-tdlib": "0.1008070.0",
     "qrcode": "^1.5.4",
-    "tdl": "^8.1.0",
-    "7zip-bin": "^5.2.0"
+    "sql.js": "^1.16.0",
+    "tdl": "^8.1.0"
   },
   "devDependencies": {
     "electron": "^38.0.0",
@@ -41,7 +42,8 @@
       "**/*.dll",
       "**/prebuilt-tdlib/**",
       "**/@prebuilt-tdlib/**",
-      "**/7zip-bin/**"
+      "**/7zip-bin/**",
+      "**/sql.js/dist/**"
     ],
     "win": {
       "target": [

@@ -54,7 +54,8 @@ body.kbd .ctile:focus,body.kbd .continue:focus{transform:scale(1.02);transition:
 .mini .s{font-size:11px;color:var(--muted)}
 .consoles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;padding:8px 4px}
 .ctile{border-radius:16px;color:#fff;text-align:left;padding:16px 18px 14px;min-height:clamp(118px,15.5vh,190px);display:flex;flex-direction:column;justify-content:space-between;gap:10px;overflow:hidden}
-.ctile .clogo{max-width:82%;max-height:clamp(40px,6.5vh,78px);object-fit:contain;object-position:left center;filter:brightness(0) invert(1);align-self:flex-start}
+.ctile .clogo-plate{align-self:flex-start;max-width:86%;background:rgba(255,255,255,.94);border-radius:12px;padding:8px 12px;display:flex;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.ctile .clogo{max-width:100%;max-height:clamp(34px,5.6vh,66px);object-fit:contain;object-position:left center}
 .ctile .wordmark{font-family:'Space Grotesk';font-size:clamp(18px,1.6vw,24px);line-height:1.1}
 .ctile span{font-size:13px;opacity:.88}
 
@@ -154,3 +155,5 @@ body.kbd .ctile:focus,body.kbd .continue:focus{transform:scale(1.02);transition:
 .cine-top .status{margin-right:10px}
 .cine-hints{position:absolute;right:28px;bottom:22px;display:flex;gap:22px;color:#D5D8E2;font-size:13px}
 .cine-hints span{display:flex;align-items:center;gap:8px}.cine-hints b{border:1px solid #5A6178;border-radius:6px;padding:2px 8px;font-size:12px}
+
+.panel p.desc{font-size:13.5px;line-height:1.55;color:#C9CEDC;margin:4px 0;max-height:9.5em;overflow:auto}

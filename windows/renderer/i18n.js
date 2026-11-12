@@ -2,6 +2,22 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+"Search game info": "Buscar información del juego",
+"Rename": "Cambiar nombre",
+"Name changed": "Nombre cambiado",
+"Reset game info": "Restablecer información",
+"The name, cover and description you chose are removed and looked up again.": "Se borran el nombre, la portada y la descripción que elegiste, y se vuelven a buscar.",
+"Reset": "Restablecer",
+"Looking it up again…": "Buscando de nuevo…",
+"Game name": "Nombre del juego",
+"Searching…": "Buscando…",
+"results": "resultados",
+"Nothing found. Try fewer words or the English name.": "No se encontró nada. Prueba con menos palabras o con el nombre en inglés.",
+"Saving…": "Guardando…",
+"Game info updated": "Información actualizada",
+"with description": "con descripción",
+"Search": "Buscar",
+"No description yet. Right-click (or Y) › Search game info to find it.": "Aún sin descripción. Clic derecho (o Y) › Buscar información del juego para encontrarla.",
 "Many makers": "Varios fabricantes",
 "ENTER": "ENTRAR",
 "GAMES AVAILABLE": "JUEGOS DISPONIBLES",

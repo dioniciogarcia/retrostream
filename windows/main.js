@@ -8,6 +8,7 @@ const { Drive } = require('./lib/telegram');
 const { Player } = require('./lib/player');
 const { Cloud } = require('./lib/cloud');
 const { External } = require('./lib/external');
+const { Meta } = require('./lib/meta');
 const catalog = require('./lib/catalog');
 const I18N = require('./renderer/i18n');
 
@@ -17,7 +18,11 @@ try { config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), '
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
-let win = null, store = null, drive = null, player = null, cloud = null, external = null, t = (s) => s;
+let win = null, store = null, drive = null, player = null, cloud = null, external = null, meta = null, t = (s) => s;
+/** The games as the screens show them (names, covers and descriptions from the lookup). */
+function shownGames() { return store.games().map((g) => meta.apply(g)); }
+let metaTimer = null;
+function lookUp() { meta.refresh(store.games(), () => { clearTimeout(metaTimer); metaTimer = setTimeout(() => send('state', { drive: drive.snapshot(), games: shownGames() }), 400); }); }
 function toast(text) { send('toast', text); }
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
@@ -122,11 +127,12 @@ app.whenReady().then(() => {
     };
   player = new Player({ dir, resources: app.isPackaged ? process.resourcesPath : path.join(__dirname, 'res'), t: (s) => t(s), onExit: afterGame });
   cloud = new Cloud({ dir, drive, store, t: (s) => t(s) });
-  drive.on('state', (changed) => send('state', { drive: drive.snapshot(), games: changed ? store.games() : null }));
+  meta = new Meta({ dir, t: (s) => t(s) });
+  drive.on('state', (changed) => { send('state', { drive: drive.snapshot(), games: changed ? shownGames() : null }); if (changed) lookUp(); });
   drive.on('file', (info) => { noteFile(info); send('file', info); });
 
   ipcMain.handle('init', () => ({
-    version: app.getVersion(), prefs: store.prefs.data, games: store.games(), drive: drive.snapshot(),
+    version: app.getVersion(), prefs: store.prefs.data, games: shownGames(), drive: drive.snapshot(),
     consoles: catalog.CONSOLES.map((c) => ({ id: c.id, title: c.title, thumbs: c.thumbs, color: c.color, big: !!c.big }))
   }));
   ipcMain.handle('prefs:set', (_e, k, v) => { if (PREF_KEYS.has(k)) { store.set(k, v); if (k === 'lang') t = drive.t = I18N.make(v); } return true; });
@@ -233,6 +239,16 @@ app.whenReady().then(() => {
       }
     } catch (e) { return { error: String(e.message || e) }; }
   });
+  ipcMain.handle('meta', async (_e, action, game, arg) => {
+    try {
+      if (action === 'search') return { list: await meta.search(game.console, arg) };
+      if (action === 'choose') await meta.choose(game, arg);
+      if (action === 'rename') meta.rename(game, arg);
+      if (action === 'reset') { meta.reset(game); lookUp(); }
+      send('state', { drive: drive.snapshot(), games: shownGames() });
+      return { ok: true };
+    } catch (e) { return { error: String(e.message || e) }; }
+  });
   ipcMain.handle('window', (_e, action) => {
     if (!win) return null;
     if (action === 'minimize') win.minimize();
@@ -247,6 +263,7 @@ app.whenReady().then(() => {
 
   createWindow();
   drive.start();
+  setTimeout(lookUp, 3000);
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });

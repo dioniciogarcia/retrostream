@@ -71,9 +71,11 @@ function thumbName(n) { return n.replace(/[&*/:`<>?\\|"]/g, '_'); }
 function coverUrls(g) {
   const c = byId[g.console]; if (!c) return [];
   let stem = g.fileName || g.title; const dot = stem.lastIndexOf('.'); if (dot > 0) stem = stem.substring(0, dot);
-  const names = [thumbName(stem)];
-  for (const r of ['USA', 'Europe', 'World', 'Japan']) names.push(thumbName(g.title + ' (' + r + ')'));
-  names.push(thumbName(g.title));
+  const names = []; if (g.cover) names.push(g.cover);
+  names.push(thumbName(stem));
+  const base = g.base || g.title;
+  for (const r of ['USA', 'Europe', 'World', 'Japan']) names.push(thumbName(base + ' (' + r + ')'));
+  names.push(thumbName(base));
   return [...new Set(names)].map((n) => 'https://thumbnails.libretro.com/' + encodeURIComponent(c.thumbs) + '/Named_Boxarts/' + encodeURIComponent(n) + '.png');
 }
 const missing = new Set(JSON.parse(localStorage.getItem('missingCovers') || '[]'));
@@ -177,10 +179,10 @@ function home() {
 const LOGOS = new Set(['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA', 'N64', 'NDS', 'MAME', 'PSP', 'PS2', 'GC', 'WII']);
 function consoleLogo(cn) {
   if (!LOGOS.has(cn.id)) return h('b', { class: 'wordmark' }, cn.id === 'PS3' ? 'PlayStation 3' : cn.id === 'SWITCH' ? 'Nintendo Switch' : cn.title);
-  return h('img', { class: 'clogo', src: 'logos/' + cn.id + '.png', alt: '' });
+  return h('span', { class: 'clogo-plate' }, h('img', { class: 'clogo', src: 'logos/' + cn.id + '-color.png', alt: '' }));
 }
 // ------------------------------------------------------------------ home theme C: cinematic (one console fills the screen)
-function homeTheme() { return pref('homeTheme') || 'cinematic'; }
+function homeTheme() { return pref('homeTheme') || 'classic'; }
 function cineActive() { return S.page === 'home' && homeTheme() === 'cinematic' && document.querySelector('.cine'); }
 const CONSOLE_INFO = {
   NES: ['1983', 'Home console', 'Nintendo', 'The 8-bit console that brought home video games back to life and introduced Mario, Zelda and Metroid.'],
@@ -298,7 +300,9 @@ function renderPanel(g) {
   p.replaceChildren(...[
     cover(g, 300, Math.min(Math.round(300 / r), 300)),
     h('h2', {}, g.title),
-    h('div', { class: 'meta' }, [byId[g.console].title, g.fileName, size(g.size)].filter(Boolean).join(' · ')),
+    h('div', { class: 'meta' }, [byId[g.console].title, g.year || '', g.genre, g.dev || g.pub].filter(Boolean).join(' · ')),
+    g.desc ? h('p', { class: 'desc' }, g.desc) : h('p', { class: 'desc', style: 'color:#9AA3B8' }, t('No description yet. Right-click (or Y) › Search game info to find it.')),
+    h('div', { class: 'meta', style: 'font-size:12px' }, [g.fileName, size(g.size)].filter(Boolean).join(' · ')),
     info.state === 'downloading' ? h('div', {}, h('div', { class: 'progress' }, h('div', { style: `width:${info.size ? Math.round(info.have * 100 / info.size) : 0}%` })), h('div', { class: 'meta', style: 'margin-top:6px' }, t('Downloading') + ' ' + size(info.have) + ' / ' + size(info.size))) : null,
     h('div', { class: 'actions' },
       h('button', { class: 'btn primary', style: 'flex:1;justify-content:center', 'data-key': 'p_play', onClick: () => playGame(g) }, svg(ICON.play, 14, '#fff', '#fff'), kept(g) ? t('Play') : t('Download and play')),
@@ -351,6 +355,9 @@ function gameMenu(g, e, recentMenu) {
   const items = [];
   items.push([kept(g) ? t('Play') : t('Download and play'), 'Enter', () => playGame(g)]);
   items.push([t('View game'), '', () => openGame(g)]);
+  items.push([t('Search game info'), '', () => searchInfo(g)]);
+  items.push([t('Rename'), '', () => ask(t('Rename'), g.title, async (v) => { await window.rs.meta('rename', g, v); toast(t('Name changed')); })]);
+  items.push([t('Reset game info'), '', () => confirmBox(g.title, t('The name, cover and description you chose are removed and looked up again.'), t('Reset'), async () => { await window.rs.meta('reset', g); toast(t('Looking it up again…')); })]);
   items.push([listPref('favorites').has(g.id) ? t('Remove from favorites') : t('Add to favorites'), 'F', () => { toggleIn('favorites', g.id); render(); }]);
   items.push([t('Add to a collection'), '', () => collectionPicker(g)]);
   items.push([listPref('completed').has(g.id) ? t('Remove "Completed"') : t('Mark as completed'), '', () => { toggleIn('completed', g.id); render(); }]);
@@ -371,6 +378,29 @@ function gameMenu(g, e, recentMenu) {
   const x = e && e.clientX ? e.clientX : innerWidth / 2 - 150, y = e && e.clientY ? e.clientY : innerHeight / 2 - 200;
   menu.style.left = Math.min(x, innerWidth - 320) + 'px'; menu.style.top = Math.max(10, Math.min(y, innerHeight - menu.offsetHeight - 10)) + 'px';
   menu.querySelector('button').focus();
+}
+/** Type a name, pick the right game: its name, cover and description are used from then on. */
+function searchInfo(g) {
+  modal((box, close) => {
+    const input = h('input', { value: g.base || g.title, 'aria-label': t('Game name'), onKeydown: (e) => { if (e.key === 'Enter') run(); } });
+    const list = h('div', { class: 'list', style: 'max-height:52vh;overflow:auto' });
+    const status = h('p', {}, '');
+    async function run() {
+      const q = input.value.trim(); if (!q) return; status.textContent = t('Searching…'); list.replaceChildren();
+      const r = await window.rs.meta('search', g, q);
+      if (r.error) { status.textContent = r.error; return; }
+      status.textContent = r.list.length ? r.list.length + ' ' + t('results') : t('Nothing found. Try fewer words or the English name.');
+      list.replaceChildren(...r.list.map((x) => {
+        const fake = { id: 'pick', console: g.console, fileName: x.c + '.x', title: x.t, cover: x.c };
+        return h('button', { style: 'display:flex;gap:12px;align-items:center', onClick: async () => { status.textContent = t('Saving…'); await window.rs.meta('choose', g, x); close(); toast(t('Game info updated')); } },
+          cover(fake, 54, 70, false), h('span', { style: 'flex:1' }, h('b', { style: 'display:block' }, x.t), h('small', { style: 'color:#9AA3B8' }, [x.y, x.r, x.c !== x.t ? x.c : '', x.d ? t('with description') : ''].filter(Boolean).join(' · '))));
+      }));
+      const first = list.querySelector('button'); if (first && document.body.classList.contains('kbd')) first.focus();
+    }
+    box.append(h('h2', {}, t('Search game info')), h('div', { style: 'display:flex;gap:8px' }, h('div', { class: 'field', style: 'flex:1;margin:0' }, input), h('button', { class: 'btn primary', onClick: run }, t('Search'))), status, list,
+      h('div', { class: 'buttons' }, h('button', { class: 'btn ghost', onClick: close }, t('Close'))));
+    setTimeout(run, 0);
+  });
 }
 function collectionPicker(g) {
   const cols = pref('collections') || {};
