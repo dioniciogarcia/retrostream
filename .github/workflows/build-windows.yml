@@ -27,14 +27,16 @@ jobs:
       - name: Telegram key
         env:
           TIRSO_TELEGRAM_API_HASH: ${{ secrets.TIRSO_TELEGRAM_API_HASH }}
-        run: node -e "require('fs').writeFileSync('config.json', JSON.stringify({apiHash: process.env.TIRSO_TELEGRAM_API_HASH || ''}))"
+        run: |
+          node -e "require('fs').writeFileSync('config.json', JSON.stringify({apiHash: process.env.TIRSO_TELEGRAM_API_HASH || ''}))"
       - name: Version
         run: |
           BUILD=$((100 + GITHUB_RUN_NUMBER))
           npm pkg set version="1.0.$BUILD"
           echo "BUILD=$BUILD" >> $GITHUB_ENV
       - name: Check the Telegram library loads
-        run: node -e "const {getTdjson}=require('prebuilt-tdlib');const p=getTdjson();console.log(p);if(!require('fs').existsSync(p))process.exit(1)"
+        run: |
+          node -e "const {getTdjson}=require('prebuilt-tdlib');const p=getTdjson();console.log(p);if(!require('fs').existsSync(p))process.exit(1)"
       - name: Build installer
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
