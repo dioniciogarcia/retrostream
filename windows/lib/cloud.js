@@ -152,6 +152,33 @@ class Cloud {
     if (this.again) { this.again = false; return this.uploadShots(); }
   }
 
+  /** Media page: every screenshot (phone, TV and PC), newest first; small pictures for [from, from + count). */
+  async allShots(from, count) {
+    const chat = await this.drive.ownChannel(SHOTS_TITLE, '', false); if (!chat) return { list: [], total: 0 };
+    if (!this.shotIndex || from === 0) {
+      this.shotIndex = [];
+      for (const m of await this.drive.search(chat, 'Photo', 3000)) {
+        const c = m.content; if (!c || c._ !== 'messagePhoto' || !c.caption || !c.caption.text.startsWith('#RSSHOT')) continue;
+        const info = {}; for (const line of c.caption.text.split('\n')) { const i = line.indexOf(':'); if (i > 0) info[line.substring(0, i)] = line.substring(i + 1).trim(); }
+        const sizes = c.photo.sizes || []; if (!sizes.length) continue;
+        const small = sizes.find((z) => z.width >= 320) || sizes[0]; const big = sizes[sizes.length - 1];
+        this.shotIndex.push({ id: info.id || '', title: info.title || '', console: info.console || '', date: m.date, thumb: small.photo.id, full: big.photo.id, w: big.width, h: big.height });
+      }
+    }
+    const page = this.shotIndex.slice(from, from + count);
+    const list = [];
+    for (const s of page) {
+      let url = '';
+      try { const p = await this.drive.downloadNow(s.thumb); if (p) url = 'data:image/jpeg;base64,' + fs.readFileSync(p).toString('base64'); } catch (_) { /* no picture */ }
+      list.push(Object.assign({}, s, { url }));
+    }
+    return { list, total: this.shotIndex.length };
+  }
+  async fullShot(fileId) {
+    const p = await this.drive.downloadNow(fileId); if (!p) throw new Error(this.t('The picture could not be downloaded.'));
+    return { path: p, url: 'data:image/jpeg;base64,' + fs.readFileSync(p).toString('base64') };
+  }
+
   /** This game's screenshots in the Screenshots channel, newest first, as pictures the page can show. */
   async shots(gameId) {
     const chat = await this.drive.ownChannel(SHOTS_TITLE, '', false); if (!chat) return [];

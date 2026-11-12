@@ -369,4 +369,40 @@ function remotePage() {
         t('If the phone does not find this PC: both must be on the same Wi-Fi (not a guest network), and Windows must allow RetroStream in the firewall (it asks the first time; choose "Private networks"). You can also type this PC\'s address on the phone.')))));
 }
 
-const PAGES = { resolution: resolutionPage, consoles: consolesPage, homeLayout: homePage, pc: pcPage, history: historyPage, missing: missingPage, space: spacePage, controllers: controllersPage, friends: friendsPage, remote: remotePage };
+// ------------------------------------------------------------------ media: every screenshot from the phone, TV and PC
+function shotViewer(s, title) {
+  modal((box, close) => {
+    box.classList.add('wide');
+    const img = h('img', { src: s.url, alt: title, style: 'width:100%;border-radius:10px;min-height:200px;background:#0F121A' });
+    const info = { path: s.path || '', w: s.w, h: s.h, date: s.date, title };
+    const run = async (what, ok) => { if (!info.path) { toast(t('Loading…')); return; } const x = await window.rs.tools(what, info); if (x && x.error) toast(x.error); else if (x) toast(ok); };
+    box.append(h('h2', {}, title), img, h('p', {}, (s.console ? ((byId[s.console] || {}).title || s.console) + ' · ' : '') + new Date(s.date * 1000).toLocaleString()),
+      h('div', { class: 'buttons' },
+        h('button', { class: 'btn ghost', onClick: () => run('shotCopy', t('Picture copied: paste it in WhatsApp, Discord or any chat')) }, t('Copy picture')),
+        h('button', { class: 'btn ghost', onClick: () => run('shotSave', t('Picture saved')) }, t('Save as…')),
+        (S.friends && S.friends.chat) ? h('button', { class: 'btn ghost', onClick: () => run('shotFriends', t('Sent to the friends group')) }, t('Send to friends')) : null,
+        h('button', { class: 'btn primary', onClick: close }, t('Close'))));
+    if (!s.path && s.full) window.rs.tools('fullShot', s.full).then((r) => { if (r && r.url) { img.src = r.url; info.path = r.path; s.path = r.path; s.url = r.url; } });
+  });
+}
+function mediaPage() {
+  if (!S.media && !S.mediaBusy && S.drive.stage === 'ready') {
+    S.mediaBusy = true;
+    window.rs.tools('allShots', 0).then((r) => { S.mediaBusy = false; S.media = r && !r.error ? r : { list: [], total: 0, error: r && r.error }; if (S.page === 'media') render(); });
+  }
+  const m = S.media;
+  const more = async () => { S.mediaBusy = true; render(); const r = await window.rs.tools('allShots', m.list.length); S.mediaBusy = false; if (r && r.list) m.list = m.list.concat(r.list); render(); };
+  return h('main', { class: 'scroll' },
+    h('div', { class: 'pagehead' }, h('h1', {}, t('Screenshots')), m ? h('span', { style: 'color:var(--muted);margin-left:12px' }, m.total + ' ' + t('screenshots')) : null,
+      h('span', { style: 'flex:1' }), h('button', { class: 'btn ghost', 'data-key': 'media_folder', onClick: () => window.rs.tools('openFolder', 'pictures') }, t('Open the screenshots folder')),
+      h('button', { class: 'btn ghost', 'data-key': 'media_refresh', style: 'margin-left:8px', onClick: () => { S.media = null; render(); } }, t('Refresh'))),
+    S.drive.stage !== 'ready' ? h('p', { class: 'empty' }, t('Connect Telegram first (Settings > TirsoDrive).'))
+      : !m ? h('p', { class: 'empty' }, t('Loading…'))
+        : !m.list.length ? h('p', { class: 'empty' }, m.error || t('No screenshots yet. In a game: menu > Take screenshot, or F12.'))
+          : h('div', { style: 'padding:0 32px 30px' },
+            h('div', { class: 'mediagrid' }, m.list.map((s, i) => h('button', { class: 'mediacell', 'data-key': 'media_' + i, onClick: () => shotViewer(s, s.title) },
+              s.url ? h('img', { src: s.url, alt: s.title }) : h('div', { class: 'noimg' }), h('b', {}, s.title), h('small', {}, ((byId[s.console] || {}).title || s.console) + ' · ' + new Date(s.date * 1000).toLocaleDateString())))),
+            m.list.length < m.total ? h('div', { class: 'buttons', style: 'justify-content:center;margin-top:16px' }, h('button', { class: 'btn ghost', 'data-key': 'media_more', onClick: more }, S.mediaBusy ? t('Loading…') : t('Show more'))) : null));
+}
+
+const PAGES = { resolution: resolutionPage, consoles: consolesPage, homeLayout: homePage, pc: pcPage, history: historyPage, missing: missingPage, space: spacePage, controllers: controllersPage, friends: friendsPage, remote: remotePage, media: mediaPage };

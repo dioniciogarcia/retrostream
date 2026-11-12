@@ -497,6 +497,8 @@ app.whenReady().then(() => {
           await shell.openPath(out); setTimeout(() => app.quit(), 1500);
           return { ok: true };
         }
+        case 'allShots': if (drive.stage !== 'ready') return { error: t('Connect Telegram first (Settings > TirsoDrive).') }; return await cloud.allShots(arg || 0, 48);
+        case 'fullShot': return await cloud.fullShot(arg);
         case 'shotCopy': clipboard.writeImage(nativeImage.createFromPath(arg.path)); return { ok: true };
         case 'shotSave': {
           const r = await dialog.showSaveDialog(win, { title: t('Save picture as'), defaultPath: path.join(app.getPath('pictures'), (arg.title || 'RetroStream').replace(/[\\/:*?"<>|]/g, '') + ' ' + new Date((arg.date || 0) * 1000).toISOString().substring(0, 10) + '.jpg'), filters: [{ name: 'JPEG', extensions: ['jpg'] }] });

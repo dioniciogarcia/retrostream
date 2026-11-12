@@ -729,6 +729,8 @@ final class TirsoDrive {
             if(r instanceof TdApi.Message)pendingUploads.put(((TdApi.Message)r).id,cb);else cb.done(0L,errorText(r));
         });
     }
+    /** Every screenshot of every game (the Media page), newest first. */
+    void listAllShots(Done<List<Shot>> callback){listShots("",callback);}
     /** The screenshots of one game (by its id), newest first. */
     void listShots(String gameId,Done<List<Shot>> callback){
         Done<List<Shot>> cb=once(callback,null);
@@ -747,7 +749,7 @@ final class TirsoDrive {
                 Shot s=new Shot();
                 for(String line:p.caption.text.split("\n")){int i=line.indexOf(':');if(i<0)continue;String k=line.substring(0,i),v=line.substring(i+1).trim();
                     if(k.equals("id"))s.gameId=v;else if(k.equals("title"))s.title=v;else if(k.equals("console"))s.console=v;}
-                if(!s.gameId.equals(gameId))continue;
+                if(!gameId.isEmpty()&&!s.gameId.equals(gameId))continue;
                 TdApi.PhotoSize small=p.photo.sizes[0],big=p.photo.sizes[p.photo.sizes.length-1];
                 for(TdApi.PhotoSize z:p.photo.sizes)if(z.width>=320){small=z;break;}
                 s.messageId=m.id;s.chatId=chat;s.date=m.date;s.thumbId=small.photo.id;s.fullId=big.photo.id;out.add(s);

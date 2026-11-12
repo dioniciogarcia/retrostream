@@ -282,6 +282,7 @@ public class MainActivity extends Activity {
                 h.addView(icon("search", T.t("Buscar juegos"), "search", this::search));
                 h.addView(icon("star", T.t("Favoritos"), "nav_favorites", this::openFavorites));
                 h.addView(friendsIcon());
+                h.addView(icon("photos", T.t("Capturas"), "nav_media", () -> route("media")));
                 h.addView(icon("history", T.t("Historial de juego"), "nav_history", () -> route("history")));
                 h.addView(icon("settings", T.t("Ajustes"), "nav_settings", () -> route("settings")));
             }
@@ -296,6 +297,7 @@ public class MainActivity extends Activity {
                 right.addView(icon("search", T.t("Buscar juegos"), "search", this::search));
                 right.addView(icon("star", T.t("Favoritos"), "nav_favorites", this::openFavorites));
                 right.addView(friendsIcon());
+                right.addView(icon("photos", T.t("Capturas"), "nav_media", () -> route("media")));
                 right.addView(icon("history", T.t("Historial de juego"), "nav_history", () -> route("history")));
                 right.addView(icon("settings", T.t("Ajustes"), "nav_settings", () -> route("settings")));
             }
@@ -344,6 +346,7 @@ public class MainActivity extends Activity {
             case "settings": monoTitle = T.t("AJUSTES"); monoRight = ""; break;
             case "backups": monoTitle = T.t("COPIAS"); monoRight = ""; break;
             case "history": monoTitle = T.t("HISTORIAL"); monoRight = ""; break;
+            case "media": monoTitle = T.t("CAPTURAS"); monoRight = ""; break;
             case "friends": monoTitle = T.t("AMIGOS"); monoRight = drive.friendsChat() != 0 ? drive.friendsOnline() + T.t(" EN LÍNEA") : ""; break;
             case "artwork": monoTitle = T.t("IMÁGENES"); monoRight = ""; break;
             case "resolution": monoTitle = T.t("RESOLUCIÓN"); monoRight = ""; break;
@@ -363,6 +366,7 @@ public class MainActivity extends Activity {
         else if (page.equals("settings")) settings();
         else if (page.equals("backups")) backupsScreen();
         else if (page.equals("history")) historyScreen();
+        else if (page.equals("media")) mediaScreen();
         else if (page.equals("friends")) friendsScreen();
         else if (page.equals("artwork")) artworkScreen();
         else if (page.equals("resolution")) resolutionScreen();
@@ -1608,6 +1612,52 @@ public class MainActivity extends Activity {
             .setPositiveButton(T.t("Unirme"), (d, w) -> drive.friendsJoin(input.getText().toString(), (id, error) -> {
                 if (error != null) Toast.makeText(this, error, Toast.LENGTH_LONG).show(); else render();
             })).setNegativeButton(T.t("Cancelar"), null).show();
+    }
+    /** Media: every screenshot from the phone, TV and PC (the Telegram screenshots channel), newest first. */
+    private void mediaScreen() {
+        LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));
+        if (!mono) { TextView h = tv(T.t("Capturas"), 62, text, fHead); h.setPadding(px(10), px(10), 0, px(10)); col.addView(h); }
+        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
+        content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content); col.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        TextView status = tv(T.t("Cargando capturas…"), 30, muted, fBody); content.addView(status);
+        if (!drive.ready()) { status.setText(T.t("Conecta TirsoDrive para ver las capturas.")); return; }
+        drive.listAllShots((list, err) -> {
+            if (!page.equals("media")) return;
+            if (list == null || list.isEmpty()) { status.setText(err != null ? err : T.t("Aún no hay capturas. En un juego: menú > Captura de pantalla, o Select + R1.")); return; }
+            status.setText(list.size() + T.t(" capturas"));
+            mediaGrid(list, 0);
+        });
+    }
+    private void mediaGrid(java.util.List<TirsoDrive.Shot> list, int from) {
+        int cols = BuildConfig.PHONE ? 3 : 4, upto = Math.min(list.size(), from + 48);
+        LinearLayout row = null; final int ringColor = focusRing();
+        for (int i = from; i < upto; i++) {
+            TirsoDrive.Shot s = list.get(i);
+            if ((i - from) % cols == 0) { row = horizontal(); row.setClipChildren(false); content.addView(row); }
+            LinearLayout cell = vertical(); cell.setPadding(px(8), px(8), px(8), px(8));
+            ImageView iv = new ImageView(this); iv.setScaleType(ImageView.ScaleType.CENTER_CROP); iv.setBackground(round(0xFF1A1E2B, 14)); iv.setClipToOutline(true);
+            cell.addView(iv, new LinearLayout.LayoutParams(-1, px(220)));
+            TextView name = tv(s.title, 22, text, fBody); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); name.setPadding(px(4), px(8), 0, 0); cell.addView(name);
+            TextView when = tv(s.console + " · " + java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(new java.util.Date(s.date * 1000L)), 18, muted, fMono); when.setPadding(px(4), px(2), 0, 0); cell.addView(when);
+            drive.downloadPicture(s.thumbId, (path, e) -> { if (path != null) iv.setImageBitmap(android.graphics.BitmapFactory.decodeFile(path)); });
+            focusableWith(cell, "media_" + i, f -> { GradientDrawable g = round(0, 22); if (f) g.setStroke(px(6), ringColor); return g; }, () -> openShot(s));
+            row.addView(cell, new LinearLayout.LayoutParams(0, -2, 1));
+        }
+        if (row != null) for (int k = row.getChildCount(); k < cols; k++) row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        if (upto < list.size()) {
+            TextView more = tv(T.t("Ver más"), 28, text, fHead); more.setGravity(Gravity.CENTER); more.setPadding(px(30), px(16), px(30), px(16));
+            focusableWith(more, "media_more", f -> { GradientDrawable g = round(surface, 30); if (f) g.setStroke(px(5), focusRing()); return g; }, () -> { content.removeView(more); mediaGrid(list, upto); });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.gravity = Gravity.CENTER_HORIZONTAL; lp.topMargin = px(16); content.addView(more, lp);
+        }
+    }
+    private void openShot(TirsoDrive.Shot s) {
+        drive.downloadPicture(s.fullId, (path, e) -> {
+            if (path == null) return; ImageView big = new ImageView(this); big.setAdjustViewBounds(true); big.setImageBitmap(android.graphics.BitmapFactory.decodeFile(path));
+            AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle(s.title).setView(big).setPositiveButton(T.t("Cerrar"), null);
+            if (BuildConfig.PHONE) b.setNeutralButton(T.t("Compartir"), (d, w) -> Screenshots.shareToApps(this, path, s.title));
+            if (drive.friendsChat() != 0) b.setNegativeButton(T.t("Enviar al grupo de amigos"), (d, w) -> Screenshots.shareToFriends(this, drive, path, s.title));
+            b.show();
+        });
     }
     private void historyScreen() {
         LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));

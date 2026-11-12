@@ -3,6 +3,11 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("toca una para verla y compartirla", "tap one to view and share it");
+        m.put("Ver más", "Show more");
+        m.put("No se pudo abrir la captura.", "Couldn't open the screenshot.");
+        m.put("Aún no hay capturas. En un juego: menú > Captura de pantalla, o Select + R1.", "No screenshots yet. In a game: menu > Take screenshot, or Select + R1.");
+        m.put("CAPTURAS", "SCREENSHOTS");
         m.put("Compartir captura", "Share screenshot");
         m.put("No se pudo compartir la captura.", "Couldn't share the screenshot.");
         m.put("Compartir", "Share");

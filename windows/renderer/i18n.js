@@ -2,6 +2,12 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+"Screenshots": "Capturas",
+"screenshots": "capturas",
+"Loading…": "Cargando…",
+"Show more": "Ver más",
+"No screenshots yet. In a game: menu > Take screenshot, or F12.": "Aún no hay capturas. En un juego: menú > Captura de pantalla, o F12.",
+"The picture could not be downloaded.": "No se pudo descargar la imagen.",
 "Save picture as": "Guardar imagen como",
 "Picture copied: paste it in WhatsApp, Discord or any chat": "Imagen copiada: pégala en WhatsApp, Discord o cualquier chat",
 "Copy picture": "Copiar imagen",

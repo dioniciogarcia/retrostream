@@ -192,3 +192,8 @@ body.light .scroll::-webkit-scrollbar-thumb{background:#C3CADB}
 body.light.kbd :focus{outline-color:#161A24}
 .paircode{display:flex;gap:12px;justify-content:center;margin:18px 0}
 .paircode span{width:64px;height:78px;border-radius:14px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font:600 40px 'Space Grotesk',Inter,sans-serif;color:var(--text)}
+/* Screenshots page */
+.mediagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.mediacell{background:var(--surface);border-radius:14px;padding:8px;text-align:left;display:flex;flex-direction:column;gap:4px}
+.mediacell img,.mediacell .noimg{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;background:#0F121A}
+.mediacell b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mediacell small{color:var(--muted);font-size:11px}

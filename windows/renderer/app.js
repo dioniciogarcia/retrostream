@@ -133,8 +133,8 @@ function hints() {
   return h('footer', { class: 'hints' }, items.map(([k, v]) => h('span', {}, h('b', {}, k), v)));
 }
 function header() {
-  const d = S.drive; const nav = [['home', t('Home')], ['library', t('Library')], ['fav', t('Favorites & collections')], ['settings', t('Settings')]];
-  const on = (k) => (k === 'fav' ? S.page === 'library' && (S.source === 'fav' || S.source === 'col') : k === 'library' ? S.page === 'library' && S.source !== 'fav' && S.source !== 'col' : S.page === k || (k === 'settings' && (S.page === 'sources' || S.page === 'engines' || !!PAGES[S.page])));
+  const d = S.drive; const nav = [['home', t('Home')], ['library', t('Library')], ['fav', t('Favorites & collections')], ['media', t('Screenshots')], ['settings', t('Settings')]];
+  const on = (k) => (k === 'fav' ? S.page === 'library' && (S.source === 'fav' || S.source === 'col') : k === 'library' ? S.page === 'library' && S.source !== 'fav' && S.source !== 'col' : S.page === k || (k === 'settings' && S.page !== 'media' && (S.page === 'sources' || S.page === 'engines' || !!PAGES[S.page])));
   // What is being typed survives the screen redrawing itself (downloads, friends and Telegram updates redraw it).
   const input = h('input', { placeholder: t('Search all games  (Ctrl+F)'), value: S.searchDraft != null ? S.searchDraft : S.query, 'aria-label': t('Search games'), 'data-key': 'search',
     onInput: (e) => { S.searchDraft = e.target.value; },
@@ -151,7 +151,7 @@ function header() {
   return h('header', { class: 'top' },
     h('div', { class: 'brand' }, h('div', { class: 'logo' }, svg(ICON.pad, 22, '#fff')), 'RetroStream'),
     h('nav', { class: 'nav', 'aria-label': t('Main') }, nav.map(([k, label]) => h('button', { class: on(k) ? 'on' : '', 'data-key': 'nav_' + k,
-      onClick: () => (S.searchDraft = null, k === 'fav') ? go('library', { source: 'fav', console: null, query: '' }) : k === 'library' ? go('library', { source: 'all', console: S.console || firstConsole(), query: '' }) : go(k) }, label))),
+      onClick: () => (S.searchDraft = null, k === 'fav') ? go('library', { source: 'fav', console: null, query: '' }) : k === 'media' ? (S.media = null, go('media')) : k === 'library' ? go('library', { source: 'all', console: S.console || firstConsole(), query: '' }) : go(k) }, label))),
     h('label', { class: 'search' }, svg(ICON.search, 16, '#9AA3B8'), input),
     h('button', { class: 'iconbtn', 'aria-label': t('Downloads'), 'data-key': 'downloads', onClick: showDownloads }, svg(ICON.down, 20, '#E9ECF5'),
       activeDownloads().length ? h('span', { class: 'badge' }, activeDownloads().length) : null),
@@ -742,7 +742,7 @@ async function quickMenu() {
     { label: t('Exit RetroStream'), pick: () => window.rs.quit() }
   ]);
 }
-function goBack() { if (S.page === 'sources' || S.page === 'engines' || PAGES[S.page]) go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
+function goBack() { if (S.page === 'media') go('home'); else if (S.page === 'sources' || S.page === 'engines' || PAGES[S.page]) go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
 const pad = { last: {}, at: {}, first: {} };
 function pollPads() {
   const gp = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(Boolean);

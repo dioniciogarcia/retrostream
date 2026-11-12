@@ -262,6 +262,7 @@ class PhoneActivity : Activity() {
             "history" -> historyPage()
             "loading" -> loadingPage()
             "remote" -> remotePage()
+            "media" -> mediaPage()
             else -> home()
         }
         if (page == "home" || page == "library" || page == "detail" || page == "consoles") miniPlayer()?.let { bar ->
@@ -278,7 +279,7 @@ class PhoneActivity : Activity() {
         if (v is ViewGroup) for (i in 0 until v.childCount) firstFocusable(v.getChildAt(i))?.let { return it }
         return null
     }
-    private fun go(target: String) { page = target; lastFocus = ""; render() }
+    private fun go(target: String) { if (target == "media" && page != "media") { mediaShots = null; mediaShown = 60 }; page = target; lastFocus = ""; render() }
 
     /** Header: title with search beside it on the left (clear of the camera); favorites, friends, settings on the right. */
     private fun header(title: String, back: Boolean, history: Boolean = false): View {
@@ -286,11 +287,12 @@ class PhoneActivity : Activity() {
         if (back) row.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
         row.addView(tv(title, if (style == "tiles") 22f else 20f, p.text, bold = true).apply {
             setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(dp(6), 0, dp(4), 0)
-            maxWidth = resources.displayMetrics.widthPixels - dp(if (back) 260 else 220) },
+            maxWidth = resources.displayMetrics.widthPixels - dp(if (back) 304 else 264) },
             LinearLayout.LayoutParams(-2, -2))
         row.addView(icon("search", T.t("Buscar juegos"), "h_search") { search() })
         row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         row.addView(castIcon())
+        row.addView(icon("photos", T.t("Capturas"), "h_media") { go("media") })
         row.addView(icon("star", T.t("Favoritos"), "h_fav") { console = null; source = "fav"; go("library") })
         row.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { go("friends") })
         if (history) row.addView(icon("history", T.t("Historial de juego"), "h_history") { go("history") })
@@ -447,6 +449,7 @@ class PhoneActivity : Activity() {
             top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
             top.addView(tv("🎲", 18f, p.text).also { it.setPadding(dp(8), dp(4), dp(8), dp(4)); it.contentDescription = T.t("Sorpréndeme"); control(it, "surprise", Color.TRANSPARENT, 8f, false) { GameMenu.surprise(this, menuHost) } })
             top.addView(castIcon())
+            top.addView(icon("photos", T.t("Capturas"), "h_media") { go("media") })
             top.addView(icon("star", T.t("Favoritos"), "h_fav") { console = null; source = "fav"; go("library") })
             top.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { go("friends") })
             top.addView(icon("settings", T.t("Ajustes"), "h_settings") { go("settings") })
@@ -1292,6 +1295,53 @@ class PhoneActivity : Activity() {
         }.start()
     }
 
+    // ------------------------------------------------------------------ media: every screenshot (phone, TV and PC), newest first
+    private var mediaShots: List<TirsoDrive.Shot>? = null
+    private var mediaShown = 60
+    private fun mediaPage() {
+        val col = vertical(); col.setPadding(0, 0, 0, dp(18))
+        col.addView(header(T.t("Capturas"), true))
+        val status = tv(T.t("Cargando capturas…"), 13f, p.muted).apply { setPadding(dp(18), dp(4), dp(18), dp(8)) }
+        col.addView(status)
+        val grid = vertical(); grid.setPadding(dp(12), 0, dp(12), 0); col.addView(grid)
+        root.addView(scroll(col))
+        fun fill(list: List<TirsoDrive.Shot>) {
+            status.text = list.size.toString() + T.t(" capturas") + " · " + T.t("toca una para verla y compartirla")
+            val cols = if (landscape) 5 else 3
+            var row: LinearLayout? = null
+            list.take(mediaShown).forEachIndexed { i, s ->
+                if (i % cols == 0) { row = horizontal(); grid.addView(row) }
+                val cell = vertical(); cell.setPadding(dp(4), dp(4), dp(4), dp(6))
+                val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.CENTER_CROP; iv.background = round(p.surface2, 10f); iv.clipToOutline = true
+                cell.addView(iv, LinearLayout.LayoutParams(-1, dp(if (landscape) 90 else 96)))
+                cell.addView(tv(s.title, 11f, p.text).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(4), 0, 0) })
+                drive.downloadPicture(s.thumbId) { path, _ -> if (path != null) iv.setImageBitmap(android.graphics.BitmapFactory.decodeFile(path)) }
+                control(cell, "media_$i", Color.TRANSPARENT, 12f, false) { openShot(s) }
+                row!!.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
+            }
+            row?.let { r -> while (r.childCount < cols) r.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }
+            if (list.size > mediaShown) grid.addView(button(T.t("Ver más"), "media_more") { mediaShown += 60; lastFocus = "media_more"; render() },
+                LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        }
+        mediaShots?.let { fill(it); return }
+        if (!drive.ready()) { status.text = T.t("Conecta TirsoDrive para ver las capturas."); return }
+        drive.listAllShots { list, err ->
+            if (page != "media") return@listAllShots
+            if (list.isNullOrEmpty()) { status.text = err ?: T.t("Aún no hay capturas. En un juego: menú > Captura de pantalla, o Select + R1."); return@listAllShots }
+            mediaShots = list; fill(list)
+        }
+    }
+    private fun openShot(s: TirsoDrive.Shot) {
+        drive.downloadPicture(s.fullId) { path, _ ->
+            if (path == null) { toast(T.t("No se pudo abrir la captura.")); return@downloadPicture }
+            val big = ImageView(this); big.adjustViewBounds = true; big.setImageBitmap(android.graphics.BitmapFactory.decodeFile(path))
+            val b = AlertDialog.Builder(this).setTitle(s.title).setView(big).setPositiveButton(T.t("Cerrar"), null)
+                .setNeutralButton(T.t("Compartir")) { _, _ -> Screenshots.shareToApps(this, path, s.title) }
+            if (drive.friendsChat() != 0L) b.setNegativeButton(T.t("A amigos")) { _, _ -> Screenshots.shareToFriends(this, drive, path, s.title) }
+            b.show()
+        }
+    }
+
     /** The game's cheats on the TV / PC: tick to turn on or off, or all off. */
     private fun cheatsDialog(d0: RemoteClient.Device) {
         val d = fresh(d0)
@@ -1947,7 +1997,7 @@ class PhoneActivity : Activity() {
             "welcome" -> { if (drive.stage != TirsoDrive.Stage.READY) drive.skip(); go("home") }
             "loading" -> cancelLoading()
             "detail" -> go("library")
-            "consoles", "settings", "friends", "history", "remote" -> go("home")
+            "consoles", "settings", "friends", "history", "remote", "media" -> go("home")
             "set_consoles", "set_home", "set_storage", "set_resolution" -> go("settings")
             "library" -> { query = ""; source = "all"; console = null; go("home") }
             else -> AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
