@@ -29,6 +29,18 @@ object Presets {
         context.getSharedPreferences(OPTIONS, Context.MODE_PRIVATE).edit().putString("resolution_" + console.name, value).apply()
     }
 
+    /** Resolution chosen for one game only (null = same as its console). */
+    @JvmStatic
+    fun gameResolution(context: Context, gameId: String): String? =
+        context.getSharedPreferences(OPTIONS, Context.MODE_PRIVATE).getString("resolution_g_$gameId", null)
+
+    @JvmStatic
+    fun setGameResolution(context: Context, gameId: String, value: String?) {
+        val e = context.getSharedPreferences(OPTIONS, Context.MODE_PRIVATE).edit()
+        if (value == null) e.remove("resolution_g_$gameId") else e.putString("resolution_g_$gameId", value)
+        e.apply()
+    }
+
     fun key(console: Console): String = when (console) {
         Console.GB, Console.GBC -> "gb"
         else -> console.name.lowercase()
@@ -90,10 +102,10 @@ object Presets {
         "mgba_interframe_blending" to "mix_smart", "mgba_color_correction" to "OFF", "mgba_frameskip" to "disabled",
     )
 
-    fun forConsole(context: Context, console: Console, title: String): GameConfig {
+    fun forConsole(context: Context, console: Console, title: String, gameId: String? = null): GameConfig {
         // 2D cores (GB, GBC, GBA, NES, SNES, Mega Drive) draw at a fixed size, so "resolution" there is how the picture
         // is scaled up: low = plain, medium = crisp pixels (the old default), high = smooth upscale.
-        val res = resolution(context, console)
+        val res = gameId?.let { gameResolution(context, it) } ?: resolution(context, console)
         val flat = when (res) { "low" -> "default"; "high" -> "smooth"; else -> "sharp" }
         val base = GameConfig(title = title, core = "", pad = "snes", consoleName = console.title, shader = flat)
         return when (console) {

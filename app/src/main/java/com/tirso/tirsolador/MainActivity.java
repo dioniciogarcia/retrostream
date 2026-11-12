@@ -302,7 +302,7 @@ public class MainActivity extends Activity {
         }
         return h;
     }
-    private void openFavorites() { console = null; favorites = true; mode = 0; query = ""; libraryFocus = ""; libraryScroll = 0; route("library"); }
+    private void openFavorites() { collection = null; console = null; favorites = true; mode = 0; query = ""; libraryFocus = ""; libraryScroll = 0; route("library"); }
 
     private void scrape() {
         GameMeta.refresh(this, library.games, () -> {
@@ -318,7 +318,7 @@ public class MainActivity extends Activity {
         }
     }
     private void cancelPending(){discFor="";discParts=null;if(!pendingPlay.isEmpty()&&selected!=null&&pendingPlay.equals(selected.id)){org.drinkless.tdlib.TdApi.File f=drive.file(selected);if(f!=null&&f.local.isDownloadingActive)drive.cancelDownload(selected);}pendingPlay="";}
-    private void route(String target) { if (embedded != null && target.equals("home")) { finish(); return; } cancelPending();rememberLibrary();page = target; lastFocus = ""; heroEntry = true; render(); }
+    private void route(String target) { if (embedded != null && target.equals("home")) { finish(); return; } cancelPending();rememberLibrary();if (!target.equals("library")) collection = null;page = target; lastFocus = ""; heroEntry = true; render(); }
     private void backToLibrary() {cancelPending();page="library";lastFocus=libraryFocus;heroEntry=true;render();}
     private void render() {
         if (BuildConfig.PHONE) { int want = PhoneGames.lockLandscape(this) ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER; if (getRequestedOrientation() != want) setRequestedOrientation(want); }
@@ -609,7 +609,7 @@ public class MainActivity extends Activity {
         while (index % cols != 0) { row.addView(new View(this), new LinearLayout.LayoutParams(0, -1, 1)); index++; }
     }
     private void openConsole(Console c) {
-        console = c; library.homeConsole(c); favorites = false; mode = 0; query = ""; libraryFocus = ""; libraryScroll = 0; visibleGames = 60; route("library");
+        collection = null; console = c; library.homeConsole(c); favorites = false; mode = 0; query = ""; libraryFocus = ""; libraryScroll = 0; visibleGames = 60; route("library");
         drive.refresh(c);
     }
     private Console heroConsole(java.util.List<Console> consoles) {
@@ -725,14 +725,15 @@ public class MainActivity extends Activity {
             games = new java.util.ArrayList<>(); java.util.List<String> ids = library.recent();
             for (String id : ids) for (Game g : library.games) if (g.id.equals(id) && (console == null || g.console == console) && library.visible(g.console)
                     && g.title.toLowerCase(java.util.Locale.ROOT).contains(query.toLowerCase(java.util.Locale.ROOT))) games.add(g);
-        } else games = library.filtered(console, favorites || mode == 1, query);
+        } else if (collection != null) { java.util.Set<String> ids = library.collection(collection); games = new java.util.ArrayList<>(); for (Game g : library.filtered(null, false, query)) if (ids.contains(g.id)) games.add(g); }
+        else games = library.filtered(console, favorites || mode == 1, query);
         boolean gba = th.equals("gba");
         LinearLayout split = horizontal(); split.setGravity(Gravity.TOP); body.addView(split, new LinearLayout.LayoutParams(-1, 0, 1));
         LinearLayout left = vertical(); split.addView(left, new LinearLayout.LayoutParams(0, -1, 1));
         // title row
         LinearLayout titleRow = horizontal(); titleRow.setPadding(0, 0, 0, px(14));
         LinearLayout titles = vertical();
-        String cname = console == null ? (favorites ? T.t("Favoritos") : T.t("Biblioteca")) : console.title;
+        String cname = collection != null ? collection : console == null ? (favorites ? T.t("Favoritos") : T.t("Biblioteca")) : console.title;
         if (gba) {
             TextView code = tv(console == null ? "ALL" : console.name(), 24, accent, fMono); code.setLetterSpacing(.1f); titles.addView(code);
         }
@@ -774,6 +775,7 @@ public class MainActivity extends Activity {
             ImageView image = coverImage(art, ph); image.setContentDescription(game.title);
             art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(game, image, "Named_Boxarts", "Named_Titles", "Named_Logos");
             if (library.favorite(game)) { TextView fav = tv("★", 30, 0xFFFFB400, fHead); fav.setPadding(px(10), px(4), px(12), 0); art.addView(fav, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END)); }
+            if (library.completed(game)) { TextView done = tv("🏆", 24, Color.WHITE, fBody); done.setPadding(px(8), px(3), px(8), px(3)); done.setBackground(round(0xCC14161E, 12)); FrameLayout.LayoutParams dl = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END); dl.setMargins(0, 0, px(8), px(8)); art.addView(done, dl); }
             cell.addView(art, new LinearLayout.LayoutParams(cardW, Math.round(cardW / coverRatio(game.console))));
             cell.setPadding(px(7), px(7), px(7), px(7));
             final int ringColor = focusRing();
@@ -835,7 +837,10 @@ public class MainActivity extends Activity {
         @Override public void play(Game g, boolean fresh) { freshStart = fresh; startPlay(g); }
         @Override public void shots(Game g) { showShots(g); }
         @Override public void pin(Game g) { pinShortcut(g); }
+        @Override public void openCollection(String name) { collection = name; console = null; favorites = false; mode = 0; query = ""; libraryFocus = ""; libraryScroll = 0; route("library"); }
+        @Override public void open(Game g) { collection = null; console = g.console; favorites = false; mode = 0; query = ""; libraryFocus = "game_" + g.id; libraryScroll = 0; route("library"); }
     };
+    private String collection;   // the library shows only this collection
     private void gameMore(Game game) { gameMore(game, false); }
     private void gameMore(Game game, boolean recent) { GameMenu.show(this, game, library, drive, recent, menuHost); }
     private void pinShortcut(Game game) {
@@ -1146,6 +1151,8 @@ public class MainActivity extends Activity {
         sItem(b, T.t("Consolas"), shownConsoles + T.t(" de ") + Console.all().length + T.t(" visibles"), "consoles_page", 0xFF2F6DF6, null, () -> route("consoles"));
         sItem(b, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "artwork_dl", 0xFFFF9A2E, null, () -> route("artwork"));
         sItem(b, T.t("Limpiar grupos vacíos"), T.t("Borra grupos TD duplicados sin archivos"), "cleanup_groups", 0xFFFF4D73, null, this::cleanupGroups);
+        sItem(b, T.t("Colecciones"), library.collections().size() + T.t(" listas"), "collections", 0xFF7A4DFF, null, () -> GameMenu.collections(this, menuHost));
+        sItem(b, T.t("Estadísticas de juego"), T.t("Horas por consola y más jugados"), "play_stats", 0xFF2AA8FF, null, () -> GameMenu.stats(this));
         sItem(b, T.t("Juegos sin información"), T.t("Busca a mano la información o portada que falta"), "missing_info", 0xFFF0B455, null, () -> GameMenu.missing(this, menuHost));
         sItem(b, T.t("Juegos ocultos"), library.hidden().size() + T.t(" ocultos"), "hidden_games", 0xFF8C93A8, null, () -> GameMenu.hidden(this, menuHost));
         sItem(b, T.t("Espacio usado"), T.t("Descargas, portadas, partidas · liberar espacio"), "space_used", 0xFF22C55E, null, () -> GameMenu.storage(this, drive, menuHost));
@@ -1268,7 +1275,7 @@ public class MainActivity extends Activity {
             sItem(d, T.t("Consolas en cuadrícula"), g ? T.t("Las primeras 9 y «Ver todo»") : T.t("Una fila que se desliza (como antes)"), "home_grid", 0xFF2F6DF6, g, () -> { HomeLayout.consoleGrid(this, !g); lastFocus = "home_grid"; render(); });
         }
         LinearLayout sec = sGroup(T.t("Secciones"));
-        String[][] names = {{"continue", T.t("Continuar")}, {"recent", T.t("Jugados recientemente")}, {"consoles", T.t("Consolas")}, {"friends", T.t("Amigos")}, {"suggested", T.t("Juegos sugeridos")}};
+        String[][] names = {{"continue", T.t("Continuar")}, {"recent", T.t("Jugados recientemente")}, {"new", T.t("Nuevos en tus canales")}, {"consoles", T.t("Consolas")}, {"friends", T.t("Amigos")}, {"suggested", T.t("Juegos sugeridos")}};
         for (String[] n : names) {
             if (n[0].equals("suggested") && !BuildConfig.PHONE) continue;
             boolean on = HomeLayout.shown(this, n[0]);
@@ -1299,8 +1306,22 @@ public class MainActivity extends Activity {
             for (Game g : rec.subList(1, rec.size())) r.addView(recentCardTv(g), new LinearLayout.LayoutParams(Math.max(px(190), Math.round(px(230) * coverRatio(g.console)) + px(16)), -2));
             right.addView(hscroll(r));
         }
+        java.util.List<Game> fresh = HomeLayout.shown(this, "new") ? library.newGames(14) : new java.util.ArrayList<>();
+        if (!fresh.isEmpty()) {
+            right.addView(homeSection(T.t("Nuevos en tus canales") + " · " + fresh.size()));
+            LinearLayout r = horizontal(); r.setGravity(Gravity.TOP); r.setClipChildren(false); r.setClipToPadding(false); r.setPadding(px(6), px(6), px(6), px(6));
+            for (Game g : fresh.subList(0, Math.min(15, fresh.size()))) {
+                View cell = recentCardTv(g);
+                cell.setOnClickListener(v -> menuHost.open(g)); cell.setOnLongClickListener(v -> { gameMore(g); return true; });
+                r.addView(cell, new LinearLayout.LayoutParams(Math.max(px(190), Math.round(px(230) * coverRatio(g.console)) + px(16)), -2));
+            }
+            right.addView(hscroll(r));
+        }
         if (HomeLayout.shown(this, "consoles")) {
-            right.addView(homeSection(T.t("Consolas")));
+            LinearLayout ch = horizontal(); ch.setGravity(Gravity.BOTTOM); ch.addView(homeSection(T.t("Consolas")), new LinearLayout.LayoutParams(0, -2, 1));
+            TextView dice = tv("🎲  " + T.t("Sorpréndeme"), 24, accent, fBody); dice.setPadding(px(14), px(6), px(14), px(6));
+            focusableWith(dice, "home_surprise", f -> { GradientDrawable g = round(0, 14); if (f) g.setStroke(px(4), focusRing()); return g; }, () -> GameMenu.surprise(this, menuHost));
+            ch.addView(dice); right.addView(ch);
             LinearLayout r = horizontal(); r.setClipChildren(false); r.setClipToPadding(false); r.setPadding(px(6), px(6), px(6), px(6));
             for (Console c : visible) r.addView(consoleChipTv(c), new LinearLayout.LayoutParams(px(250), px(150)));
             right.addView(hscroll(r));

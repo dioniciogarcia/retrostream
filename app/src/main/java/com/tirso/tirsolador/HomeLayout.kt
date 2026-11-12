@@ -11,7 +11,7 @@ internal object HomeLayout {
     /** Phone: consoles as a 3x3 grid with "See all" (true) or as one swipeable row (false, the earlier look). */
     @JvmStatic fun consoleGrid(ctx: Context) = p(ctx).getBoolean("console_grid", true)
     @JvmStatic fun consoleGrid(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean("console_grid", on).apply()
-    val SECTIONS = listOf("continue", "recent", "consoles", "friends", "suggested")
+    val SECTIONS = listOf("continue", "recent", "new", "consoles", "friends", "suggested")
     @JvmStatic fun shown(ctx: Context, section: String) = p(ctx).getBoolean("show_$section", section != "suggested")
     @JvmStatic fun shown(ctx: Context, section: String, on: Boolean) = p(ctx).edit().putBoolean("show_$section", on).apply()
 }

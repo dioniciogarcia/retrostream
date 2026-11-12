@@ -147,7 +147,48 @@ public final class Library {
         return out;
     }
     public int count(Console c) { int n = 0; for (Game g : games) if (g.console == c) n++; return n; }
+    // ------------------------------------------------------------------ collections, completed, new games
+    private JSONObject collectionsJson() { try { return new JSONObject(prefs.getString("collections", "{}")); } catch (JSONException e) { return new JSONObject(); } }
+    /** Your own lists ("Couch co-op", "Finished"…), in the order they were made. */
+    public List<String> collections() { List<String> out = new ArrayList<>(); java.util.Iterator<String> it = collectionsJson().keys(); while (it.hasNext()) out.add(it.next()); return out; }
+    public Set<String> collection(String name) { Set<String> out = new HashSet<>(); JSONArray a = collectionsJson().optJSONArray(name); if (a != null) for (int i = 0; i < a.length(); i++) out.add(a.optString(i)); return out; }
+    public void collect(String name, Game g, boolean in) {
+        try { JSONObject all = collectionsJson(); Set<String> ids = collection(name); if (in) ids.add(g.id); else ids.remove(g.id);
+            all.put(name, new JSONArray(ids)); prefs.edit().putString("collections", all.toString()).apply(); } catch (JSONException ignored) { }
+    }
+    public void createCollection(String name) { try { JSONObject all = collectionsJson(); if (!all.has(name)) { all.put(name, new JSONArray()); prefs.edit().putString("collections", all.toString()).apply(); } } catch (JSONException ignored) { } }
+    public void deleteCollection(String name) { JSONObject all = collectionsJson(); all.remove(name); prefs.edit().putString("collections", all.toString()).apply(); }
+    public void renameCollection(String from, String to) {
+        try { JSONObject all = collectionsJson(); if (!all.has(from) || all.has(to)) return; JSONObject out = new JSONObject();
+            java.util.Iterator<String> it = all.keys(); while (it.hasNext()) { String k = it.next(); out.put(k.equals(from) ? to : k, all.get(k)); }
+            prefs.edit().putString("collections", out.toString()).apply(); } catch (JSONException ignored) { }
+    }
+    public boolean completed(Game g) { return prefs.getStringSet("completed", new HashSet<>()).contains(g.id); }
+    public void completed(Game g, boolean done) { Set<String> s = new HashSet<>(prefs.getStringSet("completed", new HashSet<>())); if (done) s.add(g.id); else s.remove(g.id); prefs.edit().putStringSet("completed", s).apply(); }
+    private JSONObject addedJson() { try { return new JSONObject(prefs.getString("added_at", "{}")); } catch (JSONException e) { return new JSONObject(); } }
+    /** Games that showed up in your channels in the last [days] days, newest first. */
+    public List<Game> newGames(int days) {
+        JSONObject added = addedJson(); long since = System.currentTimeMillis() - days * 86_400_000L; Set<String> hidden = hidden();
+        List<Game> out = new ArrayList<>();
+        for (Game g : games) if (added.optLong(g.id, 0) > since && !hidden.contains(g.id) && visible(g.console)) out.add(g);
+        java.util.Collections.sort(out, (a, b) -> { int c = Long.compare(added.optLong(b.id), added.optLong(a.id)); return c != 0 ? c : Long.compare(b.messageId, a.messageId); });
+        return out;
+    }
+    /** Remembers when each game first appeared (not on the first catalog, nor when a whole channel is assigned at once). */
+    private void noteNew(java.util.List<Game> incoming) {
+        Set<String> before = new HashSet<>();
+        try { String old = prefs.getString("catalog", null); if (old != null) for (Game g : parse(old)) before.add(g.id); } catch (Exception ignored) { }
+        if (before.isEmpty()) return;
+        List<Game> fresh = new ArrayList<>(); for (Game g : incoming) if (!before.contains(g.id)) fresh.add(g);
+        if (fresh.isEmpty() || fresh.size() > 150) return;
+        try { JSONObject added = addedJson(); long now = System.currentTimeMillis();
+            for (Game g : fresh) if (!added.has(g.id)) added.put(g.id, now);
+            JSONObject kept = new JSONObject(); java.util.Iterator<String> it = added.keys();
+            while (it.hasNext()) { String k = it.next(); long t = added.optLong(k); if (now - t < 60L * 86_400_000L) kept.put(k, t); }
+            prefs.edit().putString("added_at", kept.toString()).apply(); } catch (JSONException ignored) { }
+    }
     public void replaceTelegram(java.util.List<Game> incoming) throws JSONException {
+        noteNew(incoming);
         JSONArray array=new JSONArray();for(Game game:incoming)array.put(game.toJson());
         importCatalog(new JSONObject().put("schemaVersion",1).put("games",array).toString());
     }

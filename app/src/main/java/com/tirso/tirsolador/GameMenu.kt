@@ -32,6 +32,8 @@ internal object GameMenu {
         fun play(g: Game, fresh: Boolean)  // fresh = from the start, without "continue where you left off"
         fun shots(g: Game)
         fun pin(g: Game)
+        fun openCollection(name: String)   // the library showing only that collection
+        fun open(g: Game)                  // the game's page (phone) / the game in its console's library (TV)
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -60,6 +62,12 @@ internal object GameMenu {
         add(T.t("Buscar información del juego")) { search(a, g, false, host) }
         add(T.t("Editar información")) { editInfo(a, g, host) }
         add((if (lib.favorite(g)) T.t("Quitar de favoritos") else T.t("Añadir a favoritos"))) { lib.toggleFavorite(g); host.refresh() }
+        add(T.t("Añadir a una colección")) { collectionPicker(a, lib, g, host) }
+        add(if (lib.completed(g)) T.t("Quitar «Completado»") else T.t("Marcar como completado")) { lib.completed(g, !lib.completed(g)); host.refresh() }
+        if (g.console != Console.MAME) add(T.t("Ajustes de este juego")) { gameSettings(a, g) }
+        if (g.telegramAccount != 0L) add(T.t("Compartir con un amigo")) { share(a, drive, g) }
+        if (BuildConfig.PHONE && g.telegramAccount != 0L && !downloaded(a, drive, g) && !DownloadQueue.contains(g))
+            add(T.t("Descargar para jugar sin conexión")) { val n = DownloadQueue.add(a, drive, listOf(g)); if (n > 0) toast(a, T.t("Añadido a la cola de descargas")) }
         add(T.t("Capturas de pantalla")) { host.shots(g) }
         val sm = a.getSystemService(android.content.pm.ShortcutManager::class.java)
         if (sm != null && sm.isRequestPinShortcutSupported) add(T.t("Añadir a la pantalla de inicio")) { host.pin(g) }
@@ -200,6 +208,129 @@ internal object GameMenu {
         input.setOnEditorActionListener { _, id, ev -> if (id == EditorInfo.IME_ACTION_SEARCH || ev?.keyCode == KeyEvent.KEYCODE_ENTER) { doSearch(); true } else false }
         dialog.show()
         doSearch()
+    }
+
+    // ------------------------------------------------------------------ collections, per-game settings, sharing
+    private fun ask(a: Activity, title: String, start: String, done: (String) -> Unit) {
+        val input = EditText(a).apply { setText(start); setSingleLine(); setSelection(text.length) }
+        val box = FrameLayout(a).apply { setPadding(dp(a, 20), dp(a, 8), dp(a, 20), 0); addView(input) }
+        AlertDialog.Builder(a).setTitle(title).setView(box)
+            .setPositiveButton(T.t("Guardar")) { _, _ -> val t = input.text.toString().trim(); if (t.isNotEmpty()) done(t) }.setNegativeButton(T.t("Cancelar"), null).show()
+    }
+    private fun collectionPicker(a: Activity, lib: Library, g: Game, host: Host) {
+        val names = lib.collections()
+        val checked = names.map { g.id in lib.collection(it) }.toBooleanArray()
+        val b = AlertDialog.Builder(a).setTitle(T.t("Colecciones · ") + g.title)
+        if (names.isEmpty()) b.setMessage(T.t("Aún no tienes colecciones. Crea la primera."))
+        else b.setMultiChoiceItems(names.toTypedArray(), checked) { _, w, on -> lib.collect(names[w], g, on) }
+        b.setPositiveButton(T.t("Listo")) { _, _ -> host.refresh() }
+            .setNeutralButton(T.t("Nueva colección")) { _, _ -> ask(a, T.t("Nueva colección"), "") { name -> lib.createCollection(name); lib.collect(name, g, true); toast(a, g.title + T.t(" añadido a ") + name); host.refresh() } }
+            .show()
+    }
+    /** Your collections: open one, rename or delete it. */
+    @JvmStatic fun collections(a: Activity, host: Host) {
+        val lib = Library(a); val names = lib.collections()
+        if (names.isEmpty()) {
+            AlertDialog.Builder(a).setTitle(T.t("Colecciones")).setMessage(T.t("Crea listas propias como «Para jugar en pareja» o «Terminados». Mantén pulsado un juego y elige «Añadir a una colección»."))
+                .setPositiveButton(T.t("Nueva colección")) { _, _ -> ask(a, T.t("Nueva colección"), "") { lib.createCollection(it); host.refresh() } }.setNegativeButton(T.t("Cerrar"), null).show()
+            return
+        }
+        val labels = names.map { n -> n + "  ·  " + lib.collection(n).count { id -> lib.games.any { it.id == id } } + T.t(" juegos") }.toTypedArray()
+        AlertDialog.Builder(a).setTitle(T.t("Colecciones")).setItems(labels) { _, w ->
+            val n = names[w]
+            AlertDialog.Builder(a).setTitle(n).setItems(arrayOf(T.t("Abrir"), T.t("Cambiar nombre"), T.t("Borrar colección"))) { _, x ->
+                when (x) {
+                    0 -> host.openCollection(n)
+                    1 -> ask(a, T.t("Cambiar nombre"), n) { lib.renameCollection(n, it); host.refresh() }
+                    else -> AlertDialog.Builder(a).setTitle(T.t("Borrar colección")).setMessage(n + T.t(": los juegos no se borran, solo la lista."))
+                        .setPositiveButton(T.t("Borrar")) { _, _ -> lib.deleteCollection(n); host.refresh() }.setNegativeButton(T.t("Cancelar"), null).show()
+                }
+            }.show()
+        }.setPositiveButton(T.t("Nueva colección")) { _, _ -> ask(a, T.t("Nueva colección"), "") { lib.createCollection(it); host.refresh() } }
+            .setNegativeButton(T.t("Cerrar"), null).show()
+    }
+
+    /** Resolution for this game only (the rest of its settings are in the game's menu > "Settings for this game only"). */
+    private fun gameSettings(a: Activity, g: Game) {
+        val keys = arrayOf<String?>(null, "low", "medium", "high")
+        val labels = arrayOf(T.t("Igual que la consola") + " (" + resName(Presets.resolution(a, g.console)) + ")", T.t("Baja"), T.t("Media"), T.t("Alta"))
+        val now = keys.indexOf(Presets.gameResolution(a, g.id)).coerceAtLeast(0)
+        AlertDialog.Builder(a).setTitle(T.t("Resolución de este juego")).setSingleChoiceItems(labels, now) { d, w ->
+            Presets.setGameResolution(a, g.id, keys[w]); d.dismiss()
+            toast(a, T.t("Se usa la próxima vez que abras el juego. Dentro del juego, «Ajustes solo para este juego» guarda también los controles táctiles, el filtro y el avance rápido."))
+        }.setNegativeButton(T.t("Cancelar"), null).show()
+    }
+    private fun resName(k: String) = when (k) { "low" -> T.t("Baja"); "high" -> T.t("Alta"); else -> T.t("Media") }
+
+    private fun share(a: Activity, drive: TirsoDrive, g: Game) {
+        drive.messageLink(g) { link, err ->
+            if (link == null) { toast(a, err ?: T.t("No se pudo crear el enlace.")); return@messageLink }
+            val text = g.title + " (" + g.console.title + ")\n" + link
+            val opts = mutableListOf<String>()
+            if (drive.friendsChat() != 0L) opts += T.t("Enviar al grupo de amigos")
+            opts += T.t("Compartir con otra app")
+            AlertDialog.Builder(a).setTitle(T.t("Compartir con un amigo")).setItems(opts.toTypedArray()) { _, w ->
+                if (opts[w] == T.t("Enviar al grupo de amigos"))
+                    drive.tellFriends("🎮 " + T.t("Te recomiendo: ") + text) { ok, e -> toast(a, if (ok == true) T.t("Enviado al grupo de amigos") else (e ?: T.t("No se pudo enviar"))) }
+                else runCatching {
+                    a.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text), T.t("Compartir con un amigo")))
+                }.onFailure { toast(a, T.t("No hay apps para compartir en este dispositivo.")) }
+            }.setNegativeButton(T.t("Cancelar"), null).show()
+        }
+    }
+
+    /** A random game from your library: play it, try another, or close. */
+    @JvmStatic fun surprise(a: Activity, host: Host) {
+        val lib = Library(a)
+        val pool = lib.filtered(null, false, "")
+        if (pool.isEmpty()) { toast(a, T.t("Tu biblioteca está vacía.")); return }
+        val played = lib.recent().toSet()
+        val fresh = pool.filter { it.id !in played && !lib.completed(it) }
+        val g = (if (fresh.isNotEmpty() && Math.random() < 0.8) fresh else pool).random()
+        val more = listOfNotNull(g.console.title, PlayTime.label(a, g.id).takeIf { it.isNotEmpty() }?.let { it + T.t(" jugadas") } ?: T.t("Nunca jugado"),
+            GameMeta.info(a, g).optInt("year").takeIf { it > 0 }?.toString()).joinToString(" · ")
+        AlertDialog.Builder(a).setTitle("🎲 " + g.title).setMessage(more)
+            .setPositiveButton(T.t("Jugar")) { _, _ -> host.play(g, false) }
+            .setNeutralButton(T.t("Otro")) { _, _ -> surprise(a, host) }
+            .setNegativeButton(T.t("Ver juego")) { _, _ -> host.open(g) }.show()
+    }
+
+    /** Time played: total, per console and your most played games. */
+    @JvmStatic fun stats(a: Activity) {
+        val lib = Library(a)
+        val per = lib.games.map { it to PlayTime.get(a, it.id) }.filter { it.second >= 60_000 }
+        if (per.isEmpty()) { toast(a, T.t("Aún no hay tiempo de juego registrado.")); return }
+        fun h(ms: Long): String { val m = ms / 60000; return if (m < 60) "$m min" else "${m / 60} h ${m % 60} min" }
+        val sb = StringBuilder()
+        sb.append(T.t("Total: ")).append(h(per.sumOf { it.second })).append(" · ").append(per.size).append(T.t(" juegos")).append("\n")
+        sb.append(T.t("Completados: ")).append(lib.games.count { lib.completed(it) }).append("\n\n")
+        sb.append(T.t("POR CONSOLA")).append("\n")
+        for ((c, list) in per.groupBy { it.first.console }.toList().sortedByDescending { e -> e.second.sumOf { it.second } })
+            sb.append("• ").append(c.title).append(": ").append(h(list.sumOf { it.second })).append("\n")
+        sb.append("\n").append(T.t("MÁS JUGADOS")).append("\n")
+        per.sortedByDescending { it.second }.take(10).forEachIndexed { i, (g, t) -> sb.append(i + 1).append(". ").append(g.title).append(" — ").append(h(t)).append("\n") }
+        val text = TextView(a).apply { this.text = sb.toString().trim(); textSize = 15f; setPadding(dp(a, 22), dp(a, 12), dp(a, 22), dp(a, 8)); setLineSpacing(0f, 1.25f); isFocusable = true }
+        AlertDialog.Builder(a).setTitle(T.t("Estadísticas de juego")).setView(ScrollView(a).apply { addView(text) }).setPositiveButton(T.t("Cerrar"), null).show()
+    }
+
+    /** Phone: what's downloading for offline play, with a way to stop it. */
+    @JvmStatic fun queue(a: Activity, drive: TirsoDrive, host: Host) {
+        val list = DownloadQueue.list()
+        val b = AlertDialog.Builder(a).setTitle(T.t("Cola de descargas"))
+        if (list.isEmpty()) b.setMessage(T.t("No hay descargas. Mantén pulsado un juego y elige «Descargar para jugar sin conexión», o descarga una consola entera aquí."))
+        else b.setMessage(DownloadQueue.status() + "\n\n" + list.joinToString("\n") { "• " + it.title })
+        b.setPositiveButton(T.t("Descargar una consola")) { _, _ ->
+            val lib = Library(a); val consoles = Console.all().filter { c -> lib.games.any { it.console == c && it.telegramAccount != 0L } }
+            AlertDialog.Builder(a).setTitle(T.t("Descargar una consola")).setItems(consoles.map { c -> c.title + "  ·  " + lib.filtered(c, false, "").count { it.telegramAccount != 0L } + T.t(" juegos") }.toTypedArray()) { _, w ->
+                val games = lib.filtered(consoles[w], false, "").filter { it.telegramAccount != 0L }
+                val bytes = games.sumOf { it.fileSize }
+                AlertDialog.Builder(a).setTitle(consoles[w].title).setMessage(games.size.toString() + T.t(" juegos · ") + fmt(a, bytes) + T.t(". Se guardan en el teléfono para jugar sin conexión."))
+                    .setPositiveButton(T.t("Descargar")) { _, _ -> toast(a, DownloadQueue.add(a, drive, games).toString() + T.t(" juegos añadidos a la cola")); host.refresh() }
+                    .setNegativeButton(T.t("Cancelar"), null).show()
+            }.show()
+        }
+        if (list.isNotEmpty()) b.setNeutralButton(T.t("Detener todo")) { _, _ -> DownloadQueue.cancelAll(); toast(a, T.t("Descargas detenidas")); host.refresh() }
+        b.setNegativeButton(T.t("Cerrar"), null).show()
     }
 
     // ------------------------------------------------------------------ settings windows

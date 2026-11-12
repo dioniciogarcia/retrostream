@@ -553,6 +553,22 @@ final class TirsoDrive {
     private boolean menuVisible,gameVisible,playingIsolated,heartbeatRunning,wasActive;
     void friendsListener(Runnable r){friendsListener=r;}
     private void friendsChanged(){if(friendsListener!=null)friendsListener.run();}
+    /** A t.me link to a game's message (opens in Telegram for anyone in that channel). */
+    void messageLink(Game game,Done<String> callback){
+        Done<String> cb=once(callback,null);
+        if(stage!=Stage.READY||game.chatId==0){cb.done(null,T.t("Conecta TirsoDrive primero."));return;}
+        send(new TdApi.GetMessageLink(game.chatId,game.messageId,0,0,null,false,false),r->{
+            if(r instanceof TdApi.MessageLink)cb.done(((TdApi.MessageLink)r).link,null);
+            else cb.done(null,r instanceof TdApi.Error?((TdApi.Error)r).message:T.t("No se pudo crear el enlace."));
+        });
+    }
+    /** Posts a message in the friends group. */
+    void tellFriends(String text,Done<Boolean> callback){
+        Done<Boolean> cb=once(callback,false);long chat=friendsChat();
+        if(chat==0||stage!=Stage.READY){cb.done(false,T.t("Primero crea o únete al grupo de amigos."));return;}
+        TdApi.InputMessageText content=new TdApi.InputMessageText(new TdApi.FormattedText(text,new TdApi.TextEntity[0]),null,false);
+        send(new TdApi.SendMessage(chat,null,null,null,null,content),r->cb.done(r instanceof TdApi.Message,r instanceof TdApi.Error?((TdApi.Error)r).message:null));
+    }
     long friendsChat(){return prefs.getLong("friendsChat_"+accountId,0);}
     String friendsLink(){return prefs.getString("friendsLink_"+accountId,"");}
     boolean shareActivity(){return prefs.getBoolean("friendsShare",true);}

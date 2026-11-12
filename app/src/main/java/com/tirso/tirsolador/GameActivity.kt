@@ -138,7 +138,7 @@ open class GameActivity : AppCompatActivity() {
 
         console = runCatching { Console.valueOf(intent.getStringExtra("console") ?: "") }.getOrDefault(Console.NDS)
         gameTitle = intent.getStringExtra("title")?.takeIf { it.isNotBlank() } ?: console.title
-        config = Presets.forConsole(this, console, gameTitle)
+        config = Presets.forConsole(this, console, gameTitle, intent.getStringExtra("gameid"))
         screenMode = config.screenMode
         aspect = config.aspect
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -375,6 +375,7 @@ open class GameActivity : AppCompatActivity() {
                 view.queueEvent { com.swordfish.libretrodroid.LibretroDroid.setControllerType(0, type) }
             }
             findViewById<View>(R.id.loading).visibility = View.GONE
+            if (ownSettings) prefs.getInt("ff_g_$gid", 1).takeIf { it > 1 }?.let { fastSpeed = it; view.frameSpeed = it }
             if (config.autoResume && isDolphin && !prefs.getBoolean("dolphin_state_v2", false)) {
                 // Older GameCube/Wii players saved this from the wrong thread, which broke some textures.
                 saves.deleteAutoState()
@@ -814,6 +815,7 @@ open class GameActivity : AppCompatActivity() {
         if (hasTouch) entries += "Touch controls" to { closeMenu(); window.decorView.postDelayed({ touchEditor() }, 200) }
         entries += "Take screenshot (Select + R1)" to { closeMenu(); window.decorView.postDelayed({ takeScreenshot() }, 450) }
         entries += (if (fastSpeed > 1) "Fast forward: ${fastSpeed}x (Select + R2)" else "Fast forward: off (Select + R2)") to { closeMenu(); toggleFastForward() }
+        if (gid.isNotEmpty()) entries += (if (ownSettings) "Settings for this game only: on" else "Settings for this game only: off") to { closeMenu(); toggleOwnSettings() }
         if (cheats.available()) {
             val n = cheats.enabled.size
             entries += (if (n > 0) "Cheats ($n on)" else "Cheats") to { toast("Looking for cheats…"); cheats.ensure { cheats.show(retroView) { closeMenu() } } }
@@ -863,10 +865,21 @@ open class GameActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------ touch controls editor
-    private fun touchKey(k: String) = "touch_${k}_${console.name}"
-    private fun touchSize() = prefs.getFloat(touchKey("size"), 1f)
-    private fun touchOpacity() = prefs.getFloat(touchKey("alpha"), 1f)
-    private fun touchLift() = prefs.getFloat(touchKey("lift"), 0f)
+    // "Settings for this game only": touch controls, screen filter and fast forward kept for this game alone.
+    private val gid by lazy { (intent.getStringExtra("gameid") ?: "").replace(Regex("[^A-Za-z0-9]"), "_") }
+    private val ownSettings get() = gid.isNotEmpty() && prefs.getBoolean("own_$gid", false)
+    private fun touchKey(k: String) = if (ownSettings) "touch_${k}_g_$gid" else "touch_${k}_${console.name}"
+    private fun touchValue(k: String, def: Float) = prefs.getFloat(touchKey(k), prefs.getFloat("touch_${k}_${console.name}", def))
+    private fun touchSize() = touchValue("size", 1f)
+    private fun touchOpacity() = touchValue("alpha", 1f)
+    private fun touchLift() = touchValue("lift", 0f)
+    private fun toggleOwnSettings() {
+        val on = !ownSettings
+        prefs.edit().putBoolean("own_$gid", on).apply()
+        if (on) prefs.edit().putInt("ff_g_$gid", fastSpeed).apply()
+        toast(if (on) "This game now keeps its own touch controls, screen filter and fast forward" else "This game uses the console's settings again")
+        retroView?.shader = shaderFor(screenFilter); relayout()
+    }
     private fun relayout() { val w = window.decorView.width; val h = window.decorView.height; if (w > 0 && h > 0) arrangeScreen(w, h) }
     private fun touchEditor() {
         val box = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; val pd = (20 * resources.displayMetrics.density).toInt(); setPadding(pd, pd / 2, pd, 0) }
@@ -935,6 +948,7 @@ open class GameActivity : AppCompatActivity() {
     private fun toggleFastForward() {
         fastSpeed = when (fastSpeed) { 1 -> 2; 2 -> 3; else -> 1 }
         retroView?.frameSpeed = fastSpeed
+        if (ownSettings) prefs.edit().putInt("ff_g_$gid", fastSpeed).apply()
         toast(if (fastSpeed > 1) "Fast forward ${fastSpeed}x" else "Normal speed")
     }
     private fun takeScreenshot() {
@@ -1262,7 +1276,7 @@ open class GameActivity : AppCompatActivity() {
     private val pictureFix get() = prefs.getInt("picture_fix_v6", if (config.graphics == "opengl") SAFE_PICTURE else 0)
 
     /** The way the picture is scaled to the screen (the game's own resolution stays the same). */
-    private val screenFilter get() = prefs.getString("screen_filter", null) ?: config.shader
+    private val screenFilter get() = (if (ownSettings) prefs.getString("screen_filter_g_$gid", null) else null) ?: prefs.getString("screen_filter", null) ?: config.shader
 
     private fun shaderFor(id: String): ShaderConfig = when (id) {
         "sharp" -> ShaderConfig.Sharp
@@ -1279,7 +1293,7 @@ open class GameActivity : AppCompatActivity() {
             .setTitle(tr("Screen filter"))
             .setSingleChoiceItems(SCREEN_FILTERS.map { tr(it.second) + "\n" + tr(it.third) }.toTypedArray(),
                 ids.indexOf(screenFilter).coerceAtLeast(0)) { d, which ->
-                prefs.edit().putString("screen_filter", ids[which]).apply()
+                prefs.edit().putString(if (ownSettings) "screen_filter_g_$gid" else "screen_filter", ids[which]).apply()
                 retroView?.shader = shaderFor(ids[which])
                 d.dismiss(); closeMenu()
             }
