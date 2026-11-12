@@ -79,13 +79,13 @@ object Remote {
     private val random = SecureRandom()
 
     private fun prefs() = app.getSharedPreferences("remote", Context.MODE_PRIVATE)
-    fun enabled(ctx: Context) = ctx.getSharedPreferences("remote", Context.MODE_PRIVATE).getBoolean("on", true)
-    fun setEnabled(ctx: Context, on: Boolean) = ctx.getSharedPreferences("remote", Context.MODE_PRIVATE).edit().putBoolean("on", on).apply()
-    fun phones(ctx: Context): List<String> {
+    @JvmStatic fun enabled(ctx: Context) = ctx.getSharedPreferences("remote", Context.MODE_PRIVATE).getBoolean("on", true)
+    @JvmStatic fun setEnabled(ctx: Context, on: Boolean) = ctx.getSharedPreferences("remote", Context.MODE_PRIVATE).edit().putBoolean("on", on).apply()
+    @JvmStatic fun phones(ctx: Context): List<String> {
         val j = runCatching { JSONObject(ctx.getSharedPreferences("remote", Context.MODE_PRIVATE).getString("phones", "{}")!!) }.getOrDefault(JSONObject())
         return j.keys().asSequence().map { j.optJSONObject(it)?.optString("name") ?: "" }.toList()
     }
-    fun forget(ctx: Context) = ctx.getSharedPreferences("remote", Context.MODE_PRIVATE).edit().putString("phones", "{}").apply()
+    @JvmStatic fun forget(ctx: Context) = ctx.getSharedPreferences("remote", Context.MODE_PRIVATE).edit().putString("phones", "{}").apply()
     private fun id(): String {
         var id = prefs().getString("id", null)
         if (id == null) { id = (1..16).map { "0123456789abcdef"[random.nextInt(16)] }.joinToString(""); prefs().edit().putString("id", id).apply() }
@@ -95,7 +95,7 @@ object Remote {
         ?.takeIf { it.isNotBlank() } ?: (Build.MANUFACTURER.replaceFirstChar { it.uppercase() } + " " + Build.MODEL).trim()
 
     /** TV app only: starts listening (once per app process). */
-    fun start(ctx: Context) {
+    @JvmStatic fun start(ctx: Context) {
         if (started || BuildConfig.PHONE) return
         started = true
         app = ctx.applicationContext
@@ -133,7 +133,7 @@ object Remote {
         }
     }
     /** The TV's own screen is about to download / start this game (asked from the phone or not). */
-    fun loading(g: Game) { pending = brief(g); pendingAt = System.currentTimeMillis() }
+    @JvmStatic fun loading(g: Game) { pending = brief(g); pendingAt = System.currentTimeMillis() }
 
     private fun brief(g: Game) = JSONObject().put("id", g.id).put("title", g.title).put("console", g.console.name)
         .put("chatId", g.chatId).put("messageId", g.messageId).put("fileName", g.fileName ?: "")
