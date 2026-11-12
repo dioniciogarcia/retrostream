@@ -1011,30 +1011,6 @@ class PhoneActivity : Activity() {
             root.postDelayed(this, if (page == "remote") 2500 else 6000)
         }
     }
-    // Live screen: a small picture of the TV / PC every two seconds while the remote is open.
-    private val liveBitmaps = mutableMapOf<String, android.graphics.Bitmap>()
-    private var liveView: ImageView? = null
-    private var liveBusy = false
-    private val framer = object : Runnable {
-        override fun run() {
-            if (!polling || page != "remote") return
-            val d = remoteDevice?.let { fresh(it) }
-            val s = d?.let { castStatus[it.id] }
-            val can = s?.optJSONArray("controls")?.toString()?.contains("\"frame\"") == true
-            if (d != null && s?.optString("state") == "playing" && can && !liveBusy) {
-                liveBusy = true
-                RemoteClient.call(d, JSONObject().put("cmd", "control").put("action", "frame"), 6000) { r ->
-                    liveBusy = false
-                    val b64 = r.optString("jpg"); if (b64.isEmpty()) return@call
-                    val bytes = runCatching { android.util.Base64.decode(b64, android.util.Base64.DEFAULT) }.getOrNull() ?: return@call
-                    val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@call
-                    liveBitmaps[d.id] = bmp
-                    liveView?.let { it.setImageBitmap(bmp); it.visibility = View.VISIBLE }
-                }
-            }
-            root.postDelayed(this, 2000)
-        }
-    }
     private fun startPolling() { RemoteClient.init(this); misses = 0; lastSearch = 0; if (!polling) { polling = true; root.post(poller) } }
     private fun stopPolling() { polling = false; root.removeCallbacks(poller) }
     private var misses = 0
@@ -1272,132 +1248,125 @@ class PhoneActivity : Activity() {
         val paused = s?.optBoolean("paused") == true
         val consoleTitle = Console.values().firstOrNull { it.name == j?.optString("console") }?.title ?: j?.optString("console") ?: ""
 
-        // Fills the screen: the picture takes what the controls leave (scrolls only on small or sideways screens).
-        val col = vertical(); col.setPadding(dp(16), 0, dp(16), dp(18))
-        val top = horizontal(); top.setPadding(0, dp(22), 0, dp(8))
+        // Upright, everything fits on one screen: the cover takes whatever the controls leave. Sideways it scrolls.
+        val col = vertical(); col.setPadding(dp(16), 0, dp(16), dp(14))
+        val top = horizontal(); top.setPadding(0, dp(18), 0, dp(4))
         top.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
         val head = vertical(); head.setPadding(dp(8), 0, dp(8), 0)
         head.addView(tv(T.t("JUGANDO EN"), 10f, p.muted, mono = true).apply { letterSpacing = .14f })
-        head.addView(tv(d.name, 17f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(3), 0, 0) })
+        head.addView(tv(d.name, 16f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(2), 0, 0) })
         top.addView(head, LinearLayout.LayoutParams(0, -2, 1f))
         top.addView(icon("cast", T.t("Cambiar de dispositivo"), "r_switch") { castSheet(null) })
         col.addView(top)
 
-        // Picture with the time played and the paused badge on it.
-        val art = FrameLayout(this); art.background = round(p.surface2, 24f); art.clipToOutline = true
-        art.addView(tv(j?.optString("title") ?: d.name, 20f, p.muted, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(24), dp(24), dp(24), dp(24)) }, FrameLayout.LayoutParams(-1, -1))
+        val art = FrameLayout(this); art.background = round(p.surface2, 22f); art.clipToOutline = true
+        art.addView(tv(j?.optString("title") ?: d.name, 18f, p.muted, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(20), dp(20), dp(20), dp(20)) }, FrameLayout.LayoutParams(-1, -1))
         if (g != null) { val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.FIT_CENTER; art.addView(iv, FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Snaps", "Named_Titles") }
-        // The live picture covers the box art as soon as the first one arrives.
-        val live = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; setBackgroundColor(Color.BLACK); contentDescription = T.t("Pantalla en vivo") }
-        val lastFrame = liveBitmaps[d.id]
-        if (playing && lastFrame != null) live.setImageBitmap(lastFrame) else live.visibility = View.GONE
-        art.addView(live, FrameLayout.LayoutParams(-1, -1))
-        liveView = if (playing) live else null
-        fun badge(text: String, bg: Int, where: Int) = art.addView(tv(text, 13f, Color.WHITE, bold = true).apply { setPadding(dp(10), dp(5), dp(10), dp(5)); background = round(bg, 10f) },
-            FrameLayout.LayoutParams(-2, -2, where).apply { setMargins(dp(12), dp(12), dp(12), dp(12)) })
+        fun badge(text: String, bg: Int, where: Int) = art.addView(tv(text, 12f, Color.WHITE, bold = true).apply { setPadding(dp(9), dp(4), dp(9), dp(4)); background = round(bg, 9f) },
+            FrameLayout.LayoutParams(-2, -2, where).apply { setMargins(dp(10), dp(10), dp(10), dp(10)) })
         if (playing) {
             badge(ago(s!!.optLong("since")), 0xCC000000.toInt(), Gravity.BOTTOM or Gravity.END)
             if (paused) badge(T.t("En pausa"), 0xE6F59E0B.toInt(), Gravity.TOP or Gravity.START)
             if (s.optBoolean("ff")) badge(T.t("Avance rápido"), 0xE62F6DF6.toInt(), Gravity.TOP or Gravity.END)
-            else if ("frame" in can) badge("● " + T.t("EN VIVO"), 0xE6DC2626.toInt(), Gravity.TOP or Gravity.END)
         }
-        col.addView(art, LinearLayout.LayoutParams(-1, dp(if (landscape) 140 else 190), 1f).apply { topMargin = dp(4) })
+        col.addView(art, if (landscape) LinearLayout.LayoutParams(-1, dp(150)).apply { topMargin = dp(4) } else LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
 
-        // Title and what is going on.
-        col.addView(tv(j?.optString("title") ?: when (state) { "menu" -> T.t("Nada en juego"); "offline" -> T.t("Buscando el dispositivo…"); else -> "" }, 22f, p.text, bold = true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(16), 0, 0) })
+        col.addView(tv(j?.optString("title") ?: when (state) { "menu" -> T.t("Nada en juego"); "offline" -> T.t("Buscando el dispositivo…"); else -> "" }, 19f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(12), 0, 0) })
         val sub = when (state) {
             "playing" -> consoleTitle
             "loading" -> T.t("Descargando o preparando el juego en ") + d.name + "…"
             "menu" -> T.t("Elige un juego y toca «Jugar en TV o PC».")
             else -> T.t("Si no aparece: abre RetroStream en la TV o el PC y revisa que esté en la misma red Wi-Fi.")
         }
-        col.addView(tv(sub, 14f, p.muted).apply { setPadding(dp(2), dp(4), 0, dp(14)) })
+        col.addView(tv(sub, 13f, p.muted).apply { maxLines = 2; setPadding(dp(2), dp(2), 0, dp(10)) })
 
         if (playing) {
-            // Big round buttons with their names under them.
             val transport = horizontal(); transport.gravity = Gravity.CENTER
             fun roundButton(iconName: String, label: String, tag: String, size: Int, filled: Boolean, f: () -> Unit) {
                 val cell = vertical(); cell.gravity = Gravity.CENTER_HORIZONTAL
                 val b = FrameLayout(this)
-                b.addView(IconView(this, iconName, label, if (filled) p.onPrimary else p.text), FrameLayout.LayoutParams(dp(size * 0.62f), dp(size * 0.62f), Gravity.CENTER))
+                b.addView(IconView(this, iconName, label, if (filled) p.onPrimary else p.text), FrameLayout.LayoutParams(dp(size * 0.6f), dp(size * 0.6f), Gravity.CENTER))
                 control(b, tag, if (filled) p.primary else p.surface2, size / 2f, false, f)
                 cell.addView(b, LinearLayout.LayoutParams(dp(size), dp(size)))
-                cell.addView(tv(label, 12f, p.muted).apply { gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) })
+                cell.addView(tv(label, 11f, p.muted).apply { gravity = Gravity.CENTER; setSingleLine(); setPadding(0, dp(4), 0, 0) })
                 transport.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
             }
-            if ("ff" in can) roundButton("ff", T.t("Avance rápido"), "r_ff", 70, s!!.optBoolean("ff")) { castControl(d, "ff") }
-            if ("pause" in can) roundButton(if (paused) "play" else "pause", T.t(if (paused) "Continuar" else "Pausa"), "r_pause", 92, true) { castControl(d, if (paused) "resume" else "pause") }
-            if ("shot" in can) roundButton("camera", T.t("Captura"), "r_shot", 70, false) { castControl(d, "shot") }
+            if ("ff" in can) roundButton("ff", T.t("Avance rápido"), "r_ff", 56, s!!.optBoolean("ff")) { castControl(d, "ff") }
+            if ("pause" in can) roundButton(if (paused) "play" else "pause", T.t(if (paused) "Continuar" else "Pausa"), "r_pause", 72, true) { castControl(d, if (paused) "resume" else "pause") }
+            if ("shot" in can) roundButton("camera", T.t("Captura"), "r_shot", 56, false) { castControl(d, "shot") }
             if (transport.childCount > 0) col.addView(transport)
 
-            // Tiles: two per row, icon over the name.
+            // One row of tiles: icon over a short name.
             val tiles = mutableListOf<Triple<String, String, () -> Unit>>()
             if ("save" in can) tiles += Triple("save", T.t("Guardar"), { chooseSlot(d, true) })
             if ("load" in can) tiles += Triple("load", T.t("Cargar"), { chooseSlot(d, false) })
-            if ("backup" in can) tiles += Triple("cloud", T.t("Copia en Telegram"), { castControl(d, "backup") })
+            if ("backup" in can) tiles += Triple("cloud", T.t("Copia"), { castControl(d, "backup") })
             if ("reset" in can) tiles += Triple("restart", T.t("Reiniciar"), {
                 AlertDialog.Builder(this).setTitle(T.t("¿Reiniciar el juego?")).setMessage(T.t("Se pierde lo que no hayas guardado."))
                     .setPositiveButton(T.t("Reiniciar")) { _, _ -> castControl(d, "reset") }.setNegativeButton(T.t("Cancelar"), null).show()
                 Unit
             })
-            tiles.chunked(2).forEachIndexed { i, pair ->
-                val row = horizontal(); row.setPadding(0, if (i == 0) dp(18) else dp(10), 0, 0)
-                for ((k, t) in pair.withIndex()) {
-                    val good = t.first == "cloud"
-                    val tile = horizontal(); tile.gravity = Gravity.CENTER_VERTICAL; tile.setPadding(dp(16), dp(18), dp(12), dp(18))
-                    tile.addView(IconView(this, t.first, t.second, if (good) 0xFF22C55E.toInt() else p.text), LinearLayout.LayoutParams(dp(30), dp(30)))
-                    tile.addView(tv(t.second, 15f, if (good) 0xFF22C55E.toInt() else p.text, bold = true).apply { setPadding(dp(12), 0, 0, 0); maxLines = 2 })
-                    control(tile, "r_tile_" + t.first, if (good) 0x1A22C55E else p.surface2, 18f, false, t.third)
-                    row.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply { if (k == 1) marginStart = dp(10) })
+            if (tiles.isNotEmpty()) {
+                val row = horizontal(); row.setPadding(0, dp(12), 0, 0)
+                for ((k, t) in tiles.withIndex()) {
+                    val good = t.first == "cloud"; val fg = if (good) 0xFF22C55E.toInt() else p.text
+                    val tile = vertical(); tile.gravity = Gravity.CENTER_HORIZONTAL; tile.setPadding(dp(4), dp(11), dp(4), dp(10))
+                    tile.addView(IconView(this, t.first, t.second, fg), LinearLayout.LayoutParams(dp(26), dp(26)))
+                    tile.addView(tv(t.second, 12f, fg, bold = true).apply { gravity = Gravity.CENTER; setSingleLine(); setPadding(0, dp(5), 0, 0) })
+                    control(tile, "r_tile_" + t.first, if (good) 0x1A22C55E else p.surface2, 16f, false, t.third)
+                    row.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply { if (k > 0) marginStart = dp(8) })
                 }
-                if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = dp(10) })
                 col.addView(row)
             }
-            // Emulator settings while playing.
+
             val st = s!!.optJSONObject("settings") ?: JSONObject()
             val resOptions = st.optJSONArray("resOptions")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList()
             val filters = st.optJSONArray("filters")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList()
             if (("res" in can && resOptions.isNotEmpty()) || ("filter" in can && filters.isNotEmpty())) {
-                val card = vertical(); card.setPadding(dp(14), dp(14), dp(14), dp(14)); card.background = round(p.surface2, 18f)
+                val card = vertical(); card.setPadding(dp(12), dp(10), dp(12), dp(10)); card.background = round(p.surface2, 16f)
                 if ("res" in can && resOptions.isNotEmpty()) {
-                    card.addView(tv(T.t("Resolución"), 13f, p.muted).apply { setPadding(dp(2), 0, 0, dp(8)) })
-                    val seg = horizontal(); seg.background = round(p.bg, 14f); seg.setPadding(dp(3), dp(3), dp(3), dp(3))
+                    val line = horizontal()
+                    line.addView(tv(T.t("Resolución"), 12f, p.muted), LinearLayout.LayoutParams(dp(92), -2))
+                    val seg = horizontal(); seg.background = round(p.bg, 12f); seg.setPadding(dp(3), dp(3), dp(3), dp(3))
                     val names = mapOf("low" to T.t("Baja"), "medium" to T.t("Media"), "high" to T.t("Alta"))
                     for (v in resOptions) {
                         val on = st.optString("res") == v
-                        val b = tv(names[v] ?: v, 14f, if (on) p.onPrimary else p.text, bold = true).apply { gravity = Gravity.CENTER; setPadding(0, dp(11), 0, dp(11)) }
-                        control(b, "r_res_$v", if (on) p.primary else Color.TRANSPARENT, 12f, false) {
+                        val b = tv(names[v] ?: v, 13f, if (on) p.onPrimary else p.text, bold = true).apply { gravity = Gravity.CENTER; setPadding(0, dp(7), 0, dp(7)) }
+                        control(b, "r_res_$v", if (on) p.primary else Color.TRANSPARENT, 10f, false) {
                             if (!on) AlertDialog.Builder(this).setTitle(T.t("Resolución: ") + (names[v] ?: v))
                                 .setMessage(T.t("El juego se cierra un momento y vuelve a abrir donde estaba (se guarda solo)."))
                                 .setPositiveButton(T.t("Cambiar")) { _, _ -> castControl(d, "res", value = v) }.setNegativeButton(T.t("Cancelar"), null).show()
                         }
                         seg.addView(b, LinearLayout.LayoutParams(0, -2, 1f))
                     }
-                    card.addView(seg)
+                    line.addView(seg, LinearLayout.LayoutParams(0, -2, 1f))
+                    card.addView(line)
                 }
                 if ("filter" in can && filters.isNotEmpty()) {
-                    card.addView(tv(T.t("Filtro de pantalla"), 13f, p.muted).apply { setPadding(dp(2), dp(if (card.childCount > 0) 14 else 0), 0, dp(8)) })
+                    val line = horizontal(); if (card.childCount > 0) line.setPadding(0, dp(8), 0, 0)
+                    line.addView(tv(T.t("Filtro"), 12f, p.muted), LinearLayout.LayoutParams(dp(92), -2))
                     val names = mapOf("default" to T.t("Original"), "sharp" to T.t("Píxeles nítidos"), "smooth" to T.t("Suavizado"), "smooth2" to T.t("Suavizado fuerte"), "lcd" to T.t("LCD portátil"), "crt" to T.t("TV CRT"))
                     val row = horizontal()
                     for ((i, v) in filters.withIndex()) {
                         val c = chip(names[v] ?: v, st.optString("filter") == v, "r_filter_$v") { castControl(d, "filter", value = v); st.put("filter", v); render() }
-                        row.addView(c, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) marginStart = dp(8) })
+                        c.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f); c.setPadding(dp(11), dp(6), dp(11), dp(6))
+                        row.addView(c, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) marginStart = dp(6) })
                     }
-                    card.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) })
+                    line.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) }, LinearLayout.LayoutParams(0, -2, 1f))
+                    card.addView(line)
                 }
-                col.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
+                col.addView(card, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
             }
-            if (!can.contains("pause")) col.addView(tv(T.t("Esta consola usa su propio programa en el PC: desde el teléfono puedes ver qué se juega y cerrarlo."), 13f, p.muted).apply { setPadding(0, dp(12), 0, 0) })
+            if (!can.contains("pause")) col.addView(tv(T.t("Esta consola usa su propio programa en el PC: desde el teléfono puedes ver qué se juega y cerrarlo."), 12f, p.muted).apply { setPadding(0, dp(10), 0, 0) })
         }
 
-        // Bottom row: same height, spread across the width.
-        val bottom = horizontal(); bottom.setPadding(0, dp(12), 0, 0)
+        val bottom = horizontal(); bottom.setPadding(0, dp(10), 0, 0)
         fun wide(iconName: String, label: String, tag: String, fg: Int, bg: Int, f: () -> Unit) {
-            val b = horizontal(); b.gravity = Gravity.CENTER; b.setPadding(dp(6), dp(15), dp(6), dp(15))
-            b.addView(IconView(this, iconName, label, fg), LinearLayout.LayoutParams(dp(22), dp(22)))
-            b.addView(tv(label, 14f, fg, bold = true).apply { setPadding(dp(8), 0, 0, 0); setSingleLine() })
-            control(b, tag, bg, 18f, false, f)
-            bottom.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { if (bottom.childCount > 0) marginStart = dp(10) })
+            val b = horizontal(); b.gravity = Gravity.CENTER; b.setPadding(dp(4), dp(11), dp(4), dp(11))
+            b.addView(IconView(this, iconName, label, fg), LinearLayout.LayoutParams(dp(18), dp(18)))
+            b.addView(tv(label, 13f, fg, bold = true).apply { setPadding(dp(6), 0, 0, 0); setSingleLine(); ellipsize = TextUtils.TruncateAt.END })
+            control(b, tag, bg, 16f, false, f)
+            bottom.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { if (bottom.childCount > 0) marginStart = dp(8) })
         }
         if (j != null) {
             wide("youtube", "YouTube", "r_yt", p.text, p.surface2) {
@@ -1411,10 +1380,9 @@ class PhoneActivity : Activity() {
                 .setPositiveButton(T.t("Salir")) { _, _ -> castControl(d, "exit") }.setNegativeButton(T.t("Cancelar"), null).show()
         }
         if (bottom.childCount > 0) col.addView(bottom)
-        root.addView(scroll(col))
+        if (landscape) root.addView(scroll(col)) else root.addView(col, FrameLayout.LayoutParams(-1, -1))
         lastFocus = lastFocus.ifEmpty { "r_pause" }
         pollDevices()
-        root.removeCallbacks(framer); if (playing) root.postDelayed(framer, 300)
     }
 
     // ------------------------------------------------------------------ more: screenshots, shortcut, info

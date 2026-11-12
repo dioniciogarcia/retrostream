@@ -3,6 +3,7 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("Filtro", "Filter");
         m.put("Cambiando la resolución: el juego se cierra un momento y sigue donde estaba.", "Changing the resolution: the game closes for a moment and continues where it was.");
         m.put("Pantalla en vivo", "Live screen");
         m.put("EN VIVO", "LIVE");
