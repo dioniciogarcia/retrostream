@@ -271,7 +271,7 @@ class PhoneActivity : Activity() {
 
     /** Header: title with search beside it on the left (clear of the camera); favorites, friends, settings on the right. */
     private fun header(title: String, back: Boolean, history: Boolean = false): View {
-        val row = horizontal(); row.setPadding(dp(14), dp(10), dp(8), dp(6))
+        val row = horizontal(); row.setPadding(dp(14), dp(26), dp(8), dp(8))   // lower, clear of the camera and the top edge
         if (back) row.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
         row.addView(tv(title, if (style == "tiles") 22f else 20f, p.text, bold = true).apply {
             setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(dp(6), 0, dp(4), 0)
@@ -403,7 +403,7 @@ class PhoneActivity : Activity() {
     private fun home() {
         val last = recent().firstOrNull()?.first
         if (landscape) {
-            val row = horizontal(); row.gravity = Gravity.TOP; row.setPadding(dp(12), dp(10), dp(12), dp(8))
+            val row = horizontal(); row.gravity = Gravity.TOP; row.setPadding(dp(12), dp(18), dp(12), dp(8))
             if (HomeLayout.shown(this, "continue")) row.addView(continueCard(last, true), LinearLayout.LayoutParams(0, -1, 0.9f))
             val right = vertical(); right.setPadding(dp(12), 0, 0, 0)
             val top = horizontal()
@@ -978,7 +978,7 @@ class PhoneActivity : Activity() {
     private var friendsQueued = false
     private fun page(title: String, body: (LinearLayout) -> Unit) {
         val outer = vertical()
-        val top = horizontal(); top.setPadding(dp(10), dp(10), dp(10), dp(6))
+        val top = horizontal(); top.setPadding(dp(10), dp(26), dp(10), dp(8))
         top.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
         top.addView(tv(title, 20f, p.text, bold = true).apply { setPadding(dp(6), 0, 0, 0); maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
         outer.addView(top)

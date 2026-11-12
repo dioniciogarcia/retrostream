@@ -38,6 +38,7 @@ final class TEn {
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
+        m.put(": este grupo oculta los mensajes anteriores a los nuevos miembros. El dueño debe abrir el grupo en Telegram > Editar > Historial para nuevos miembros > Visible.", ": this group hides earlier messages from new members. The owner must open the group in Telegram > Edit > Chat history for new members > Visible.");
         m.put("Juega con tus amigos", "Play with your friends");
         m.put("jugando", "playing");
         m.put("en el menú", "in the menu");

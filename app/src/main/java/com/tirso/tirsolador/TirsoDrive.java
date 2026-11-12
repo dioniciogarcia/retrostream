@@ -293,18 +293,35 @@ final class TirsoDrive {
         }
         if(games.size()>=50000||seen.size()>=100000){syncing=false;error=T.t("El grupo supera la capacidad de esta versión. Se conservó el catálogo anterior.");publish(false);return;}
         Source source=bound.get(index);status=T.t("Leyendo ")+source.console.title+" · "+games.size()+T.t(" juegos encontrados");publish(false);
-        send(new TdApi.GetChatHistory(source.chatId,cursor,0,100,false),object->{
+        // Asks Telegram's servers for the group's files page by page (a member who just joined has nothing cached,
+        // so reading the local chat history could come back empty).
+        send(new TdApi.SearchChatMessages(source.chatId,null,"",null,cursor,0,100,new TdApi.SearchMessagesFilterDocument()),object->{
             if(token!=generation||!syncing)return;
             if(object instanceof TdApi.Error){syncing=false;fail((TdApi.Error)object);return;}
-            if(!(object instanceof TdApi.Messages)){syncing=false;error=T.t("Telegram no devolvió un historial válido.");publish(false);return;}
-            TdApi.Message[] messages=((TdApi.Messages)object).messages;
-            int added=0;long oldest=cursor;
-            for(TdApi.Message message:messages){
-                oldest=message.id;if(!seen.add(message.id))continue;added++;
+            if(!(object instanceof TdApi.FoundChatMessages)){syncing=false;error=T.t("Telegram no devolvió un historial válido.");publish(false);return;}
+            TdApi.FoundChatMessages page=(TdApi.FoundChatMessages)object;
+            int before=games.size();
+            for(TdApi.Message message:page.messages){
+                if(!seen.add(message.id))continue;
                 Game game=TelegramCatalog.game(accountId,source.console,message);if(game!=null)games.add(game);
             }
-            if(messages.length==0||added==0||oldest==cursor)history(bound,index+1,0,new HashSet<>(),games,token);
-            else history(bound,index,oldest,seen,games,token);
+            if(page.messages.length==0||page.nextFromMessageId==0){
+                if(seen.isEmpty())checkHiddenHistory(source);
+                history(bound,index+1,0,new HashSet<>(),games,token);
+            }
+            else history(bound,index,page.nextFromMessageId,seen,games,token);
+        });
+    }
+    /** A group with no files visible: if it hides old messages from new members, say how to fix it. */
+    private void checkHiddenHistory(Source source){
+        TdApi.Chat chat=chats.get(source.chatId);
+        if(chat==null||!(chat.type instanceof TdApi.ChatTypeSupergroup))return;
+        long sg=((TdApi.ChatTypeSupergroup)chat.type).supergroupId;
+        send(new TdApi.GetSupergroupFullInfo(sg),r->{
+            if(r instanceof TdApi.SupergroupFullInfo&&!((TdApi.SupergroupFullInfo)r).isAllHistoryAvailable){
+                error=source.title+T.t(": este grupo oculta los mensajes anteriores a los nuevos miembros. El dueño debe abrir el grupo en Telegram > Editar > Historial para nuevos miembros > Visible.");
+                publish(false);
+            }
         });
     }
     void cancelSync(){if(syncing||discovering){generation++;syncing=false;discovering=false;status=T.t("Actualización cancelada. Se conservó el catálogo anterior.");publish(false);}}
