@@ -110,6 +110,7 @@ function render() {
     if (S.page === 'library') app.append(library());
     else if (S.page === 'settings') app.append(settings());
     else if (S.page === 'sources') app.append(sources());
+    else if (S.page === 'engines') app.append(engines());
     else app.append(home());
     const hb = hints(); if (hb) app.append(hb);
   }
@@ -358,7 +359,7 @@ function settings() {
           const r = await window.rs.bios('add'); if (!r) return; if (r.error) { toast(r.error); return; }
           toast(t('BIOS added:') + ' ' + r.ok); S.bios = await window.rs.bios('list'); render();
         }, 's_bios'),
-        srow(t('PS3 and Switch'), t('RPCS3 and Eden setup · later update'), '#B23A3A', () => {})),
+        srow(t('GameCube, Wii, PS3 and Switch'), t('Dolphin, RPCS3 and Eden: install, firmware and keys'), '#B23A3A', () => go('engines'), 's_engines')),
       h('section', { class: 'group' }, h('h2', {}, t('App')),
         srow(t('Updates'), 'RetroStream ' + S.version + ' · ' + t('open the downloads page'), '#7A4DFF', () => window.rs.open('https://github.com/dioniciogarcia/retrostream/releases/tag/windows-latest')),
         srow(t('Open in full screen'), (pref('fullscreen') !== false ? t('On') : t('Off')) + ' · ' + t('F11 switches at any time'), '#38BDF8', () => { setPref('fullscreen', pref('fullscreen') === false); render(); }, 's_full'),
@@ -377,6 +378,35 @@ function backupsMenu() {
     } },
     { label: t('Restore everything from Telegram'), pick: () => confirmBox(t('Restore everything from Telegram'), t('Every game gets its newest backup. Saves on this PC are replaced.'), t('Restore'), async () => { toast(t('Restoring…')); const x = await window.rs.backups('restoreAll'); toast(x.error || x.n + ' ' + t('games restored')); }) }
   ]);
+}
+/** GameCube/Wii (Dolphin), PS3 (RPCS3) and Switch (Eden): their own programs, installed and set up from here. */
+function engines() {
+  const st = S.ext || {};
+  if (!S.ext) window.rs.ext('status').then((x) => { S.ext = x || {}; if (S.page === 'engines') render(); });
+  const act = async (action, arg, done) => { const r = await window.rs.ext(action, arg); if (!r) return; if (r.error) { toast(r.error); return; } if (r.status) S.ext = r.status; toast(done); render(); };
+  const card = (name, title, consoles, color, rows, note) => {
+    const e = st[name] || {};
+    return h('section', { class: 'group' }, h('h2', {}, title),
+      h('p', { style: 'padding:0 10px;color:#9AA3B8;font-size:13px;margin:4px 0 8px' }, consoles),
+      srow(t('Program'), e.installing ? t('Installing…') : e.installed ? t('Installed') + ' · ' + e.version : t('Not installed yet · installs by itself the first time you play'), color,
+        () => act('install', name, e.title + ' ' + t('is ready')), 'e_' + name),
+      ...rows,
+      e.installed ? srow(t('Open') + ' ' + e.title, t('To change its controls, graphics or language'), '#8C95AA', () => act('open', name, e.title + ' ' + t('opened')), 'eo_' + name) : null,
+      note ? h('p', { style: 'padding:6px 10px 10px;color:#9AA3B8;font-size:12px;line-height:1.5' }, note) : null);
+  };
+  return h('main', { class: 'scroll' },
+    h('div', { class: 'pagehead' }, h('button', { class: 'iconbtn', 'aria-label': t('Back'), 'data-key': 'back', onClick: () => go('settings') }, svg(ICON.back, 20, '#E9ECF5')), h('h1', {}, t('GameCube, Wii, PS3 and Switch'))),
+    h('p', { style: 'padding:0 32px;color:#9AA3B8;max-width:980px' }, t('These consoles play in their own programs. RetroStream installs and updates them, opens your games in them and backs up their saves to Telegram. Inside the game you use the program\u2019s own menu (Esc closes the game).')),
+    h('div', { class: 'settings' },
+      card('dolphin', 'Dolphin', 'GameCube · Wii', '#5B3E9E', [], t('Controller: Xbox layout set up for you. Wii: the Wii Remote is on the right stick (pointer) with the Nunchuk on the left stick. Saves go in the same backups as on the phone and TV.')),
+      card('rpcs3', 'RPCS3', 'PlayStation 3', '#3A404E', [
+        srow(t('PS3 firmware'), st.ps3fw ? t('Installed') : t('Needed: your own PS3UPDAT.PUP'), st.ps3fw ? '#22C55E' : '#F0B455', () => act('ps3fw', null, t('PS3 firmware installed')), 'e_ps3fw')],
+        t('Needs a fairly strong PC. Games: ISO, or the game folder in a .zip/.7z (split parts .7z.001, .002… are joined by themselves). Set your controller once with Open RPCS3.')),
+      card('eden', 'Eden', 'Nintendo Switch', '#B23A3A', [
+        srow(t('Keys (prod.keys)'), st.switchKeys ? t('Added') : t('Needed: from your own Switch'), st.switchKeys ? '#22C55E' : '#F0B455', () => act('keys', null, t('Keys added')), 'e_keys'),
+        srow(t('Firmware'), st.switchFw ? t('Installed') : t('Choose the firmware .zip from your own Switch'), st.switchFw ? '#22C55E' : '#F0B455', () => act('switchfw', 'zip', t('Firmware installed')), 'e_fw'),
+        srow(t('Firmware from a folder'), t('If your firmware is already unpacked'), '#8C95AA', () => act('switchfw', 'folder', t('Firmware installed')), 'e_fwdir')],
+        t('Games: NSP, XCI, NSZ, XCZ (split .7z.001 parts too). Keys and firmware stay on this PC and are never uploaded. Set your controller once with Open Eden.'))));
 }
 function sources() {
   const d = S.drive;
@@ -494,7 +524,7 @@ async function quickMenu() {
     { label: t('Exit RetroStream'), pick: () => window.rs.quit() }
   ]);
 }
-function goBack() { if (S.page === 'sources') go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
+function goBack() { if (S.page === 'sources' || S.page === 'engines') go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
 const pad = { last: {}, at: {}, first: {} };
 function pollPads() {
   const gp = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(Boolean);

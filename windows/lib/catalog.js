@@ -38,7 +38,10 @@ function consoleFor(title) {
 
 function extOf(name) { const i = String(name || '').lastIndexOf('.'); return i < 0 ? '' : name.substring(i + 1).toLowerCase(); }
 
+/** "Game.7z.001" / "Game.zip.001": the first part of a split archive (big PS3 / Switch games). */
+function firstPart(file) { return /\.(7z|zip)\.0*1$/i.test(String(file || '')); }
 function supported(consoleId, file) {
+  if (firstPart(file)) return !!(BY_ID[consoleId] && BY_ID[consoleId].big);
   const ext = extOf(file); if (!ext) return false;
   if (ext === 'zip' || ext === '7z') return true;
   const c = BY_ID[consoleId]; if (!c) return false;
@@ -61,7 +64,7 @@ function clean(stem) {
   return s || stem;
 }
 function stemOf(fileName) {
-  let s = String(fileName || ''); const i = s.lastIndexOf('.'); if (i > 0) s = s.substring(0, i);
+  let s = String(fileName || '').replace(/\.(7z|zip)\.0*1$/i, '.$1'); const i = s.lastIndexOf('.'); if (i > 0) s = s.substring(0, i);
   const inner = extOf(s);
   if (inner && 'nes,sfc,smc,gba,gb,gbc,nds,n64,z64,v64,md,gen,bin,iso'.split(',').includes(inner)) s = s.substring(0, s.lastIndexOf('.'));
   return s.trim();
@@ -99,4 +102,4 @@ function game(account, consoleId, m) {
   };
 }
 
-module.exports = { CONSOLES, BY_ID, consoleFor, supported, clean, stemOf, thumbName, coverNames, game };
+module.exports = { CONSOLES, BY_ID, consoleFor, supported, firstPart, clean, stemOf, thumbName, coverNames, game };

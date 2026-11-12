@@ -9,8 +9,9 @@ const { spawn, execFile } = require('child_process');
 const ENGINES = {
   NES: ['fceumm'], SNES: ['snes9x'], MD: ['genesis_plus_gx'], GB: ['mgba'], GBC: ['mgba'], GBA: ['mgba'],
   N64: ['mupen64plus_next'], NDS: ['melondsds', 'melonds'], MAME: ['mame2003_plus'],
-  PSP: ['ppsspp'], PS2: ['pcsx2', 'play'], GC: ['dolphin'], WII: ['dolphin']
+  PSP: ['ppsspp'], PS2: ['pcsx2', 'play']
 };
+const BIG = new Set(['PS3', 'SWITCH']);   // their own programs; nothing to fingerprint per game
 const DISC = new Set(['PSP', 'PS2', 'GC', 'WII']);
 const RES = { N64: { low: '640x480', medium: '1280x960', high: '1920x1440' } };
 function options(consoleId, res) {
@@ -77,7 +78,9 @@ class Player {
   /** Zip / 7z games: the game file inside (MAME games stay zipped). */
   async unpack(game, file, work) {
     const ext = path.extname(file).toLowerCase();
-    if (game.console === 'MAME' || (ext !== '.zip' && ext !== '.7z')) return file;
+    const split = /\.(7z|zip)\.0*1$/i.test(file);
+    if (game.console === 'MAME' || (ext !== '.zip' && ext !== '.7z' && !split)) return file;
+    if (BIG.has(game.console)) return this.unpackBig(game, file);
     const seven = unpacked(require('7zip-bin').path7za);
     fs.mkdirSync(work, { recursive: true });
     await new Promise((res, rej) => execFile(seven, ['x', '-y', '-o' + work, file], { windowsHide: true }, (e) => (e ? rej(e) : res())));
@@ -101,21 +104,49 @@ class Player {
     } finally { fs.closeSync(fd); }
     return h.digest('hex');
   }
+  /** PS3 / Switch archives (often split in parts): unpacked once into a cache kept until the download is deleted. */
+  async unpackBig(game, file) {
+    const dir = path.join(this.dir, 'unpacked', game.id.replace(/[^A-Za-z0-9._-]/g, '_'));
+    const done = path.join(dir, '.complete');
+    if (!fs.existsSync(done)) {
+      fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+      const seven = unpacked(require('7zip-bin').path7za);
+      await new Promise((res, rej) => execFile(seven, ['x', '-y', '-o' + dir, file], { windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (e) => (e ? rej(e) : res())));
+      fs.writeFileSync(done, '');
+    }
+    let found = null;
+    const walk = (d, depth) => {
+      if (found || depth > 6) return;
+      for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, f.name);
+        if (game.console === 'PS3') {
+          if (f.isDirectory() && (f.name === 'PS3_GAME' || fs.existsSync(path.join(p, 'PS3_GAME')))) { found = f.name === 'PS3_GAME' ? d : p; return; }
+          if (f.isFile() && /\.iso$/i.test(f.name)) { found = p; return; }
+          if (f.isFile() && f.name.toUpperCase() === 'EBOOT.BIN') { found = p; return; }
+        } else if (f.isFile() && /\.(nsp|xci|nsz|xcz)$/i.test(f.name)) { found = p; return; }
+      }
+      for (const f of fs.readdirSync(d, { withFileTypes: true })) if (f.isDirectory()) walk(path.join(d, f.name), depth + 1);
+    };
+    walk(dir, 0);
+    if (!found) throw new Error(this.t('The archive has no game for this console inside.'));
+    return found;
+  }
   sha256(file) {
     return new Promise((res, rej) => { const h = crypto.createHash('sha256'); fs.createReadStream(file).on('data', (d) => h.update(d)).on('end', () => res(h.digest('hex'))).on('error', rej); });
   }
 
   /** Unpacks the game if needed and finds its save folder (the saves themselves are restored by the caller before launch()). */
-  async prepare(game, file) {
+  async prepare(game, file, external) {
     if (this.child) throw new Error(this.t('A game is already running.'));
-    const engine = this.engine(game.console);
+    const engine = external ? 'external' : this.engine(game.console);
     if (!engine) throw new Error(this.t('This console arrives in a later update.'));
+    if (BIG.has(game.console)) { const rom = await this.unpack(game, file, null); return { game, engine, work: null, rom, sha: '', root: '', entry: null }; }
     const work = path.join(this.dir, 'play', String(Date.now()));
     const rom = await this.unpack(game, file, work);
     // PS2 BIN/CUE: the fingerprint is the first track's (what the Android app hashes).
     let hashed = rom;
     if (rom.toLowerCase().endsWith('.cue')) { const t1 = /FILE\s+"?([^"\r\n]+?)"?\s+BINARY/i.exec(fs.readFileSync(rom, 'utf8')); if (t1 && fs.existsSync(path.join(path.dirname(rom), t1[1]))) hashed = path.join(path.dirname(rom), t1[1]); }
-    const sha = DISC.has(game.console) ? this.quickHash(hashed) : await this.sha256(hashed);
+    const sha = DISC.has(game.console) || game.console === 'GC' || game.console === 'WII' ? this.quickHash(hashed) : await this.sha256(hashed);
     const root = path.join(this.dir, 'saves', KEY(game.console), sha);
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, 'meta.json'), JSON.stringify({ title: game.title, console: game.console }));
@@ -152,7 +183,7 @@ class Player {
     child.on('exit', (code) => {
       this.child = null;
       try { fs.writeFileSync(path.join(this.dir, 'last-player.log'), log.join('')); } catch (_) { /* ignore */ }
-      if (fs.existsSync(work)) fs.rmSync(work, { recursive: true, force: true });
+      if (work && fs.existsSync(work)) fs.rmSync(work, { recursive: true, force: true });
       const reasons = { engine: 'The game engine could not be loaded.', file: 'The game file could not be read.', game: 'The engine could not open this game. The file may be damaged or for another region/console.', graphics: 'Your graphics card could not start OpenGL 3.3.' };
       const tail = log.join('').split(/\r?\n/).filter(Boolean).slice(-6).join('\n');
       this.onExit({ id: game.id, entry: prep.entry, played, details: (error || (code && !played)) ? 'code ' + code + (tail ? '\n' + tail : '') : '', error: error ? this.t(reasons[error] || 'The game closed unexpectedly.') : (code && !played ? this.t('The game closed unexpectedly.') : '') });

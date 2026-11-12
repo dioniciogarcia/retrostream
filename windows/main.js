@@ -7,6 +7,7 @@ const { Store } = require('./lib/store');
 const { Drive } = require('./lib/telegram');
 const { Player } = require('./lib/player');
 const { Cloud } = require('./lib/cloud');
+const { External } = require('./lib/external');
 const catalog = require('./lib/catalog');
 const I18N = require('./renderer/i18n');
 
@@ -16,7 +17,7 @@ try { config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), '
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
-let win = null, store = null, drive = null, player = null, cloud = null, t = (s) => s;
+let win = null, store = null, drive = null, player = null, cloud = null, external = null, t = (s) => s;
 function toast(text) { send('toast', text); }
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
@@ -74,6 +75,28 @@ async function withTracks(game, cue) {
   return out;
 }
 
+/** Split archives ("Game.7z.001", ".002"…): every part from the channel, side by side under their own names. */
+async function withParts(game, first) {
+  const base = path.basename(first).replace(/\.0*1$/, '');
+  let docs = docsCache.get(game.chatId);
+  if (!docs) { docs = await drive.documents(game.chatId); docsCache.set(game.chatId, docs); }
+  const parts = docs.filter((m) => { const n = m.content.document.file_name; return n.toLowerCase().startsWith(base.toLowerCase() + '.') && /\.\d{2,3}$/.test(n); })
+    .sort((a, b) => a.content.document.file_name.localeCompare(b.content.document.file_name));
+  const dir = path.join(app.getPath('userData'), 'parts', game.id.replace(/[^A-Za-z0-9._-]/g, '_')); fs.mkdirSync(dir, { recursive: true });
+  let firstOut = null;
+  for (const m of parts) {
+    const n = m.content.document.file_name; const out = path.join(dir, n);
+    if (!fs.existsSync(out)) {
+      send('toast', t('Downloading') + ' ' + n + '…');
+      const p = await drive.downloadNow(m.content.document.document.id);
+      if (!p) throw new Error(t('A part could not be downloaded:') + ' ' + n);
+      try { fs.linkSync(p, out); } catch (_) { fs.copyFileSync(p, out); }
+    }
+    if (/\.0*1$/.test(n)) firstOut = out;
+  }
+  return firstOut || first;
+}
+
 const PREF_KEYS = new Set(['fullscreen', 'lang', 'theme', 'favorites', 'hidden', 'completed', 'collections', 'recent', 'plays', 'onboarded', 'skipped', 'sort', 'keep']);
 
 app.whenReady().then(() => {
@@ -82,8 +105,8 @@ app.whenReady().then(() => {
   if (!store.get('lang')) store.set('lang', app.getLocale().toLowerCase().startsWith('es') ? 'es' : 'en');
   t = I18N.make(store.get('lang'));
   drive = new Drive({ dir, store, apiId: API_ID, apiHash: String(config.apiHash || '').trim(), version: app.getVersion(), t });
-  player = new Player({ dir, resources: app.isPackaged ? process.resourcesPath : path.join(__dirname, 'res'), t: (s) => t(s),
-    onExit: (info) => {
+  external = new External({ dir, store, t: (s) => t(s) });
+  const afterGame = (info) => {
       if (info.played > 0) { const pt = store.get('playtime') || {}; pt[info.id] = (pt[info.id] || 0) + info.played; store.set('playtime', pt); }
       send('played', Object.assign(info, { playtime: store.get('playtime') || {} }));
       if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
@@ -96,7 +119,8 @@ app.whenReady().then(() => {
           await cloud.uploadShots();
         })();
       }
-    } });
+    };
+  player = new Player({ dir, resources: app.isPackaged ? process.resourcesPath : path.join(__dirname, 'res'), t: (s) => t(s), onExit: afterGame });
   cloud = new Cloud({ dir, drive, store, t: (s) => t(s) });
   drive.on('state', (changed) => send('state', { drive: drive.snapshot(), games: changed ? store.games() : null }));
   drive.on('file', (info) => { noteFile(info); send('file', info); });
@@ -132,6 +156,7 @@ app.whenReady().then(() => {
         await drive.remove(game);
         const kept = store.get('kept') || {}; const p = kept[game.id];
         if (p) { try { fs.unlinkSync(p); } catch (_) { /* already gone */ } delete kept[game.id]; store.set('kept', kept); send('kept', kept); }
+        for (const d of ['unpacked', 'parts']) fs.rmSync(path.join(app.getPath('userData'), d, game.id.replace(/[^A-Za-z0-9._-]/g, '_')), { recursive: true, force: true });
         return true;
       }
       default: return null;
@@ -139,17 +164,23 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('play', async (_e, game, opts) => {
     try {
-      if (!player.supported(game.console)) return { error: t('This console arrives in a later update.') };
+      const ext = external.engineFor(game.console);
+      if (!ext && !player.supported(game.console)) return { error: t('This console arrives in a later update.') };
+      if (ext) await external.ensure(ext, (m) => toast(m));
       let file = (store.get('kept') || {})[game.id];
       if (!file || !fs.existsSync(file)) { const i = await drive.inspect(game.fileId); file = i.path; }
       if (!file || !fs.existsSync(file)) return { error: t('Download the game first.') };
       if (file.toLowerCase().endsWith('.cue')) file = await withTracks(game, file);
-      const prep = await player.prepare(game, file);
-      if (drive.stage === 'ready') {
-        // The newest save from the phone or TV first (but never wait more than ~8 seconds for it).
-        const pulled = await Promise.race([cloud.pullNewest(prep.entry).catch(() => ''), new Promise((r) => setTimeout(() => r(''), 8000))]);
+      if (/\.(7z|zip)\.0*1$/i.test(file)) file = await withParts(game, file);
+      if (ext && (game.console === 'PS3' || game.console === 'SWITCH')) toast(t('Preparing the game… (big games take a while the first time)'));
+      const prep = await player.prepare(game, file, !!ext);
+      const entry = prep.entry || (ext ? external.sharedEntry(game.console) : null);
+      if (drive.stage === 'ready' && entry) {
+        // The newest save from the phone, TV or another PC first (but never wait more than ~8 seconds for it).
+        const pulled = await Promise.race([cloud.pullNewest(entry).catch(() => ''), new Promise((r) => setTimeout(() => r(''), 8000))]);
         if (pulled) toast(pulled);
       }
+      if (ext) { await external.launch(prep, Object.assign({}, store.prefs.data, opts || {}), afterGame); return { ok: true }; }
       const cheats = await Promise.race([cloud.cheats(game).catch(() => null), new Promise((r) => setTimeout(() => r(null), 6000))]);
       await player.launch(prep, Object.assign({}, store.prefs.data, opts || {}), cheats);
       return { ok: true };
@@ -176,6 +207,31 @@ app.whenReady().then(() => {
       return { ok: path.basename(f) };
     }
     return null;
+  });
+  ipcMain.handle('ext', async (_e, action, arg) => {
+    try {
+      switch (action) {
+        case 'status': return external.status();
+        case 'install': await external.install(arg, (m) => toast(m)); return { ok: true, status: external.status() };
+        case 'open': external.openSettings(arg); return { ok: true };
+        case 'ps3fw': {
+          const r = await dialog.showOpenDialog(win, { title: t('Choose your PS3 firmware (PS3UPDAT.PUP)'), properties: ['openFile'], filters: [{ name: 'PS3 firmware', extensions: ['PUP', 'pup'] }] });
+          if (r.canceled || !r.filePaths.length) return null;
+          toast(t('Installing the PS3 firmware…')); await external.ps3Firmware(r.filePaths[0]); return { ok: true, status: external.status() };
+        }
+        case 'keys': {
+          const r = await dialog.showOpenDialog(win, { title: t('Choose prod.keys (and title.keys if you have it)'), properties: ['openFile', 'multiSelections'], filters: [{ name: 'Keys', extensions: ['keys'] }] });
+          if (r.canceled || !r.filePaths.length) return null;
+          external.switchKeys(r.filePaths); return { ok: true, status: external.status() };
+        }
+        case 'switchfw': {
+          const r = await dialog.showOpenDialog(win, { title: t('Choose the firmware .zip (or its folder)'), properties: arg === 'folder' ? ['openDirectory'] : ['openFile'], filters: arg === 'folder' ? [] : [{ name: 'Firmware', extensions: ['zip'] }] });
+          if (r.canceled || !r.filePaths.length) return null;
+          toast(t('Installing the Switch firmware…')); const n = await external.switchFirmware(r.filePaths[0]); return { ok: true, n, status: external.status() };
+        }
+        default: return null;
+      }
+    } catch (e) { return { error: String(e.message || e) }; }
   });
   ipcMain.handle('window', (_e, action) => {
     if (!win) return null;
