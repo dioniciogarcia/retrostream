@@ -178,9 +178,10 @@ app.whenReady().then(() => {
   ipcMain.handle('drive', async (_e, action, ...args) => {
     switch (action) {
       case 'qr': drive.requestQr(); break;
-      case 'phone': await drive.phone(args[0]); break;
-      case 'code': await drive.code(args[0]); break;
-      case 'password': await drive.password(args[0]); break;
+      case 'phone': return { result: await drive.phone(args[0]), drive: drive.snapshot() };
+      case 'code': return { result: await drive.code(args[0]), drive: drive.snapshot() };
+      case 'password': return { result: await drive.password(args[0]), drive: drive.snapshot() };
+      case 'proxy': return { result: await drive.setProxy(args[0]), drive: drive.snapshot() };
       case 'scan': drive.scanAll(); break;
       case 'sync': drive.sync(); break;
       case 'bind': drive.bind(args[0], args[1]); break;
@@ -388,6 +389,8 @@ app.whenReady().then(() => {
         case 'downloadMany': { let n = 0; for (const g of arg || []) { try { await drive.download(g); n++; } catch (_) { /* skip */ } } return { n }; }
         case 'report': {
           let log = ''; try { log = fs.readFileSync(path.join(dir, 'last-player.log'), 'utf8').split(/\r?\n/).slice(-120).join('\n'); } catch (_) { log = t('No game has failed yet.'); }
+          const tail = (f, n) => { try { return fs.readFileSync(path.join(dir, f), 'utf8').split(/\r?\n/).slice(-n).join('\n'); } catch (_) { return ''; } };
+          log += '\n\n--- Telegram (' + drive.stage + ', ' + drive.net + (drive.proxy ? ', proxy' : '') + ', ' + new Date().toString() + ') ---\n' + tail('retrostream-telegram.log', 40) + '\n' + tail('telegram.log', 60);
           const os = require('os');
           const text = 'RetroStream ' + app.getVersion() + ' · Windows ' + os.release() + ' · ' + os.cpus()[0].model + ' · ' + Math.round(os.totalmem() / 1073741824) + ' GB\n'
             + 'GPU: ' + (await app.getGPUInfo('basic').then((g) => (g.gpuDevice || []).map((d) => d.deviceString || (d.vendorId + ':' + d.deviceId)).join(', ')).catch(() => '?')) + '\n\n' + log;

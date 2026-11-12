@@ -585,13 +585,42 @@ function sources() {
 }
 
 // ------------------------------------------------------------------ sign in
+function netText(d) {
+  return { waiting: t('No internet connection: waiting for the network…'), proxy: t('Connecting to the proxy…'), connecting: t('Connecting to Telegram…'), updating: t('Connected to Telegram'), ready: t('Connected to Telegram') }[d.net] || t('Connecting to Telegram…');
+}
+/** Sign-in failures as a popup (with what to try next), not only as small red text. */
+function signInProblem(text) {
+  dialog(t('Could not sign in'), text, [
+    { label: t('Try again'), primary: true, pick: () => { S.qrWarned = false; if (S.signTab === 'qr') window.rs.drive('qr'); } },
+    { label: t('Connection'), pick: proxyDialog },
+    { label: t('Problem report'), pick: problemReport }]);
+}
+function proxyDialog() {
+  const d = S.drive;
+  modal((box, close) => {
+    const input = h('input', { type: 'text', value: d.proxy || '', placeholder: 'https://t.me/proxy?server=…&port=…&secret=…', 'aria-label': t('Proxy') });
+    const save = async (v) => { const r = await window.rs.drive('proxy', v); close(); if (r && r.drive) { S.drive = r.drive; render(); } if (r && r.result) dialog(t('Proxy'), r.result, []); else toast(v ? t('Proxy on') : t('Proxy off')); S.qrWarned = false; };
+    box.append(h('h2', {}, t('Connection')),
+      h('p', {}, t('Status:') + ' ' + netText(d)),
+      h('p', {}, t('Only needed if Telegram is blocked on this network. Paste a Telegram proxy link (t.me/proxy… or t.me/socks…) or write server:port. Leave it empty to connect directly.')),
+      h('div', { class: 'field' }, input),
+      h('div', { class: 'buttons' }, h('button', { class: 'btn primary', onClick: () => save(input.value) }, t('Save')), d.proxy ? h('button', { class: 'btn ghost', onClick: () => save('') }, t('Turn off the proxy')) : null, h('button', { class: 'btn ghost', onClick: close }, t('Cancel'))));
+    setTimeout(() => input.focus(), 50);
+  });
+}
 function signIn() {
   const d = S.drive;
   const box = h('section', { class: 'box', 'aria-label': t('Sign in') });
   if (d.stage === 'code' || d.stage === 'password') {
     const pw = d.stage === 'password';
-    const input = h('input', { type: pw ? 'password' : 'text', inputmode: pw ? undefined : 'numeric', 'aria-label': pw ? t('Password') : t('Code'), 'data-key': 'auth_input', onKeydown: (e) => { if (e.key === 'Enter') submit(); } });
-    const submit = () => { window.rs.drive(pw ? 'password' : 'code', input.value); input.value = ''; };
+    const input = h('input', { type: pw ? 'password' : 'text', inputmode: pw ? undefined : 'numeric', value: S.authDraft || '', 'aria-label': pw ? t('Password') : t('Code'), 'data-key': 'auth_input', onInput: (e) => { S.authDraft = e.target.value; }, onKeydown: (e) => { if (e.key === 'Enter') submit(); } });
+    const submit = async () => {
+      if (!input.value.trim()) return; const btn = box.querySelector('[data-key="auth_go"]'); btn.disabled = true; btn.textContent = t('Checking…');
+      const r = await window.rs.drive(pw ? 'password' : 'code', input.value); input.value = ''; S.authDraft = '';
+      btn.disabled = false; btn.textContent = t('Continue');
+      if (r && r.drive) { S.drive = r.drive; render(); }
+      if (r && r.result) signInProblem(r.result);
+    };
     box.append(h('h2', {}, pw ? t('Two-step verification') : t('Telegram code')),
       h('p', { style: 'color:#B7BFD2' }, pw ? t('Your account has a password.') + (d.hint ? ' ' + t('Hint:') + ' ' + d.hint : '') : t('Telegram sent you a code in the app (or by SMS). Write it here.')),
       h('div', { class: 'field' }, input), h('button', { class: 'btn primary', 'data-key': 'auth_go', onClick: submit }, t('Continue')));
@@ -604,14 +633,28 @@ function signIn() {
       if (d.qrLink) window.rs.qr(d.qrLink).then((url) => qr.replaceChildren(h('img', { src: url, alt: t('QR code to sign in') })));
       box.append(h('div', { style: 'display:flex;gap:22px;align-items:center;flex-wrap:wrap' }, qr,
         h('ol', { style: 'margin:0;padding-left:18px;font-size:14px;line-height:1.8;color:#C9CEDC' }, h('li', {}, t('Open Telegram on your phone')), h('li', {}, t('Settings › Devices › Link Desktop Device')), h('li', {}, t('Point the camera at this code')))));
-      box.append(h('div', { class: 'status', style: 'margin-top:18px' }, h('span', { class: 'dot' }), d.stage === 'connecting' ? t('Connecting to Telegram…') : t('Waiting for Telegram… the code refreshes by itself')));
+      box.append(h('div', { class: 'status', style: 'margin-top:18px' }, h('span', { class: 'dot' }), d.qrLink ? t('Waiting for Telegram… the code refreshes by itself') : netText(d)));
+      // No code after a while: say so in a popup instead of "Preparing…" forever.
+      if (!d.qrLink && !S.qrWarned && !S.qrTimer) { S.qrTimer = setTimeout(() => { S.qrTimer = null; if (S.drive.qrLink || S.drive.stage === 'ready' || S.signTab !== 'qr' || !document.querySelector('.signin')) return; S.qrWarned = true; signInProblem(t('Telegram did not send the QR code.') + ' ' + t('Telegram did not answer. Check that this PC has internet, that the date and time of Windows are right, and that the firewall or antivirus is not blocking RetroStream. If Telegram is blocked where you are, add a proxy (Connection button).')); }, 25000); }
     } else {
-      const input = h('input', { type: 'tel', placeholder: '+591 70000000', 'aria-label': t('Phone number with country code'), 'data-key': 'phone_input', onKeydown: (e) => { if (e.key === 'Enter') go2(); } });
-      const go2 = () => window.rs.drive('phone', input.value);
+      const input = h('input', { type: 'tel', placeholder: '+591 70000000', value: S.phoneDraft || '', 'aria-label': t('Phone number with country code'), 'data-key': 'phone_input', onInput: (e) => { S.phoneDraft = e.target.value; }, onKeydown: (e) => { if (e.key === 'Enter') go2(); } });
+      const go2 = async () => {
+        if (!input.value.trim()) { input.focus(); return; }
+        const btn = box.querySelector('[data-key="phone_go"]'); btn.disabled = true; btn.textContent = t('Sending…');
+        const r = await window.rs.drive('phone', input.value);
+        btn.disabled = false; btn.textContent = t('Send code');
+        if (r && r.drive) { S.drive = r.drive; render(); }
+        if (r && r.result) signInProblem(r.result);
+        else dialog(t('Code sent'), t('Telegram sent you a code. Look in the Telegram app on your phone (a message from "Telegram") or in your SMS, and write it on the next screen.'), []);
+      };
       box.append(h('div', { class: 'field' }, h('label', {}, t('Phone number with country code')), input), h('button', { class: 'btn primary', 'data-key': 'phone_go', onClick: go2 }, t('Send code')));
     }
   }
   if (d.error) box.append(h('p', { class: 'error' }, d.error));
+  if (S.signTab !== 'qr' || d.stage === 'code' || d.stage === 'password') box.append(h('div', { class: 'status', style: 'margin-top:14px' }, h('span', { class: 'dot' }), netText(d)));
+  box.append(h('div', { class: 'buttons', style: 'margin-top:14px;justify-content:flex-start' },
+    h('button', { class: 'btn ghost', 'data-key': 'proxy', onClick: proxyDialog }, t('Connection') + (d.proxy ? ' · ' + t('proxy on') : '')),
+    h('button', { class: 'btn ghost', 'data-key': 'signreport', onClick: problemReport }, t('Problem report'))));
   return h('main', { class: 'signin' }, h('div', { class: 'wrap' },
     h('div', { class: 'intro' }, h('div', { class: 'logo', style: 'width:64px;height:64px;border-radius:16px;margin-bottom:22px' }, svg(ICON.pad, 36, '#fff')),
       h('h1', {}, t('Your retro library,'), h('br'), t('now on your PC')),
@@ -734,7 +777,7 @@ function pollPads() {
   window.rs.on('state', (s) => {
     const was = S.drive; S.drive = s.drive; if (s.games) S.games = s.games;
     if (s.drive.stage === 'ready' && was.stage !== 'ready') { setPref('skipped', false); }
-    const big = s.games || was.stage !== s.drive.stage || was.qrLink !== s.drive.qrLink || was.error !== s.drive.error || was.busy !== s.drive.busy || S.page === 'sources';
+    const big = s.games || was.stage !== s.drive.stage || was.qrLink !== s.drive.qrLink || was.error !== s.drive.error || was.busy !== s.drive.busy || was.net !== s.drive.net || was.proxy !== s.drive.proxy || S.page === 'sources';
     if (big && !(document.querySelector('#layer .shade') && !s.games)) render();
     else { const st = document.getElementById('statustext'); if (st) st.textContent = statusText(); }
   });

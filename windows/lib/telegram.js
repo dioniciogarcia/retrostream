@@ -27,6 +27,8 @@ class Drive extends EventEmitter {
     this.sources = {};
     for (const c of catalog.CONSOLES) this.sources[c.id] = { chatId: 0, title: '', candidates: [] };
     this.client = null; this.restarting = false;
+    this.net = 'connecting';          // waiting | proxy | connecting | updating | ready (Telegram's own connection state)
+    this.proxy = (store.get('proxy') || '');
   }
 
   // ------------------------------------------------------------------ connection and sign-in
@@ -39,7 +41,11 @@ class Drive extends EventEmitter {
       filesDirectory: path.join(this.dir, 'telegram', 'files'),
       tdlibParameters: { device_model: 'Windows PC', system_language_code: 'es', application_version: this.version, use_file_database: true, use_chat_info_database: true, use_message_database: true }
     });
-    this.client.on('error', (e) => { this.error = String((e && e.message) || e); this.publish(); });
+    this.client.on('error', (e) => { this.error = String((e && e.message) || e); this.log('error ' + this.error); this.publish(); });
+    // TDLib's own log, for Settings > Problem report and the sign-in "Copy report" button.
+    this.client.invoke({ _: 'setLogStream', log_stream: { _: 'logStreamFile', path: path.join(this.dir, 'telegram.log'), max_file_size: 4 * 1024 * 1024, redirect_stderr: false } }).catch(() => {});
+    this.client.invoke({ _: 'setLogVerbosityLevel', new_verbosity_level: 2 }).catch(() => {});
+    if (this.proxy) this.applyProxy(this.proxy).catch((e) => { this.error = this.t('The proxy could not be used:') + ' ' + (e.message || e); this.publish(); });
     this.client.on('update', (u) => { try { this.onUpdate(u); } catch (e) { this.error = String(e.message || e); this.publish(); } });
   }
   invoke(q) { return this.client.invoke(q); }
@@ -49,6 +55,10 @@ class Drive extends EventEmitter {
     if (u._ === 'updateNewMessage' || u._ === 'updateMessageContent' || u._ === 'updateUser') this.emit('td', u);
     switch (u._) {
       case 'updateAuthorizationState': this.auth(u.authorization_state); break;
+      case 'updateConnectionState': {
+        const m = { connectionStateWaitingForNetwork: 'waiting', connectionStateConnectingToProxy: 'proxy', connectionStateConnecting: 'connecting', connectionStateUpdating: 'updating', connectionStateReady: 'ready' };
+        this.net = m[u.state._] || 'connecting'; this.log('connection ' + this.net); this.publish(); break;
+      }
       case 'updateNewChat': this.chats.set(u.chat.id, u.chat); break;
       case 'updateChatTitle': { const c = this.chats.get(u.chat_id); if (c) c.title = u.title; break; }
       case 'updateFile': this.fileUpdated(u.file); break;
@@ -60,8 +70,11 @@ class Drive extends EventEmitter {
     switch (s._) {
       case 'authorizationStateWaitPhoneNumber':
         this.stage = 'signin'; this.qrLink = '';
-        if (this.pendingPhone) { const n = this.pendingPhone; this.pendingPhone = null; this.invoke({ _: 'setAuthenticationPhoneNumber', phone_number: n }).catch((e) => this.fail(e)); }
-        else if (this.wantQr) this.requestQr();
+        if (this.pendingPhone) {
+          const n = this.pendingPhone; const done = this.pendingDone || (() => {}); this.pendingPhone = null; this.pendingDone = null;
+          this.timed({ _: 'setAuthenticationPhoneNumber', phone_number: n }).then(() => done(''), (e) => done(this.fail(e)));
+        }
+        else if (this.wantQr !== false) this.requestQr();   // the QR tab is the first thing shown
         break;
       case 'authorizationStateWaitOtherDeviceConfirmation': this.stage = 'qr'; this.qrLink = s.link; break;
       case 'authorizationStateWaitCode': this.stage = 'code'; break;
@@ -79,21 +92,57 @@ class Drive extends EventEmitter {
     this.wantQr = true;
     if (this.stage === 'qr') return;
     if (this.stage !== 'signin') { this.restart(); return; }
-    this.invoke({ _: 'requestQrCodeAuthentication', other_user_ids: [] }).catch((e) => this.fail(e));
+    this.timed({ _: 'requestQrCodeAuthentication', other_user_ids: [] }).catch((e) => this.fail(e));
+  }
+  /** A sign-in request that gives up after [ms] instead of waiting forever when Telegram can't be reached. */
+  timed(q, ms) {
+    return Promise.race([this.invoke(q), new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms || 30000))]);
+  }
+  log(line) { try { fs.appendFileSync(path.join(this.dir, 'retrostream-telegram.log'), new Date().toISOString() + ' ' + line + '\n'); } catch (_) { /* best effort */ } }
+  /** Proxy for networks where Telegram is blocked: a t.me/proxy or t.me/socks link, or socks5://user:pass@host:port. Empty turns it off. */
+  async setProxy(text) {
+    text = String(text || '').trim();
+    this.store.set('proxy', text); this.proxy = text;
+    if (!text) { try { await this.invoke({ _: 'disableProxy' }); } catch (_) { /* none */ } this.publish(); return ''; }
+    try { await this.applyProxy(text); this.error = ''; this.publish(); return ''; }
+    catch (e) { this.store.set('proxy', ''); this.proxy = ''; return this.t('The proxy could not be used:') + ' ' + (e.message || e); }
+  }
+  async applyProxy(text) {
+    let server = '', port = 0, type = null;
+    const link = /^(?:https?:\/\/)?(?:t\.me|telegram\.me)\/(proxy|socks)\?(.+)$/i.exec(text) || /^tg:\/\/(proxy|socks)\?(.+)$/i.exec(text);
+    if (link) {
+      const q = new URLSearchParams(link[2]); server = q.get('server') || ''; port = Number(q.get('port')) || 0;
+      type = link[1].toLowerCase() === 'proxy' ? { _: 'proxyTypeMtproto', secret: q.get('secret') || '' } : { _: 'proxyTypeSocks5', username: q.get('user') || '', password: q.get('pass') || '' };
+    } else {
+      const m = /^(?:(socks5|http):\/\/)?(?:([^:@]+):([^@]*)@)?([^:/\s]+):(\d+)\/?$/i.exec(text);
+      if (!m) throw new Error(this.t('Paste a t.me/proxy link or write server:port.'));
+      server = m[4]; port = Number(m[5]);
+      type = (m[1] || '').toLowerCase() === 'http' ? { _: 'proxyTypeHttp', username: m[2] || '', password: m[3] || '', http_only: false } : { _: 'proxyTypeSocks5', username: m[2] || '', password: m[3] || '' };
+    }
+    if (!server || !port) throw new Error(this.t('Paste a t.me/proxy link or write server:port.'));
+    await this.invoke({ _: 'addProxy', proxy: { _: 'proxy', server, port, type }, enable: true, comment: 'RetroStream' });
   }
   /** Phone number sign-in: the number with its country code, e.g. +591 70000000. */
+  /** Returns '' when Telegram accepted it, or the reason it failed (shown in a popup). */
   async phone(number) {
     this.wantQr = false; this.error = '';
-    const n = String(number || '').replace(/[^\d+]/g, '');
-    if (n.replace(/\D/g, '').length < 8 || !n.startsWith('+')) { this.error = this.t('Write the number with its country code, for example +591 70000000.'); this.publish(); return; }
-    if (this.stage === 'qr') { this.pendingPhone = n; this.restart(); return; }
-    try { await this.invoke({ _: 'setAuthenticationPhoneNumber', phone_number: n }); } catch (e) { this.fail(e); }
+    const n = '+' + String(number || '').replace(/\D/g, '');
+    if (n.length < 9) { this.error = this.t('Write the number with its country code, for example +591 70000000.'); this.publish(); return this.error; }
+    this.log('phone sign-in, stage ' + this.stage + ', connection ' + this.net);
+    if (this.stage !== 'signin') {
+      // From the QR screen TDLib has to start over first; the number is sent as soon as it's ready.
+      return new Promise((resolve) => {
+        this.pendingPhone = n; this.pendingDone = resolve; if (this.stage === 'qr') this.restart();
+        setTimeout(() => { if (this.pendingDone === resolve) { this.pendingDone = null; this.pendingPhone = null; resolve(this.fail(new Error('TIMEOUT'))); } }, 40000);
+      });
+    }
+    try { await this.timed({ _: 'setAuthenticationPhoneNumber', phone_number: n }); return ''; } catch (e) { return this.fail(e); }
   }
-  async code(c) { this.error = ''; try { await this.invoke({ _: 'checkAuthenticationCode', code: String(c || '').trim() }); } catch (e) { this.fail(e); } }
-  async password(p) { this.error = ''; try { await this.invoke({ _: 'checkAuthenticationPassword', password: String(p || '') }); } catch (e) { this.fail(e); } }
+  async code(c) { this.error = ''; try { await this.timed({ _: 'checkAuthenticationCode', code: String(c || '').replace(/\D/g, '') }); return ''; } catch (e) { return this.fail(e); } }
+  async password(p) { this.error = ''; try { await this.timed({ _: 'checkAuthenticationPassword', password: String(p || '') }); return ''; } catch (e) { return this.fail(e); } }
   /** Leaves the QR screen (TDLib can't switch from QR to a phone number without starting over). */
   restart() {
-    if (!this.client) return;
+    if (!this.client || this.restarting) return;
     this.restarting = true;
     this.client.close().catch(() => {});
   }
@@ -108,11 +157,18 @@ class Drive extends EventEmitter {
       PHONE_CODE_INVALID: 'That code is not right. Check the latest code Telegram sent.',
       PHONE_CODE_EXPIRED: 'That code expired. Ask for a new one.',
       PASSWORD_HASH_INVALID: 'That password is not right.',
-      FLOOD_WAIT: 'Telegram asks to wait a moment before trying again.'
+      FLOOD_WAIT: 'Telegram asks to wait a moment before trying again.',
+      PHONE_NUMBER_BANNED: 'Telegram blocked this phone number.',
+      PHONE_NUMBER_FLOOD: 'Too many attempts with this number. Wait a few hours and try again.',
+      PHONE_PASSWORD_FLOOD: 'Too many attempts. Wait a few hours and try again.',
+      API_ID: 'This build has no valid Telegram key. Download the official RetroStream installer.',
+      TIMEOUT: 'Telegram did not answer. Check that this PC has internet, that the date and time of Windows are right, and that the firewall or antivirus is not blocking RetroStream. If Telegram is blocked where you are, add a proxy (Connection button).'
     };
+    this.log('failed: ' + m + ' (connection ' + this.net + ')');
     const key = Object.keys(known).find((k) => m.includes(k));
     this.error = key ? this.t(known[key]) : m;
     this.publish();
+    return this.error;
   }
 
   // ------------------------------------------------------------------ after sign-in
@@ -362,7 +418,7 @@ class Drive extends EventEmitter {
   snapshot() {
     const sources = {};
     for (const [id, s] of Object.entries(this.sources)) sources[id] = { chatId: s.chatId, title: s.title, files: s.chatId ? this.counts[s.chatId] : undefined, choices: s.candidates.length };
-    return { stage: this.stage, qrLink: this.qrLink, hint: this.hint, error: this.error, status: this.status, busy: this.busy, me: this.me, account: this.account, sources };
+    return { net: this.net, proxy: this.proxy, stage: this.stage, qrLink: this.qrLink, hint: this.hint, error: this.error, status: this.status, busy: this.busy, me: this.me, account: this.account, sources };
   }
   async close() { if (this.client) { try { await this.client.close(); } catch (_) { /* ignore */ } } }
 }
