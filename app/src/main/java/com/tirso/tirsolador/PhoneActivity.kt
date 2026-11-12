@@ -1189,47 +1189,90 @@ class PhoneActivity : Activity() {
     }
 
     // ================================================================== friends (phone)
+    private fun avatar(name: String, status: Int, size: Int): View {
+        val box = FrameLayout(this)
+        val base = (0xFF000000.toInt()) or (Math.abs(name.hashCode()) and 0x7F7F7F) or 0x404040
+        val av = tv(name.ifEmpty { "?" }.take(1).uppercase(), size * 0.42f, Color.WHITE, bold = true).apply {
+            gravity = Gravity.CENTER; background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(base); setStroke(dp(2), status) } }
+        box.addView(av, FrameLayout.LayoutParams(dp(size), dp(size)))
+        box.addView(View(this).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(status); setStroke(dp(2), p.bg) } },
+            FrameLayout.LayoutParams(dp(size / 3), dp(size / 3), Gravity.BOTTOM or Gravity.END))
+        return box
+    }
     private fun friendsPage() = page(T.t("Amigos")) { col ->
         drive.loadFriends()
         if (!drive.ready()) { col.addView(tv(T.t("Conecta TirsoDrive para ver a tus amigos."), 14f, p.muted)); return@page }
         if (drive.friendsChat() == 0L) {
-            col.addView(tv(T.t("Mira quién está conectado y a qué juega. Todos entran al mismo grupo privado de Telegram."), 14f, p.muted).apply { setPadding(dp(4), dp(6), dp(4), dp(10)) })
-            col.addView(button(T.t("Pegar enlace de invitación"), "f_join", true) { joinDialog() }, LinearLayout.LayoutParams(-1, -2))
-            col.addView(button(T.t("Crear grupo de amigos"), "f_create") {
+            val hero = vertical(); hero.gravity = Gravity.CENTER_HORIZONTAL; hero.setPadding(dp(20), dp(28), dp(20), dp(20))
+            hero.background = round(p.surface, 20f, if (p.outlined) dp(1.5f) else 0, p.outline)
+            hero.addView(IconView(this, "users", T.t("Amigos"), p.text), LinearLayout.LayoutParams(dp(64), dp(64)))
+            hero.addView(tv(T.t("Juega con tus amigos"), 22f, p.text, bold = true).apply { setPadding(0, dp(12), 0, 0) })
+            hero.addView(tv(T.t("Mira quién está conectado y a qué juega. Todos entran al mismo grupo privado de Telegram."), 14f, p.muted).apply { gravity = Gravity.CENTER; setPadding(0, dp(6), 0, dp(16)) })
+            hero.addView(button(T.t("Pegar enlace de invitación"), "f_join", true) { joinDialog() }, LinearLayout.LayoutParams(-1, -2))
+            hero.addView(button(T.t("Crear grupo de amigos"), "f_create") {
                 Toast.makeText(this, T.t("Creando grupo…"), Toast.LENGTH_SHORT).show()
                 drive.friendsCreate { _, error -> if (error != null) toast(error) else { toast(T.t("Grupo creado. Comparte el enlace con tus amigos.")); render() } }
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            col.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
             return@page
         }
         val all = drive.friends.values.toList()
         val playing = all.filter { it.playing() }.sortedBy { it.name.lowercase() }
         val online = all.filter { it.online() && !it.playing() }.sortedBy { it.name.lowercase() }
         val offline = all.filter { !it.online() }.sortedBy { it.name.lowercase() }
-        if (all.size <= 1) col.addView(tv(T.t("Aún no hay amigos aquí. Comparte el enlace de invitación."), 14f, p.muted).apply { setPadding(dp(4), dp(6), 0, 0) })
-        for ((title, list) in listOf(T.t("Jugando ahora") to playing, T.t("En línea") to online, T.t("Desconectados") to offline)) {
-            if (list.isEmpty()) continue
-            col.addView(section("$title · ${list.size}"))
-            val g = vertical(); g.background = round(p.surface, 14f); col.addView(g)
-            for (f in list) {
-                val r = horizontal(); r.setPadding(dp(14), dp(10), dp(14), dp(10))
-                val name = f.name.ifEmpty { "…" }; val color = if (f.playing()) 0xFF22C55E.toInt() else if (f.online()) 0xFF3B82F6.toInt() else 0xFF6B7280.toInt()
-                r.addView(tv(name.take(1).uppercase(), 16f, Color.WHITE, bold = true).apply { gravity = Gravity.CENTER; background = round(color, 20f) }, LinearLayout.LayoutParams(dp(40), dp(40)))
-                val t = vertical(); t.setPadding(dp(12), 0, 0, 0)
-                t.addView(tv(name + if (f.userId == drive.accountId) T.t("  (tú)") else "", 15f, p.text, bold = true))
-                t.addView(tv(if (f.playing()) f.game else if (f.online()) T.t("En el menú") else T.t("Desconectado"), 12f, if (f.playing()) color else p.muted).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
-                r.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
-                if (f.playing()) {
-                    val c = runCatching { Console.valueOf(f.console) }.getOrNull()
-                    val mins = maxOf(0L, (System.currentTimeMillis() - f.since) / 60000)
-                    r.addView(tv((c?.name ?: f.console) + " · " + (if (mins < 60) "$mins min" else "${mins / 60} h"), 11f, Color.WHITE, bold = true).apply { setPadding(dp(8), dp(4), dp(8), dp(4)); background = round(c?.color ?: 0xFF475569.toInt(), 8f) })
-                }
-                g.addView(r)
+        val pills = horizontal(); pills.setPadding(0, dp(8), 0, 0)
+        fun pill(t: String, fg: Int, bg: Int) = tv(t, 12f, fg, bold = true).apply { setPadding(dp(10), dp(5), dp(10), dp(5)); background = round(bg, 12f) }
+        pills.addView(pill("${playing.size} " + T.t("jugando"), 0xFF06210F.toInt(), 0xFF22C55E.toInt()))
+        pills.addView(pill("${online.size} " + T.t("en el menú"), Color.WHITE, 0xFF3B82F6.toInt()), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+        pills.addView(pill("${offline.size} " + T.t("desconectados"), p.text, p.surface2), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+        col.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(pills) })
+        if (all.size <= 1) col.addView(tv(T.t("Aún no hay amigos aquí. Comparte el enlace de invitación."), 14f, p.muted).apply { setPadding(dp(4), dp(14), 0, 0) })
+        if (playing.isNotEmpty()) {
+            col.addView(section(T.t("Jugando ahora")))
+            for (f in playing) {
+                val c = runCatching { Console.valueOf(f.console) }.getOrNull()
+                val g = library.games.firstOrNull { it.title.equals(f.game, true) }
+                val card = horizontal(); card.setPadding(dp(12), dp(12), dp(14), dp(12))
+                val ratio = c?.let { coverRatio(it) } ?: 0.72f
+                val art = FrameLayout(this); art.background = round(c?.color ?: 0xFF475569.toInt(), 8f); art.clipToOutline = true
+                val ph = tv(c?.name ?: f.console, 11f, Color.WHITE, bold = true).apply { gravity = Gravity.CENTER }
+                art.addView(ph, FrameLayout.LayoutParams(-1, -1))
+                if (g != null) { val iv = CoverImage(art, ph); art.addView(iv, FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles") }
+                card.addView(art, LinearLayout.LayoutParams((dp(84) * ratio).toInt(), dp(84)))
+                val tx = vertical(); tx.setPadding(dp(12), 0, 0, 0)
+                val who = horizontal(); who.addView(avatar(f.name, 0xFF22C55E.toInt(), 26))
+                who.addView(tv(f.name.ifEmpty { "…" } + if (f.userId == drive.accountId) T.t("  (tú)") else "", 14f, p.text, bold = true).apply { setPadding(dp(8), 0, 0, 0); maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
+                tx.addView(who)
+                tx.addView(tv(f.game, 16f, p.text, bold = true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(6), 0, 0) })
+                val mins = maxOf(0L, (System.currentTimeMillis() - f.since) / 60000)
+                tx.addView(tv((c?.title ?: f.console) + " · " + (if (mins < 60) "$mins min" else "${mins / 60} h ${mins % 60} min"), 12f, 0xFF22C55E.toInt()).apply { setPadding(0, dp(3), 0, 0) })
+                card.addView(tx, LinearLayout.LayoutParams(0, -2, 1f))
+                control(card, "fr_${f.userId}", p.surface, 16f) { if (g != null) { selected = g; console = g.console; go("detail") } }
+                col.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
             }
+        }
+        val rest = online + offline
+        if (rest.isNotEmpty()) {
+            col.addView(section(T.t("Amigos")))
+            val cols = if (landscape) 5 else 3
+            var row: LinearLayout? = null
+            rest.forEachIndexed { i, f ->
+                if (i % cols == 0) { row = horizontal(); col.addView(row, LinearLayout.LayoutParams(-1, -2)) }
+                val on = f.online()
+                val t = vertical(); t.gravity = Gravity.CENTER_HORIZONTAL; t.setPadding(dp(6), dp(12), dp(6), dp(10))
+                t.addView(avatar(f.name, if (on) 0xFF3B82F6.toInt() else 0xFF6B7280.toInt(), 52))
+                t.addView(tv(f.name.ifEmpty { "…" }, 13f, if (on) p.text else p.muted, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) })
+                t.addView(tv(if (on) T.t("En el menú") else T.t("Desconectado"), 11f, if (on) 0xFF3B82F6.toInt() else p.muted).apply { gravity = Gravity.CENTER })
+                control(t, "fr_${f.userId}", p.surface, 16f) { }
+                row!!.addView(t, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            }
+            val left = rest.size % cols
+            if (left != 0) repeat(cols - left) { row!!.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(dp(4), 0, dp(4), 0) }) }
         }
         val a = group(col, T.t("Opciones"))
         val share = drive.shareActivity()
-        row(a, T.t("Mostrar mi actividad"), null, "f_share", 0xFF22C55E.toInt(), share) { drive.shareActivity(!share); render() }
-        if (drive.friendsLink().isNotEmpty()) row(a, T.t("Copiar enlace"), drive.friendsLink(), "f_copy", 0xFF2AA8FF.toInt()) {
+        row(a, T.t("Mostrar mi actividad"), T.t("Tus amigos ven si estás conectado y a qué juegas"), "f_share", 0xFF22C55E.toInt(), share) { drive.shareActivity(!share); render() }
+        if (drive.friendsLink().isNotEmpty()) row(a, T.t("Copiar enlace de invitación"), drive.friendsLink(), "f_copy", 0xFF2AA8FF.toInt()) {
             (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("RetroStream", drive.friendsLink()))
             toast(T.t("Enlace copiado: ") + drive.friendsLink())
         }

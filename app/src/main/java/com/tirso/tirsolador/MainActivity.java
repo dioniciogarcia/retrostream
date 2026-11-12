@@ -286,11 +286,11 @@ public class MainActivity extends Activity {
             }
             clock.setPadding(px(22), 0, 0, 0); h.addView(clock);
         } else {
-            h.addView(clock, new LinearLayout.LayoutParams(0, -2, 1));
-            TextView title = tv(monoTitle, 28, text, fMono); title.setLetterSpacing(.14f); title.setGravity(Gravity.CENTER); title.setSingleLine(true);
-            h.addView(title, new LinearLayout.LayoutParams(0, -2, 2));
+            h.addView(clock, new LinearLayout.LayoutParams(px(240), -2));
+            TextView title = tv(monoTitle, 28, text, fMono); title.setLetterSpacing(.14f); title.setGravity(Gravity.CENTER); title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            h.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
             LinearLayout right = horizontal(); right.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-            TextView r = tv(monoRight, 28, text, fMono); r.setLetterSpacing(.14f); r.setPadding(0, 0, px(14), 0); right.addView(r);
+            TextView r = tv(monoRight, 24, muted, fMono); r.setLetterSpacing(.1f); r.setSingleLine(true); r.setPadding(px(14), 0, px(14), 0); if (!monoRight.isEmpty()) right.addView(r);
             if (!welcome) {
                 right.addView(icon("search", T.t("Buscar juegos"), "search", this::search));
                 right.addView(icon("star", T.t("Favoritos"), "nav_favorites", this::openFavorites));
@@ -298,7 +298,7 @@ public class MainActivity extends Activity {
                 right.addView(icon("history", T.t("Historial de juego"), "nav_history", () -> route("history")));
                 right.addView(icon("settings", T.t("Ajustes"), "nav_settings", () -> route("settings")));
             }
-            h.addView(right, new LinearLayout.LayoutParams(0, -2, 1));
+            h.addView(right, new LinearLayout.LayoutParams(-2, -2));
         }
         return h;
     }
@@ -810,16 +810,17 @@ public class MainActivity extends Activity {
         infoPanel.addView(chips);
         LinearLayout actions = horizontal();
         TextView play = primary(T.t("▶  Jugar"), "panel_play", () -> startPlay(game));
+        play.setSingleLine(true); play.setPadding(px(12), 0, px(12), 0); play.setTextSize(TypedValue.COMPLEX_UNIT_PX, 28 * u);
         actions.addView(play, new LinearLayout.LayoutParams(0, px(92), 1));
         TextView infoBtn = tv("i", 40, gba ? ink : text, fHead); infoBtn.setGravity(Gravity.CENTER); infoBtn.setContentDescription(T.t("Más información"));
         focusableWith(infoBtn, "panel_info", f -> { GradientDrawable g = round(ov(0x14FFFFFF), 26); if (f) g.setStroke(px(5), focusRing()); return g; }, () -> showFullInfo(game));
-        LinearLayout.LayoutParams ip2 = new LinearLayout.LayoutParams(px(92), px(92)); ip2.leftMargin = px(12); actions.addView(infoBtn, ip2);
+        LinearLayout.LayoutParams ip2 = new LinearLayout.LayoutParams(px(80), px(92)); ip2.leftMargin = px(10); actions.addView(infoBtn, ip2);
         TextView star = tv(library.favorite(game) ? "★" : "☆", 40, gba ? ink : text, fHead); star.setGravity(Gravity.CENTER);
         focusableWith(star, "panel_fav", f -> { GradientDrawable g = round(gba ? ov(0x14FFFFFF) : ov(0x14FFFFFF), 26); if (f) g.setStroke(px(5), focusRing()); return g; }, () -> { library.toggleFavorite(game); libraryFocus = "game_" + game.id; lastFocus = "panel_fav"; render(); });
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(px(92), px(92)); sp.leftMargin = px(12); actions.addView(star, sp);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(px(80), px(92)); sp.leftMargin = px(10); actions.addView(star, sp);
         TextView more = tv("⋯", 40, gba ? ink : text, fHead); more.setGravity(Gravity.CENTER); more.setContentDescription(T.t("Más opciones"));
         focusableWith(more, "panel_more", f -> { GradientDrawable g = round(ov(0x14FFFFFF), 26); if (f) g.setStroke(px(5), focusRing()); return g; }, () -> gameMore(game));
-        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(px(92), px(92)); mp.leftMargin = px(12); actions.addView(more, mp);
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(px(80), px(92)); mp.leftMargin = px(10); actions.addView(more, mp);
         infoPanel.addView(actions);
     }
     // ------------------------------------------------------------------ more options: screenshots, home screen shortcut
@@ -1192,34 +1193,27 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, px(88)); p.setMargins(px(8), px(6), px(8), px(6)); t.setLayoutParams(p); return t;
     }
     private void backupsScreen() {
-        LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));
-        if (!mono) { TextView h = tv(T.t("Copias de partidas"), 62, text, fHead); h.setPadding(px(10), px(10), 0, 0); col.addView(h); }
-        TextView sub = tv(T.t("Canal de Telegram: ") + TirsoDrive.BACKUP_TITLE, 26, muted, fBody); sub.setPadding(px(10), px(8), 0, px(16)); col.addView(sub);
-        LinearLayout actions = horizontal(); actions.setPadding(px(2), 0, 0, px(8));
-        actions.addView(actionButton(T.t("Copiar todas las partidas"), "bk_all", true, this::backupAll));
-        actions.addView(actionButton(T.t("Restaurar todas las partidas"), "bk_restore_all", false, this::restoreAll));
-        actions.addView(actionButton(T.t("Actualizar lista"), "bk_reload", false, this::loadBackups));
-        col.addView(actions);
-        backupStatusView = tv(backupStatus, 25, accent, fBody); backupStatusView.setPadding(px(10), px(4), 0, px(10)); col.addView(backupStatusView);
-        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
-        content = vertical(); content.setClipChildren(false); scroll.addView(content); col.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        if (backupList == null) return;
+        sPage(T.t("Copias de partidas"));
+        TextView sub = tv(T.t("Canal de Telegram: ") + TirsoDrive.BACKUP_TITLE, 24, muted, fBody); sub.setPadding(px(10), px(8), 0, 0); content.addView(sub);
+        LinearLayout a = sGroup(T.t("Acciones"));
+        sItem(a, T.t("Copiar todas las partidas"), T.t("Sube a Telegram las que cambiaron"), "bk_all", 0xFF2DE2C8, null, this::backupAll);
+        sItem(a, T.t("Restaurar todas las partidas"), T.t("Trae la copia más reciente de cada juego"), "bk_restore_all", 0xFF2F6DF6, null, this::restoreAll);
+        sItem(a, T.t("Actualizar lista"), null, "bk_reload", 0xFF7A4DFF, null, this::loadBackups);
+        backupStatusView = tv(backupStatus, 24, accent, fBody); backupStatusView.setPadding(px(10), px(14), 0, 0); content.addView(backupStatusView);
+        if (backupList == null || backupList.isEmpty()) return;
         java.util.List<TirsoDrive.Backup> latest = SaveBackups.latestPerGame(backupList);
+        LinearLayout g = sGroup(T.t("Juegos con copia") + " · " + latest.size());
         int idx = 0;
         for (TirsoDrive.Backup b : latest) {
             final int i = idx++;
             int olderCount = 0; for (TirsoDrive.Backup x : backupList) if (x.sha.equals(b.sha)) olderCount++;
-            LinearLayout row = horizontal(); row.setPadding(px(28), px(16), px(20), px(16));
-            row.setBackground(cardBg(false));
-            LinearLayout info = vertical();
-            TextView name = tv(b.title, 32, text, fHead); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); info.addView(name);
-            String consoleName = b.console; try { consoleName = Console.valueOf(b.console).title; } catch (Exception ignored) { }
-            TextView meta = tv(consoleName + " · " + SaveBackups.describe(this, b) + (olderCount > 1 ? " · " + olderCount + T.t(" copias") : ""), 24, muted, fBody); meta.setPadding(0, px(6), 0, 0); info.addView(meta);
-            row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
-            TextView restore = actionButton(T.t("Restaurar"), "bk_r_" + i, true, () -> confirmRestore(b));
-            row.addView(restore);
-            if (olderCount > 1) row.addView(actionButton(T.t("Historial"), "bk_h_" + i, false, () -> showHistory(b)));
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(px(8), px(8), px(8), px(8)); content.addView(row, p);
+            Console cn = null; try { cn = Console.valueOf(b.console); } catch (Exception ignored) { }
+            String meta = (cn == null ? b.console : cn.title) + " · " + SaveBackups.describe(this, b) + (olderCount > 1 ? " · " + olderCount + T.t(" copias") : "");
+            final int older = olderCount;
+            sItem(g, b.title, meta, "bk_r_" + i, cn == null ? 0xFF8C93A8 : brand(cn), null, () -> {
+                if (older > 1) new AlertDialog.Builder(this).setTitle(b.title).setItems(new String[]{T.t("Restaurar la más reciente"), T.t("Ver copias anteriores")}, (d, w) -> { if (w == 0) confirmRestore(b); else showHistory(b); }).show();
+                else confirmRestore(b);
+            });
         }
     }
 
@@ -1477,64 +1471,103 @@ public class MainActivity extends Activity {
         long m = Math.max(0, (System.currentTimeMillis() - since) / 60000);
         return m < 1 ? T.t("ahora") : m < 60 ? m + " min" : (m / 60) + " h " + (m % 60) + " min";
     }
-    private void friendRow(TirsoDrive.Friend f, boolean you) {
-        String name = f.name.isEmpty() ? "…" : f.name;
-        LinearLayout row = horizontal(); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(px(22), px(14), px(22), px(14));
-        int color = f.playing() ? 0xFF22C55E : f.online() ? 0xFF3B82F6 : 0xFF6B7280;
-        TextView av = tv(name.substring(0, 1).toUpperCase(java.util.Locale.ROOT), 34, Color.WHITE, fHead); av.setGravity(Gravity.CENTER);
-        av.setBackground(gradient(shade(color, 1f), shade(color, .7f), 40, GradientDrawable.Orientation.TL_BR));
-        row.addView(av, new LinearLayout.LayoutParams(px(72), px(72)));
-        LinearLayout col = vertical(); col.setPadding(px(22), 0, 0, 0);
-        TextView n = tv(name + (you ? T.t("  (tú)") : ""), 30, text, fHead); n.setSingleLine(true); n.setEllipsize(android.text.TextUtils.TruncateAt.END); col.addView(n);
-        String sub = f.playing() ? f.game : f.online() ? T.t("En el menú") : T.t("Desconectado");
-        TextView st = tv(sub, 24, f.playing() ? color : muted, fBody); st.setSingleLine(true); st.setEllipsize(android.text.TextUtils.TruncateAt.END); st.setPadding(0, px(4), 0, 0); col.addView(st);
-        row.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
-        if (f.playing()) {
-            Console c = null; try { c = Console.valueOf(f.console); } catch (Exception e) { }
-            TextView badge = tv((c == null ? f.console : c.name()) + " · " + sinceText(f.since), 22, Color.WHITE, fMono); badge.setPadding(px(16), px(8), px(16), px(8));
-            badge.setBackground(round(c == null ? 0xFF475569 : c.color, 14)); row.addView(badge);
-        }
-        focusable(row, "friend_" + f.userId, surface, () -> { });
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(px(8), px(6), px(8), px(6)); content.addView(row, p);
+    private Game gameByTitle(String title) { for (Game g : library.games) if (g.title.equalsIgnoreCase(title)) return g; return null; }
+    private View avatar(String name, int status, int size) {
+        FrameLayout box = new FrameLayout(this);
+        TextView av = tv(name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase(java.util.Locale.ROOT), Math.round(size * .42f), Color.WHITE, fHead); av.setGravity(Gravity.CENTER);
+        int base = 0xFF000000 | (Math.abs(name.hashCode()) & 0x7F7F7F) | 0x404040;
+        GradientDrawable d = new GradientDrawable(); d.setShape(GradientDrawable.OVAL); d.setColor(base); d.setStroke(px(5), status); av.setBackground(d);
+        box.addView(av, new FrameLayout.LayoutParams(px(size), px(size)));
+        View dot = new View(this); GradientDrawable dd = new GradientDrawable(); dd.setShape(GradientDrawable.OVAL); dd.setColor(status); dd.setStroke(px(4), background); dot.setBackground(dd);
+        box.addView(dot, new FrameLayout.LayoutParams(px(size / 3), px(size / 3), Gravity.BOTTOM | Gravity.END));
+        return box;
     }
-    private void friendSection(String title, int count) {
-        TextView t = tv(title + " · " + count, 24, muted, fMono); t.setLetterSpacing(.14f); t.setPadding(px(14), px(18), 0, px(6)); content.addView(t);
+    /** A friend who is playing: the game's cover, their avatar, the game and console, how long. */
+    private View playingCard(TirsoDrive.Friend f) {
+        LinearLayout card = horizontal(); card.setGravity(Gravity.CENTER_VERTICAL); card.setPadding(px(22), px(22), px(28), px(22));
+        Console c = null; try { c = Console.valueOf(f.console); } catch (Exception ignored) { }
+        Game g = gameByTitle(f.game);
+        FrameLayout art = new FrameLayout(this); art.setClipToOutline(true); art.setBackground(round(c == null ? 0xFF475569 : brand(c), 14));
+        TextView ph = tv(c == null ? f.console : c.name(), 22, Color.WHITE, fHead); ph.setGravity(Gravity.CENTER); art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
+        if (g != null) { ImageView iv = coverImage(art, ph); art.addView(iv, new FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles"); }
+        float ratio = c == null ? .72f : coverRatio(c);
+        card.addView(art, new LinearLayout.LayoutParams(Math.round(px(150) * ratio), px(150)));
+        LinearLayout tx = vertical(); tx.setPadding(px(26), 0, 0, 0);
+        LinearLayout who = horizontal(); who.addView(avatar(f.name, 0xFF22C55E, 52));
+        TextView n = tv((f.name.isEmpty() ? "…" : f.name) + (f.userId == drive.accountId ? T.t("  (tú)") : ""), 28, text, fHead); n.setPadding(px(14), 0, 0, 0); who.addView(n);
+        tx.addView(who);
+        TextView game = tv(f.game, 34, text, fHead); game.setMaxLines(2); game.setEllipsize(android.text.TextUtils.TruncateAt.END); game.setPadding(0, px(12), 0, 0); tx.addView(game);
+        TextView meta = tv((c == null ? f.console : c.title) + " · " + T.t("jugando desde hace ") + sinceText(f.since), 22, 0xFF22C55E, fBody); meta.setPadding(0, px(6), 0, 0); tx.addView(meta);
+        card.addView(tx, new LinearLayout.LayoutParams(0, -2, 1));
+        focusableWith(card, "friend_" + f.userId, x -> { GradientDrawable d = round(listSurface(), 28); if (th.equals("gba")) d.setStroke(px(3), ink); if (x) d.setStroke(px(5), focusRing()); return d; }, () -> { if (g != null) startPlay(g); });
+        return card;
+    }
+    /** Online or offline friends as avatar tiles. */
+    private View friendTile(TirsoDrive.Friend f) {
+        LinearLayout t = vertical(); t.setGravity(Gravity.CENTER_HORIZONTAL); t.setPadding(px(12), px(20), px(12), px(18));
+        boolean on = f.online();
+        t.addView(avatar(f.name, on ? 0xFF3B82F6 : 0xFF6B7280, 96));
+        TextView n = tv((f.name.isEmpty() ? "…" : f.name), 24, on ? text : muted, fHead); n.setSingleLine(true); n.setEllipsize(android.text.TextUtils.TruncateAt.END); n.setGravity(Gravity.CENTER); n.setPadding(0, px(12), 0, 0); t.addView(n);
+        TextView st = tv(on ? T.t("En el menú") : T.t("Desconectado"), 20, on ? 0xFF3B82F6 : muted, fBody); st.setGravity(Gravity.CENTER); t.addView(st);
+        focusableWith(t, "friend_" + f.userId, x -> { GradientDrawable d = round(listSurface(), 26); if (th.equals("gba")) d.setStroke(px(3), ink); if (x) d.setStroke(px(5), focusRing()); return d; }, () -> { });
+        return t;
     }
     private void friendsScreen() {
         drive.friendsListener(this::friendsRefreshSoon);
-        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
-        content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content);
-        if (!mono) { TextView h = tv(T.t("Amigos"), 62, text, fHead); h.setPadding(px(10), px(10), 0, px(10)); body.addView(h); }
-        body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        if (!drive.ready()) { content.addView(tv(T.t("Conecta TirsoDrive para ver a tus amigos."), 30, muted, fBody)); return; }
+        sPage(T.t("Amigos"));
+        if (!drive.ready()) { content.addView(tv(T.t("Conecta TirsoDrive para ver a tus amigos."), 28, muted, fBody)); return; }
         if (drive.friendsChat() == 0) {
-            content.addView(tv(T.t("Mira quién está conectado y a qué juega. Todos entran al mismo grupo privado de Telegram."), 28, muted, fBody));
-            content.addView(button(T.t("Pegar enlace de invitación"), "friends_join", this::friendsJoinDialog));
-            content.addView(button(T.t("Crear grupo de amigos"), "friends_create", () -> {
+            LinearLayout hero = vertical(); hero.setGravity(Gravity.CENTER_HORIZONTAL); hero.setPadding(px(40), px(50), px(40), px(40));
+            GradientDrawable hb = round(listSurface(), 34); if (th.equals("gba")) hb.setStroke(px(3), ink); hero.setBackground(hb);
+            IconView big = new IconView(this, "users", T.t("Amigos"), text); hero.addView(big, new LinearLayout.LayoutParams(px(120), px(120)));
+            TextView t = tv(T.t("Juega con tus amigos"), 44, text, fHead); t.setPadding(0, px(20), 0, 0); hero.addView(t);
+            TextView d = tv(T.t("Mira quién está conectado y a qué juega. Todos entran al mismo grupo privado de Telegram."), 26, muted, fBody); d.setGravity(Gravity.CENTER); d.setPadding(0, px(10), 0, px(26)); hero.addView(d);
+            LinearLayout b = horizontal(); b.setGravity(Gravity.CENTER);
+            b.addView(actionButton(T.t("Pegar enlace de invitación"), "friends_join", true, this::friendsJoinDialog));
+            b.addView(actionButton(T.t("Crear grupo de amigos"), "friends_create", false, () -> {
                 Toast.makeText(this, T.t("Creando grupo…"), Toast.LENGTH_SHORT).show();
-                drive.friendsCreate((link, error) -> { if (error != null) Toast.makeText(this, error, Toast.LENGTH_LONG).show(); else { Toast.makeText(this, T.t("Grupo creado. Comparte el enlace con tus amigos."), Toast.LENGTH_LONG).show(); render(); } }); 
+                drive.friendsCreate((link, error) -> { if (error != null) Toast.makeText(this, error, Toast.LENGTH_LONG).show(); else { Toast.makeText(this, T.t("Grupo creado. Comparte el enlace con tus amigos."), Toast.LENGTH_LONG).show(); render(); } });
             }));
+            hero.addView(b);
+            LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(-1, -2); hp.topMargin = px(20); content.addView(hero, hp);
             return;
         }
         java.util.ArrayList<TirsoDrive.Friend> playing = new java.util.ArrayList<>(), online = new java.util.ArrayList<>(), offline = new java.util.ArrayList<>();
         for (TirsoDrive.Friend f : drive.friends.values()) (f.playing() ? playing : f.online() ? online : offline).add(f);
         java.util.Comparator<TirsoDrive.Friend> byName = (a, b) -> a.name.compareToIgnoreCase(b.name);
         playing.sort(byName); online.sort(byName); offline.sort(byName);
-        if (playing.size() + online.size() + offline.size() <= 1) content.addView(tv(T.t("Aún no hay amigos aquí. Comparte el enlace de invitación."), 28, muted, fBody));
-        if (!playing.isEmpty()) { friendSection(T.t("JUGANDO AHORA"), playing.size()); for (TirsoDrive.Friend f : playing) friendRow(f, f.userId == drive.accountId); }
-        if (!online.isEmpty()) { friendSection(T.t("EN LÍNEA"), online.size()); for (TirsoDrive.Friend f : online) friendRow(f, f.userId == drive.accountId); }
-        if (!offline.isEmpty()) { friendSection(T.t("DESCONECTADOS"), offline.size()); for (TirsoDrive.Friend f : offline) friendRow(f, f.userId == drive.accountId); }
-        LinearLayout actions = horizontal(); actions.setPadding(0, px(24), 0, 0);
-        actions.addView(button(drive.shareActivity() ? T.t("Mostrar mi actividad: sí") : T.t("Mostrar mi actividad: no"), "friends_share", () -> { drive.shareActivity(!drive.shareActivity()); render(); }));
-        actions.addView(button(T.t("Actualizar"), "friends_refresh", () -> { drive.loadFriends(); Toast.makeText(this, T.t("Actualizando…"), Toast.LENGTH_SHORT).show(); }));
-        if (!drive.friendsLink().isEmpty()) actions.addView(button(T.t("Copiar enlace"), "friends_copy", () -> {
+        // summary strip
+        LinearLayout sum = horizontal(); sum.setPadding(px(4), px(18), 0, 0);
+        sum.addView(pill(playing.size() + " " + T.t("jugando"), 24, 0xFF06210F, 0xFF22C55E));
+        TextView on2 = pill(online.size() + " " + T.t("en el menú"), 24, Color.WHITE, 0xFF3B82F6); LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-2, -2); sp.leftMargin = px(12); sum.addView(on2, sp);
+        TextView off = pill(offline.size() + " " + T.t("desconectados"), 24, text, ov(0x22FFFFFF)); LinearLayout.LayoutParams sp2 = new LinearLayout.LayoutParams(-2, -2); sp2.leftMargin = px(12); sum.addView(off, sp2);
+        content.addView(sum);
+        if (playing.size() + online.size() + offline.size() <= 1) { TextView t = tv(T.t("Aún no hay amigos aquí. Comparte el enlace de invitación."), 26, muted, fBody); t.setPadding(px(8), px(20), 0, 0); content.addView(t); }
+        if (!playing.isEmpty()) {
+            TextView h = tv(T.t("JUGANDO AHORA"), 21, muted, fMono); h.setLetterSpacing(.12f); h.setPadding(px(8), px(26), 0, px(10)); content.addView(h);
+            for (TirsoDrive.Friend f : playing) { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = px(14); content.addView(playingCard(f), lp); }
+        }
+        java.util.ArrayList<TirsoDrive.Friend> rest = new java.util.ArrayList<>(online); rest.addAll(offline);
+        if (!rest.isEmpty()) {
+            TextView h = tv(T.t("AMIGOS"), 21, muted, fMono); h.setLetterSpacing(.12f); h.setPadding(px(8), px(26), 0, px(10)); content.addView(h);
+            LinearLayout row = null; int i = 0;
+            for (TirsoDrive.Friend f : rest) {
+                if (i++ % 4 == 0) { row = horizontal(); row.setClipChildren(false); content.addView(row, new LinearLayout.LayoutParams(-1, -2)); }
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1); lp.setMargins(px(8), px(8), px(8), px(8)); row.addView(friendTile(f), lp);
+            }
+            while (row != null && i++ % 4 != 0) row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        }
+        LinearLayout o = sGroup(T.t("Opciones"));
+        boolean share = drive.shareActivity();
+        sItem(o, T.t("Mostrar mi actividad"), T.t("Tus amigos ven si estás conectado y a qué juegas"), "friends_share", 0xFF22C55E, share, () -> { drive.shareActivity(!share); lastFocus = "friends_share"; render(); });
+        if (!drive.friendsLink().isEmpty()) sItem(o, T.t("Copiar enlace de invitación"), drive.friendsLink(), "friends_copy", 0xFF2AA8FF, null, () -> {
             ((android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("RetroStream", drive.friendsLink()));
             Toast.makeText(this, T.t("Enlace copiado: ") + drive.friendsLink(), Toast.LENGTH_LONG).show();
-        }));
-        actions.addView(button(T.t("Salir del grupo"), "friends_leave", () -> new AlertDialog.Builder(this).setTitle(T.t("Salir de amigos"))
+        });
+        sItem(o, T.t("Actualizar"), null, "friends_refresh", 0xFF7A4DFF, null, () -> { drive.loadFriends(); Toast.makeText(this, T.t("Actualizando…"), Toast.LENGTH_SHORT).show(); });
+        sItem(o, T.t("Salir del grupo"), null, "friends_leave", 0xFFFF4D73, null, () -> new AlertDialog.Builder(this).setTitle(T.t("Salir de amigos"))
             .setMessage(T.t("Dejarás de ver y de mostrar actividad. Puedes volver a unirte con el enlace."))
-            .setPositiveButton(T.t("Salir"), (d, w) -> { drive.friendsLeave(); render(); }).setNegativeButton(T.t("Cancelar"), null).show()));
-        content.addView(actions);
+            .setPositiveButton(T.t("Salir"), (d, w) -> { drive.friendsLeave(); render(); }).setNegativeButton(T.t("Cancelar"), null).show());
     }
     private void friendsJoinDialog() {
         EditText input = new EditText(this); input.setSingleLine(true); input.setHint("https://t.me/+…");
@@ -1587,34 +1620,19 @@ public class MainActivity extends Activity {
 
     // ---------------------------------------------------------------- resolution per console
     private void resolutionScreen() {
-        LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));
-        if (!mono) { TextView h = tv(T.t("Resolución"), 62, text, fHead); h.setPadding(px(10), px(10), 0, 0); col.addView(h); }
-        TextView sub = tv(T.t("Elige la resolución de cada consola. En N64 cambia el tamaño del dibujo; en las consolas 2D cambia cómo se escala la imagen."), 26, muted, fBody); sub.setPadding(px(10), px(8), px(10), px(16)); col.addView(sub);
-        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
-        content = vertical(); content.setClipChildren(false); content.setPadding(0, px(4), 0, px(20)); scroll.addView(content); col.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        resolutionRow(null);
-        for (Console c : Console.all()) if (library.visible(c) && c != Console.MAME) resolutionRow(c);
-    }
-    private void resolutionRow(Console c) {
-        LinearLayout row = horizontal(); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(px(26), px(14), px(18), px(14));
-        GradientDrawable bg = round(th.equals("midnight") ? ov(0x10FFFFFF) : surface, 22); if (!th.equals("midnight")) bg.setStroke(px(2), strokeColor); row.setBackground(bg);
-        LinearLayout names = vertical();
-        names.addView(tv(c == null ? T.t("Todas las consolas") : c.title, 32, text, fHead));
-        String note = c == null ? T.t("Cambia todas a la vez") : c == Console.N64 ? T.t("Tamaño del dibujo") : c == Console.NDS ? T.t("Solo con el motor DeSmuME") : T.t("Escalado de la imagen");
-        TextView n = tv(note, 22, muted, fBody); n.setPadding(0, px(4), 0, 0); names.addView(n);
-        row.addView(names, new LinearLayout.LayoutParams(0, -2, 1));
+        sPage(T.t("Resolución"));
+        TextView sub = tv(T.t("En N64, PSP, PS2, GameCube y Wii cambia el tamaño del dibujo; en las consolas 2D, cómo se escala la imagen."), 24, muted, fBody); sub.setPadding(px(10), px(8), 0, 0); content.addView(sub);
         String[] ids = {"low", "medium", "high"}, labels = {T.t("Baja"), T.t("Media"), T.t("Alta")};
-        String current = c == null ? null : Presets.resolution(this, c);
-        if (c == null) { boolean same = true; String first = null; for (Console x : Console.all()) { if (!library.visible(x) || x == Console.MAME) continue; String v = Presets.resolution(this, x); if (first == null) first = v; else if (!first.equals(v)) same = false; } current = same ? first : null; }
-        for (int i = 0; i < 3; i++) {
-            final String id = ids[i]; boolean on = id.equals(current); final String tag = "res_" + (c == null ? "ALL" : c.name()) + "_" + id;
-            TextView chip = tv(labels[i], 26, on ? onAccent() : text, fHead); chip.setGravity(Gravity.CENTER); chip.setPadding(px(30), px(14), px(30), px(14));
-            final int ringColor = focusRing();
-            focusableWith(chip, tag, f -> { GradientDrawable g = round(on ? (th.equals("midnight") ? accent : th.equals("tiles") ? 0xFFFFC857 : ink) : (th.equals("midnight") ? ov(0x18FFFFFF) : ov(0x14FFFFFF)), 18); if (f) g.setStroke(px(5), ringColor); return g; },
-                () -> { if (c == null) { for (Console x : Console.all()) Presets.setResolution(this, x, id); } else Presets.setResolution(this, c, id); lastFocus = tag; render(); });
-            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(px(150), px(72)); cp.setMargins(px(6), 0, px(6), 0); row.addView(chip, cp);
+        LinearLayout all = sGroup(T.t("Todas"));
+        sItem(all, T.t("Todas las consolas"), T.t("Cambia todas a la vez"), "res_ALL", 0xFF2F6DF6, null, () ->
+            new AlertDialog.Builder(this).setTitle(T.t("Todas las consolas")).setItems(labels, (d, w) -> { for (Console x : Console.all()) Presets.setResolution(this, x, ids[w]); lastFocus = "res_ALL"; render(); }).show());
+        LinearLayout g = sGroup(T.t("Por consola"));
+        for (Console c : Console.all()) {
+            if (!library.visible(c) || c == Console.MAME) continue;
+            String v = Presets.resolution(this, c); int idx = java.util.Arrays.asList(ids).indexOf(v);
+            sItem(g, c.title, idx < 0 ? v : labels[idx], "res_" + c.name(), brand(c), null, () ->
+                new AlertDialog.Builder(this).setTitle(c.title).setSingleChoiceItems(labels, idx, (d, w) -> { Presets.setResolution(this, c, ids[w]); d.dismiss(); lastFocus = "res_" + c.name(); render(); }).show());
         }
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2); rp.setMargins(px(8), px(7), px(8), px(7)); content.addView(row, rp);
     }
 
     // ---------------------------------------------------------------- download all artwork
@@ -1623,36 +1641,21 @@ public class MainActivity extends Activity {
     private String artText = ""; private int artDone, artTotal; private TextView artStatusView; private android.widget.ProgressBar artBar;
     private void artworkScreen() {
         if (!artInit) { artInit = true; for (Console c : Console.all()) if (library.visible(c) && library.count(c) > 0) artSel.add(c); }
-        LinearLayout col = vertical(); body.addView(col, new LinearLayout.LayoutParams(-1, 0, 1));
-        if (!mono) { TextView h = tv(T.t("Descargar imágenes"), 62, text, fHead); h.setPadding(px(10), px(10), 0, 0); col.addView(h); }
-        TextView sub = tv(T.t("Elige las consolas de las que descargar logos y carátulas. Se guardan en la TV."), 26, muted, fBody); sub.setPadding(px(10), px(8), 0, px(16)); col.addView(sub);
-        LinearLayout actions = horizontal(); actions.setPadding(px(2), 0, 0, px(8));
-        actions.addView(actionButton(T.t("Seleccionar todo"), "art_all", false, () -> { for (Console c : Console.all()) if (library.visible(c) && library.count(c) > 0) artSel.add(c); lastFocus = "art_all"; render(); }));
-        actions.addView(actionButton(T.t("Ninguna"), "art_none", false, () -> { artSel.clear(); lastFocus = "art_none"; render(); }));
-        col.addView(actions);
-        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
-        content = vertical(); content.setClipChildren(false); content.setPadding(0, px(6), 0, px(20)); scroll.addView(content); col.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        LinearLayout row = null; int n = 0, selectedGames = 0;
+        sPage(T.t("Descargar imágenes"));
+        TextView sub = tv(T.t("Elige las consolas de las que descargar carátulas y logos. Se guardan en este dispositivo."), 24, muted, fBody); sub.setPadding(px(10), px(8), 0, 0); content.addView(sub);
+        LinearLayout g = sGroup(T.t("Consolas"));
+        sItem(g, T.t("Seleccionar todo"), null, "art_all", 0xFF22C55E, null, () -> { for (Console c : Console.all()) if (library.visible(c) && library.count(c) > 0) artSel.add(c); lastFocus = "art_all"; render(); });
+        sItem(g, T.t("Ninguna"), null, "art_none", 0xFF8C93A8, null, () -> { artSel.clear(); lastFocus = "art_none"; render(); });
         for (Console c : Console.all()) {
             if (!library.visible(c)) continue;
-            boolean on = artSel.contains(c); int count = library.count(c); if (on) selectedGames += count;
-            if (n++ % 3 == 0) { row = horizontal(); content.addView(row, new LinearLayout.LayoutParams(-1, -2)); }
-            LinearLayout cell = horizontal(); cell.setGravity(Gravity.CENTER_VERTICAL); cell.setPadding(px(26), px(18), px(26), px(18));
-            TextView mark = tv(on ? "✓" : "", 34, Color.WHITE, fHead); mark.setGravity(Gravity.CENTER); mark.setBackground(round(on ? brand(c) : 0x33888888, 10)); cell.addView(mark, new LinearLayout.LayoutParams(px(50), px(50)));
-            TextView name = tv(c.name(), 32, text, fHead); name.setPadding(px(20), 0, 0, 0); cell.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
-            cell.addView(tv(String.valueOf(count), 28, muted, fMono));
-            final int ringColor = focusRing();
-            focusableWith(cell, "art_" + c.name(), f -> { GradientDrawable g = round(th.equals("midnight") ? ov(0x14FFFFFF) : surface, 22); if (f) g.setStroke(px(5), ringColor); else g.setStroke(px(on ? 4 : 2), on ? brand(c) : strokeColor); return g; },
-                () -> { if (on) artSel.remove(c); else artSel.add(c); lastFocus = "art_" + c.name(); render(); });
-            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, -2, 1); cp.setMargins(px(8), px(8), px(8), px(8)); row.addView(cell, cp);
+            boolean on = artSel.contains(c);
+            sItem(g, c.title, gameCount(library.count(c)), "art_" + c.name(), brand(c), on, () -> { if (on) artSel.remove(c); else artSel.add(c); lastFocus = "art_" + c.name(); render(); });
         }
-        while (row != null && n++ % 3 != 0) row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
-        artStatusView = tv(artText, 26, accent, fBody); artStatusView.setPadding(px(10), px(22), 0, px(8)); content.addView(artStatusView);
+        artStatusView = tv(artText, 24, accent, fBody); artStatusView.setPadding(px(10), px(22), 0, px(8)); content.addView(artStatusView);
         artBar = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); artBar.setMax(Math.max(1, artTotal)); artBar.setProgress(artDone);
         artBar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent)); artBar.setVisibility(artRunning ? View.VISIBLE : View.INVISIBLE);
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-1, px(14)); bp.setMargins(px(10), 0, px(10), px(18)); content.addView(artBar, bp);
-        final int chosen = artSel.size();
-        TextView go = actionButton(artRunning ? T.t("Cancelar descarga") : T.t("Descargar imágenes de ") + chosen + T.t(" consolas"), "art_go", !artRunning, this::toggleArtworkDownload);
+        TextView go = actionButton(artRunning ? T.t("Cancelar descarga") : T.t("Descargar imágenes de ") + artSel.size() + T.t(" consolas"), "art_go", !artRunning, this::toggleArtworkDownload);
         content.addView(go);
     }
     private void toggleArtworkDownload() {
