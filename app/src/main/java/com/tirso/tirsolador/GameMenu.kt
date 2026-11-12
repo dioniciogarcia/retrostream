@@ -25,7 +25,7 @@ import java.io.File
  * The long-press menu for a game (same everywhere, on the phone and on the TV), and the windows behind it:
  * search the game's information by hand, rename, choose a cover, games missing information, hidden games, space used.
  */
-object GameMenu {
+internal object GameMenu {
     /** What the screen showing the menu does for it. */
     interface Host {
         fun refresh()                      // reload the library and redraw
