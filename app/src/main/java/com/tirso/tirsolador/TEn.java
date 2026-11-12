@@ -3,6 +3,7 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("Copia en Telegram", "Back up to Telegram");
         m.put("Jugar en TV o PC", "Play on TV or PC");
         m.put("Jugar aquí", "Play here");
         m.put("Preparando en ", "Getting ready on ");

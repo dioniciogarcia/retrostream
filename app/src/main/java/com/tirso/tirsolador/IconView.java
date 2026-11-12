@@ -11,12 +11,14 @@ import android.view.View;
 final class IconView extends View {
     private final String icon;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private int badge;
     void badge(int n){badge=n;invalidate();}
     IconView(Context context, String icon, String label, int color) {
         super(context); this.icon = icon; setContentDescription(label);
         paint.setColor(color); paint.setStrokeWidth(1.8f); paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND); paint.setStrokeJoin(Paint.Join.ROUND);
+        fill.setColor(color); fill.setStyle(Paint.Style.FILL);
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
     }
     @Override protected void onDraw(Canvas canvas) {
@@ -60,6 +62,29 @@ final class IconView extends View {
                 p.moveTo(2,8); p.lineTo(2,5); p.quadTo(2,4,3,4); p.lineTo(21,4); p.quadTo(22,4,22,5); p.lineTo(22,19); p.quadTo(22,20,21,20); p.lineTo(14,20); canvas.drawPath(p,paint);
                 canvas.drawArc(new RectF(-4,10,8,26), 270, 90, false, paint); canvas.drawArc(new RectF(-1,13.5f,5,19.5f), 270, 90, false, paint);
                 canvas.drawCircle(2.2f,19.8f,0.6f,paint); break;
+            case "play": p.moveTo(7,4); p.lineTo(19.5f,12); p.lineTo(7,20); p.close(); canvas.drawPath(p,fill); break;
+            case "pause": canvas.drawRoundRect(new RectF(6,4.5f,10,19.5f),1.2f,1.2f,fill); canvas.drawRoundRect(new RectF(14,4.5f,18,19.5f),1.2f,1.2f,fill); break;
+            case "ff": p.moveTo(2.5f,6); p.lineTo(11.5f,12); p.lineTo(2.5f,18); p.close(); p.moveTo(12,6); p.lineTo(21,12); p.lineTo(12,18); p.close(); canvas.drawPath(p,fill); break;
+            case "camera":
+                canvas.drawRoundRect(new RectF(2,7,22,20),2.5f,2.5f,paint); p.moveTo(8,7); p.lineTo(9.5f,4); p.lineTo(14.5f,4); p.lineTo(16,7); canvas.drawPath(p,paint);
+                canvas.drawCircle(12,13.5f,3.6f,paint); break;
+            case "save":
+                canvas.drawLine(12,3,12,14.5f,paint); p.moveTo(7.5f,10); p.lineTo(12,14.5f); p.lineTo(16.5f,10); p.moveTo(4,15); p.lineTo(4,20); p.lineTo(20,20); p.lineTo(20,15); canvas.drawPath(p,paint); break;
+            case "load":
+                canvas.drawLine(12,14.5f,12,3,paint); p.moveTo(7.5f,7.5f); p.lineTo(12,3); p.lineTo(16.5f,7.5f); p.moveTo(4,15); p.lineTo(4,20); p.lineTo(20,20); p.lineTo(20,15); canvas.drawPath(p,paint); break;
+            case "cloud":
+                p.moveTo(7,19); p.lineTo(17,19); p.cubicTo(21.5f,19,22.5f,12.5f,17.8f,11.5f); p.cubicTo(17.2f,6.5f,10.5f,5,8.6f,9.6f); p.cubicTo(3.6f,9.6f,2.6f,19,7,19); canvas.drawPath(p,paint);
+                Path u=new Path(); canvas.drawLine(12,16.5f,12,11.5f,paint); u.moveTo(9.6f,13.8f); u.lineTo(12,11.4f); u.lineTo(14.4f,13.8f); canvas.drawPath(u,paint); break;
+            case "restart":
+                canvas.drawArc(new RectF(4,4,20,20), -55, 290, false, paint);
+                p.moveTo(17.8f,1.8f); p.lineTo(16.8f,6.2f); p.lineTo(12.6f,5.4f); canvas.drawPath(p,paint); break;
+            case "exit":
+                canvas.drawArc(new RectF(4,5,20,21), -55, 290, false, paint); canvas.drawLine(12,3,12,12,paint); break;
+            case "youtube":
+                canvas.drawRoundRect(new RectF(2,5,22,19),5,5,paint); p.moveTo(10,9); p.lineTo(15.5f,12); p.lineTo(10,15); p.close(); canvas.drawPath(p,fill); break;
+            case "photos":
+                canvas.drawRoundRect(new RectF(3,4,21,20),2.5f,2.5f,paint); canvas.drawCircle(8.5f,9.5f,1.6f,paint);
+                p.moveTo(3,17); p.lineTo(9,12); p.lineTo(13,16); p.lineTo(16,13); p.lineTo(21,17.5f); canvas.drawPath(p,paint); break;
             case "tv":
                 canvas.drawRoundRect(new RectF(2,4,22,17), 2, 2, paint); canvas.drawLine(8,21,16,21,paint); canvas.drawLine(12,17,12,21,paint); break;
             case "pc":

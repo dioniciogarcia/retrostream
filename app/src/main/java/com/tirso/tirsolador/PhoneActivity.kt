@@ -1224,82 +1224,112 @@ class PhoneActivity : Activity() {
         val d = remoteDevice ?: castNow()?.first ?: RemoteClient.saved(this).firstOrNull { it.paired } ?: run { page = "home"; home(); return }
         remoteDevice = d
         val s = castStatus[d.id]
-        val col = vertical(); col.setPadding(dp(18), 0, dp(18), dp(24))
-        val top = horizontal(); top.setPadding(0, dp(22), 0, dp(6))
-        top.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
-        val head = vertical(); head.gravity = Gravity.CENTER_HORIZONTAL
-        head.addView(tv(T.t("JUGANDO EN"), 10f, p.muted, mono = true).apply { letterSpacing = .14f })
-        head.addView(tv(d.name, 15f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(2), 0, 0) })
-        top.addView(head, LinearLayout.LayoutParams(0, -2, 1f))
-        top.addView(icon("cast", T.t("Cambiar de dispositivo"), "r_switch") { castSheet(null) })
-        col.addView(top)
         val state = s?.optString("state") ?: "offline"
         val j = s?.optJSONObject("game")
         val g = s?.let { castGame(it) }
-        // Picture: the game's cover (the live screen arrives in the next update).
-        val art = FrameLayout(this); art.background = round(p.surface2, 18f); art.clipToOutline = true
-        art.addView(tv(j?.optString("title") ?: d.name, 18f, p.muted, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(20), dp(20), dp(20), dp(20)) }, FrameLayout.LayoutParams(-1, -1))
-        if (g != null) { val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.FIT_CENTER; art.addView(iv, FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(g, iv, "Named_Snaps", "Named_Titles", "Named_Boxarts") }
-        if (state == "playing") {
-            val badge = tv(ago(s!!.optLong("since")), 12f, Color.WHITE, bold = true).apply { setPadding(dp(8), dp(4), dp(8), dp(4)); background = round(0xCC000000.toInt(), 8f) }
-            art.addView(badge, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(10), dp(10)) })
-            remoteTimer = badge
-            if (s.optBoolean("paused")) art.addView(tv("❚❚  " + T.t("En pausa"), 13f, Color.WHITE, bold = true).apply { setPadding(dp(10), dp(5), dp(10), dp(5)); background = round(0xCC000000.toInt(), 8f) },
-                FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(10), dp(10), 0, 0) })
+        val playing = state == "playing" && s != null
+        val can = if (playing) s!!.optJSONArray("controls")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() } ?: setOf("exit") else emptySet()
+        val paused = s?.optBoolean("paused") == true
+        val consoleTitle = Console.values().firstOrNull { it.name == j?.optString("console") }?.title ?: j?.optString("console") ?: ""
+
+        // Fills the screen: the picture takes what the controls leave (scrolls only on small or sideways screens).
+        val col = vertical(); col.setPadding(dp(16), 0, dp(16), dp(18))
+        val top = horizontal(); top.setPadding(0, dp(22), 0, dp(8))
+        top.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
+        val head = vertical(); head.setPadding(dp(8), 0, dp(8), 0)
+        head.addView(tv(T.t("JUGANDO EN"), 10f, p.muted, mono = true).apply { letterSpacing = .14f })
+        head.addView(tv(d.name, 17f, p.text, bold = true).apply { setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(3), 0, 0) })
+        top.addView(head, LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(icon("cast", T.t("Cambiar de dispositivo"), "r_switch") { castSheet(null) })
+        col.addView(top)
+
+        // Picture with the time played and the paused badge on it.
+        val art = FrameLayout(this); art.background = round(p.surface2, 24f); art.clipToOutline = true
+        art.addView(tv(j?.optString("title") ?: d.name, 20f, p.muted, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(24), dp(24), dp(24), dp(24)) }, FrameLayout.LayoutParams(-1, -1))
+        if (g != null) { val iv = ImageView(this); iv.scaleType = ImageView.ScaleType.FIT_CENTER; art.addView(iv, FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Snaps", "Named_Titles") }
+        fun badge(text: String, bg: Int, where: Int) = art.addView(tv(text, 13f, Color.WHITE, bold = true).apply { setPadding(dp(10), dp(5), dp(10), dp(5)); background = round(bg, 10f) },
+            FrameLayout.LayoutParams(-2, -2, where).apply { setMargins(dp(12), dp(12), dp(12), dp(12)) })
+        if (playing) {
+            badge(ago(s!!.optLong("since")), 0xCC000000.toInt(), Gravity.BOTTOM or Gravity.END)
+            if (paused) badge(T.t("En pausa"), 0xE6F59E0B.toInt(), Gravity.TOP or Gravity.START)
+            if (s.optBoolean("ff")) badge(T.t("Avance rápido"), 0xE62F6DF6.toInt(), Gravity.TOP or Gravity.END)
         }
-        col.addView(art, LinearLayout.LayoutParams(-1, dp(if (landscape) 150 else 200)).apply { topMargin = dp(8) })
-        col.addView(tv(j?.optString("title") ?: when (state) { "menu" -> T.t("Nada en juego"); "offline" -> T.t("Buscando el dispositivo…"); else -> "" }, 20f, p.text, bold = true).apply { setPadding(0, dp(14), 0, 0) })
+        col.addView(art, LinearLayout.LayoutParams(-1, dp(if (landscape) 140 else 190), 1f).apply { topMargin = dp(4) })
+
+        // Title and what is going on.
+        col.addView(tv(j?.optString("title") ?: when (state) { "menu" -> T.t("Nada en juego"); "offline" -> T.t("Buscando el dispositivo…"); else -> "" }, 22f, p.text, bold = true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(16), 0, 0) })
         val sub = when (state) {
-            "playing" -> (Console.values().firstOrNull { it.name == j?.optString("console") }?.title ?: j?.optString("console") ?: "") + (if (s!!.optBoolean("ff")) " · " + T.t("avance rápido") else "")
+            "playing" -> consoleTitle
             "loading" -> T.t("Descargando o preparando el juego en ") + d.name + "…"
             "menu" -> T.t("Elige un juego y toca «Jugar en TV o PC».")
             else -> T.t("Si no aparece: abre RetroStream en la TV o el PC y revisa que esté en la misma red Wi-Fi.")
         }
-        col.addView(tv(sub, 13f, p.muted).apply { setPadding(0, dp(4), 0, dp(14)) })
-        if (state == "playing") {
-            val can = s!!.optJSONArray("controls")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() } ?: setOf("exit")
-            val paused = s.optBoolean("paused")
-            val main = horizontal(); main.gravity = Gravity.CENTER
-            fun roundButton(label: String, desc: String, tag: String, big: Boolean, on: Boolean, f: () -> Unit) {
-                val size = if (big) 64 else 50
-                val b = tv(label, if (big) 24f else 17f, if (big) p.onPrimary else p.text, bold = true).apply { gravity = Gravity.CENTER; contentDescription = desc }
-                control(b, tag, if (big) p.primary else if (on) p.primary else p.surface2, size / 2f, false, f)
-                main.addView(b, LinearLayout.LayoutParams(dp(size), dp(size)).apply { setMargins(dp(14), 0, dp(14), 0) })
+        col.addView(tv(sub, 14f, p.muted).apply { setPadding(dp(2), dp(4), 0, dp(14)) })
+
+        if (playing) {
+            // Big round buttons with their names under them.
+            val transport = horizontal(); transport.gravity = Gravity.CENTER
+            fun roundButton(iconName: String, label: String, tag: String, size: Int, filled: Boolean, f: () -> Unit) {
+                val cell = vertical(); cell.gravity = Gravity.CENTER_HORIZONTAL
+                val b = FrameLayout(this)
+                b.addView(IconView(this, iconName, label, if (filled) p.onPrimary else p.text), FrameLayout.LayoutParams(dp(size * 0.62f), dp(size * 0.62f), Gravity.CENTER))
+                control(b, tag, if (filled) p.primary else p.surface2, size / 2f, false, f)
+                cell.addView(b, LinearLayout.LayoutParams(dp(size), dp(size)))
+                cell.addView(tv(label, 12f, p.muted).apply { gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) })
+                transport.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
             }
-            if ("ff" in can) roundButton("»", T.t("Avance rápido"), "r_ff", false, s.optBoolean("ff")) { castControl(d, "ff") }
-            if ("pause" in can) roundButton(if (paused) "▶" else "❚❚", T.t(if (paused) "Continuar" else "Pausa"), "r_pause", true, false) { castControl(d, if (paused) "resume" else "pause") }
-            if ("shot" in can) roundButton("◉", T.t("Captura"), "r_shot", false, false) { castControl(d, "shot") }
-            if (main.childCount > 0) col.addView(main)
-            val grid = horizontal(); grid.setPadding(0, dp(16), 0, 0)
-            fun cell(label: String, tag: String, good: Boolean = false, f: () -> Unit) {
-                val b = tv(label, 13f, if (good) 0xFF22C55E.toInt() else p.text, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(4), dp(14), dp(4), dp(14)) }
-                control(b, tag, p.surface2, 14f, false, f)
-                grid.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
-            }
-            if ("save" in can) cell(T.t("Guardar"), "r_save") { chooseSlot(d, true) }
-            if ("load" in can) cell(T.t("Cargar"), "r_load") { chooseSlot(d, false) }
-            if ("backup" in can) cell(T.t("Copia"), "r_backup", true) { castControl(d, "backup") }
-            if ("reset" in can) cell(T.t("Reiniciar"), "r_reset") {
+            if ("ff" in can) roundButton("ff", T.t("Avance rápido"), "r_ff", 70, s!!.optBoolean("ff")) { castControl(d, "ff") }
+            if ("pause" in can) roundButton(if (paused) "play" else "pause", T.t(if (paused) "Continuar" else "Pausa"), "r_pause", 92, true) { castControl(d, if (paused) "resume" else "pause") }
+            if ("shot" in can) roundButton("camera", T.t("Captura"), "r_shot", 70, false) { castControl(d, "shot") }
+            if (transport.childCount > 0) col.addView(transport)
+
+            // Tiles: two per row, icon over the name.
+            val tiles = mutableListOf<Triple<String, String, () -> Unit>>()
+            if ("save" in can) tiles += Triple("save", T.t("Guardar"), { chooseSlot(d, true) })
+            if ("load" in can) tiles += Triple("load", T.t("Cargar"), { chooseSlot(d, false) })
+            if ("backup" in can) tiles += Triple("cloud", T.t("Copia en Telegram"), { castControl(d, "backup") })
+            if ("reset" in can) tiles += Triple("restart", T.t("Reiniciar"), {
                 AlertDialog.Builder(this).setTitle(T.t("¿Reiniciar el juego?")).setMessage(T.t("Se pierde lo que no hayas guardado."))
                     .setPositiveButton(T.t("Reiniciar")) { _, _ -> castControl(d, "reset") }.setNegativeButton(T.t("Cancelar"), null).show()
-            }
-            if (grid.childCount > 0) col.addView(grid)
-            if (!can.contains("pause")) col.addView(tv(T.t("Esta consola usa su propio programa en el PC: desde el teléfono puedes ver qué se juega y cerrarlo."), 12f, p.muted).apply { setPadding(0, dp(12), 0, 0) })
-        }
-        val chips = horizontal(); chips.setPadding(0, dp(16), 0, 0)
-        if (j != null) {
-            chips.addView(chip("▶ YouTube", false, "r_yt") {
-                val q = (j.optString("title") + " " + (Console.values().firstOrNull { it.name == j.optString("console") }?.title ?: "") + " walkthrough").trim()
-                runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/results?search_query=" + android.net.Uri.encode(q)))) }
+                Unit
             })
-            if (g != null) chips.addView(chip(T.t("Capturas"), false, "r_shots") { showShots(g) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+            tiles.chunked(2).forEachIndexed { i, pair ->
+                val row = horizontal(); row.setPadding(0, if (i == 0) dp(18) else dp(10), 0, 0)
+                for ((k, t) in pair.withIndex()) {
+                    val good = t.first == "cloud"
+                    val tile = horizontal(); tile.gravity = Gravity.CENTER_VERTICAL; tile.setPadding(dp(16), dp(18), dp(12), dp(18))
+                    tile.addView(IconView(this, t.first, t.second, if (good) 0xFF22C55E.toInt() else p.text), LinearLayout.LayoutParams(dp(30), dp(30)))
+                    tile.addView(tv(t.second, 15f, if (good) 0xFF22C55E.toInt() else p.text, bold = true).apply { setPadding(dp(12), 0, 0, 0); maxLines = 2 })
+                    control(tile, "r_tile_" + t.first, if (good) 0x1A22C55E else p.surface2, 18f, false, t.third)
+                    row.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply { if (k == 1) marginStart = dp(10) })
+                }
+                if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = dp(10) })
+                col.addView(row)
+            }
+            if (!can.contains("pause")) col.addView(tv(T.t("Esta consola usa su propio programa en el PC: desde el teléfono puedes ver qué se juega y cerrarlo."), 13f, p.muted).apply { setPadding(0, dp(12), 0, 0) })
         }
-        if (state == "playing") chips.addView(tv("⏻  " + T.t("Salir"), 13f, 0xFFFCA5A5.toInt(), bold = true).apply { setPadding(dp(14), dp(7), dp(14), dp(7))
-            control(this, "r_exit", 0xFF3B1219.toInt(), 20f, false) {
-                AlertDialog.Builder(this@PhoneActivity).setTitle(T.t("¿Salir del juego?")).setMessage(T.t("Se guarda dónde lo dejaste, como al salir con el mando."))
-                    .setPositiveButton(T.t("Salir")) { _, _ -> castControl(d, "exit") }.setNegativeButton(T.t("Cancelar"), null).show()
-            } }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
-        if (chips.childCount > 0) col.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) })
+
+        // Bottom row: same height, spread across the width.
+        val bottom = horizontal(); bottom.setPadding(0, dp(12), 0, 0)
+        fun wide(iconName: String, label: String, tag: String, fg: Int, bg: Int, f: () -> Unit) {
+            val b = horizontal(); b.gravity = Gravity.CENTER; b.setPadding(dp(6), dp(15), dp(6), dp(15))
+            b.addView(IconView(this, iconName, label, fg), LinearLayout.LayoutParams(dp(22), dp(22)))
+            b.addView(tv(label, 14f, fg, bold = true).apply { setPadding(dp(8), 0, 0, 0); setSingleLine() })
+            control(b, tag, bg, 18f, false, f)
+            bottom.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { if (bottom.childCount > 0) marginStart = dp(10) })
+        }
+        if (j != null) {
+            wide("youtube", "YouTube", "r_yt", p.text, p.surface2) {
+                val q = (j.optString("title") + " " + consoleTitle + " walkthrough").trim()
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/results?search_query=" + android.net.Uri.encode(q)))) }
+            }
+            if (g != null) wide("photos", T.t("Capturas"), "r_shots", p.text, p.surface2) { showShots(g) }
+        }
+        if (playing) wide("exit", T.t("Salir"), "r_exit", 0xFFFCA5A5.toInt(), 0xFF3B1219.toInt()) {
+            AlertDialog.Builder(this).setTitle(T.t("¿Salir del juego?")).setMessage(T.t("Se guarda dónde lo dejaste, como al salir con el mando."))
+                .setPositiveButton(T.t("Salir")) { _, _ -> castControl(d, "exit") }.setNegativeButton(T.t("Cancelar"), null).show()
+        }
+        if (bottom.childCount > 0) col.addView(bottom)
         root.addView(scroll(col))
         lastFocus = lastFocus.ifEmpty { "r_pause" }
         pollDevices()
