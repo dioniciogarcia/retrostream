@@ -77,6 +77,12 @@ class Friends extends EventEmitter {
   playing(game) { this.state = 'playing'; this.game = game.title; this.console = game.console; this.since = Date.now(); this.post(); }
   inMenu() { if (this.state !== 'menu') { this.state = 'menu'; this.game = ''; this.console = ''; this.since = Date.now(); } this.post(); }
   offline() { this.state = 'offline'; this.game = ''; this.console = ''; return this.post(); }
+  /** Sends a picture (a screenshot) to the friends group. */
+  async sendPhoto(file, w, h, caption) {
+    const chat = this.chat(); if (!chat) throw new Error(this.t('First create or join the friends group.'));
+    await this.drive.sendAndWait(chat, { _: 'inputMessagePhoto', photo: { _: 'inputFileLocal', path: file }, added_sticker_file_ids: [], width: w || 0, height: h || 0,
+      caption: { _: 'formattedText', text: caption || '', entities: [] }, has_spoiler: false });
+  }
   async tell(text) {
     const chat = this.chat(); if (!chat) throw new Error(this.t('First create or join the friends group.'));
     await this.drive.invoke({ _: 'sendMessage', chat_id: chat, input_message_content: { _: 'inputMessageText', text: { _: 'formattedText', text, entities: [] }, clear_draft: false } });

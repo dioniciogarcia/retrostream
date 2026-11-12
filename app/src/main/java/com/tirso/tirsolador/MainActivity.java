@@ -892,7 +892,10 @@ public class MainActivity extends Activity {
                 drive.downloadPicture(s.thumbId, (path, e) -> { if (path != null) iv.setImageBitmap(android.graphics.BitmapFactory.decodeFile(path)); });
                 iv.setOnClickListener(v -> drive.downloadPicture(s.fullId, (path, e) -> {
                     if (path == null) return; ImageView big = new ImageView(this); big.setAdjustViewBounds(true); big.setImageBitmap(android.graphics.BitmapFactory.decodeFile(path));
-                    new AlertDialog.Builder(this).setView(big).setPositiveButton(T.t("Cerrar"), null).show();
+                    AlertDialog.Builder b = new AlertDialog.Builder(this).setView(big).setPositiveButton(T.t("Cerrar"), null);
+                    if (BuildConfig.PHONE) b.setNeutralButton(T.t("Compartir"), (d, w) -> Screenshots.shareToApps(this, path, game.title));
+                    if (drive.friendsChat() != 0) b.setNegativeButton(T.t("Enviar al grupo de amigos"), (d, w) -> Screenshots.shareToFriends(this, drive, path, game.title));
+                    b.show();
                 }));
             }
             if (row != null && row.getChildCount() == 1) row.addView(new View(this), new LinearLayout.LayoutParams(0, dp(110), 1));

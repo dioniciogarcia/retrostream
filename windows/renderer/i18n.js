@@ -2,6 +2,12 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+"Save picture as": "Guardar imagen como",
+"Picture copied: paste it in WhatsApp, Discord or any chat": "Imagen copiada: pégala en WhatsApp, Discord o cualquier chat",
+"Copy picture": "Copiar imagen",
+"Picture saved": "Imagen guardada",
+"Save as…": "Guardar como…",
+"Send to friends": "Enviar a amigos",
 "Phone remote": "Control desde el teléfono",
 "Start and control games from your phone": "Inicia y controla juegos desde tu teléfono",
 "Phone paired:": "Teléfono vinculado:",

@@ -58,14 +58,15 @@ internal object Screenshots {
 
     /** Sends the queued screenshots to the screenshots channel, one at a time. */
     @JvmStatic fun uploadPending(ctx: Context, drive: TirsoDrive) {
-        if (!drive.ready() || busy) return
+        if (busy) { again = true; return }   // a screenshot taken while sending goes right after
+        if (!drive.ready()) return
         val items = queue(ctx).listFiles { f -> f.name.endsWith(".json") }?.sortedBy { it.name } ?: return
         if (items.isEmpty()) return
         busy = true
         drive.shotsChannel { chat, _ ->
             if (chat == null || chat == 0L) { busy = false; return@shotsChannel }
             fun next(i: Int) {
-                if (i >= items.size) { busy = false; return }
+                if (i >= items.size) { busy = false; if (again) { again = false; uploadPending(ctx, drive) }; return }
                 val meta = items[i]; val pic = File(meta.path.removeSuffix(".json") + ".jpg")
                 val j = runCatching { JSONObject(meta.readText()) }.getOrNull()
                 if (j == null || !pic.isFile) { meta.delete(); pic.delete(); next(i + 1); return }
@@ -79,4 +80,26 @@ internal object Screenshots {
         }
     }
     private var busy = false
+    private var again = false
+
+    /** Shares a screenshot with another app (WhatsApp, Messages…) through Android's share sheet. */
+    @JvmStatic fun shareToApps(activity: Activity, picture: String, title: String) {
+        runCatching {
+            val dir = File(activity.cacheDir, "shared").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+            val out = File(dir, title.replace(Regex("[^A-Za-z0-9 ._()-]"), "_").take(50).ifBlank { "RetroStream" } + ".jpg")
+            File(picture).copyTo(out, overwrite = true)
+            val uri = androidx.core.content.FileProvider.getUriForFile(activity, activity.packageName + ".share", out)
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("image/jpeg")
+                .putExtra(android.content.Intent.EXTRA_STREAM, uri).putExtra(android.content.Intent.EXTRA_TEXT, title + " · RetroStream")
+                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.startActivity(android.content.Intent.createChooser(send, T.t("Compartir captura")))
+        }.onFailure { android.widget.Toast.makeText(activity, T.t("No se pudo compartir la captura."), android.widget.Toast.LENGTH_LONG).show() }
+    }
+    /** Sends a screenshot to the friends group. */
+    @JvmStatic fun shareToFriends(activity: Activity, drive: TirsoDrive, picture: String, title: String) {
+        val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }; android.graphics.BitmapFactory.decodeFile(picture, o)
+        drive.sendPhotoToFriends(picture, o.outWidth, o.outHeight, "📸 " + title) { ok, err ->
+            android.widget.Toast.makeText(activity, if (ok == true) T.t("Enviado al grupo de amigos") else (err ?: T.t("No se pudo enviar")), android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 }

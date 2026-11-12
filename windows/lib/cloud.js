@@ -133,7 +133,8 @@ class Cloud {
   // ------------------------------------------------------------------ screenshots
   async uploadShots() {
     const q = path.join(this.dir, 'screenshots', 'pending');
-    if (this.busy || this.drive.stage !== 'ready' || !fs.existsSync(q)) return;
+    if (this.busy) { this.again = true; return; }   // a screenshot taken while sending goes right after
+    if (this.drive.stage !== 'ready' || !fs.existsSync(q)) return;
     const items = fs.readdirSync(q).filter((f) => f.endsWith('.json')).sort(); if (!items.length) return;
     this.busy = true;
     try {
@@ -148,6 +149,7 @@ class Cloud {
       }
     } catch (_) { /* try again next time */ }
     this.busy = false;
+    if (this.again) { this.again = false; return this.uploadShots(); }
   }
 
   /** This game's screenshots in the Screenshots channel, newest first, as pictures the page can show. */
@@ -160,7 +162,7 @@ class Cloud {
       const sizes = c.photo.sizes || []; const big = sizes[sizes.length - 1]; if (!big) continue;
       try {
         const p = await this.drive.downloadNow(big.photo.id);
-        if (p) out.push({ date: m.date, url: 'data:image/jpeg;base64,' + fs.readFileSync(p).toString('base64'), chatId: m.chat_id, messageId: m.id });
+        if (p) out.push({ date: m.date, url: 'data:image/jpeg;base64,' + fs.readFileSync(p).toString('base64'), path: p, w: big.width, h: big.height, chatId: m.chat_id, messageId: m.id });
       } catch (_) { /* skip */ }
       if (out.length >= 30) break;
     }

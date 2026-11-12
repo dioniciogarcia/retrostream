@@ -569,6 +569,14 @@ final class TirsoDrive {
         TdApi.InputMessageText content=new TdApi.InputMessageText(new TdApi.FormattedText(text,new TdApi.TextEntity[0]),null,false);
         send(new TdApi.SendMessage(chat,null,null,null,null,content),r->cb.done(r instanceof TdApi.Message,r instanceof TdApi.Error?((TdApi.Error)r).message:null));
     }
+    /** Sends a picture (a screenshot) to the friends group. */
+    void sendPhotoToFriends(String path,int w,int h,String caption,Done<Boolean> callback){
+        Done<Boolean> cb=once(callback,false);long chat=friendsChat();
+        if(chat==0||stage!=Stage.READY){cb.done(false,T.t("Primero crea o únete al grupo de amigos."));return;}
+        TdApi.InputMessagePhoto content=new TdApi.InputMessagePhoto(new TdApi.InputPhoto(new TdApi.InputFileLocal(path),null,null,new int[0],w,h),
+            new TdApi.FormattedText(caption,new TdApi.TextEntity[0]),false,null,false);
+        send(new TdApi.SendMessage(chat,null,null,null,null,content),r->cb.done(r instanceof TdApi.Message,r instanceof TdApi.Error?((TdApi.Error)r).message:null));
+    }
     long friendsChat(){return prefs.getLong("friendsChat_"+accountId,0);}
     String friendsLink(){return prefs.getString("friendsLink_"+accountId,"");}
     boolean shareActivity(){return prefs.getBoolean("friendsShare",true);}
@@ -688,7 +696,7 @@ final class TirsoDrive {
 
     // ------------------------------------------------------------------ screenshots (Telegram channel)
     static final String SHOTS_TITLE="TD - RetroStream - Screenshots";
-    static final class Shot{String gameId="",title="",console="";long messageId;int date,thumbId,fullId;}
+    static final class Shot{String gameId="",title="",console="";long messageId,chatId;int date,thumbId,fullId;}
     private TdApi.Chat findShotsChat(){
         long saved=prefs.getLong("shotsChat_"+accountId,0);TdApi.Chat c=saved!=0?chats.get(saved):null;if(c!=null)return c;
         for(TdApi.Chat chat:chats.values())if(TelegramCatalog.group(chat)&&norm(chat.title).equals(norm(SHOTS_TITLE)))return chat;
@@ -742,7 +750,7 @@ final class TirsoDrive {
                 if(!s.gameId.equals(gameId))continue;
                 TdApi.PhotoSize small=p.photo.sizes[0],big=p.photo.sizes[p.photo.sizes.length-1];
                 for(TdApi.PhotoSize z:p.photo.sizes)if(z.width>=320){small=z;break;}
-                s.messageId=m.id;s.date=m.date;s.thumbId=small.photo.id;s.fullId=big.photo.id;out.add(s);
+                s.messageId=m.id;s.chatId=chat;s.date=m.date;s.thumbId=small.photo.id;s.fullId=big.photo.id;out.add(s);
             }
             if(page.messages.length==0||page.nextFromMessageId==0||pages>=30)cb.done(out,null);
             else pageShots(chat,page.nextFromMessageId,gameId,out,pages+1,cb);

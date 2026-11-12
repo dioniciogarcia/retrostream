@@ -1,6 +1,6 @@
 'use strict';
 // RetroStream for Windows: the app window, settings, and the Telegram connection.
-const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, net, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Store } = require('./lib/store');
@@ -181,6 +181,7 @@ app.whenReady().then(() => {
   remote = new Remote({ store, version: app.getVersion() });
   remote.start();
   player.onState = (st) => { remote.state = st; };
+  player.onShot = () => { cloud.uploadShots().catch(() => {}); };
   remote.on('code', (c) => send('remote', { code: c }));
   remote.on('paired', (name) => toast(t('Phone paired:') + ' ' + name));
   remote.on('play', (req, done) => {
@@ -496,6 +497,12 @@ app.whenReady().then(() => {
           await shell.openPath(out); setTimeout(() => app.quit(), 1500);
           return { ok: true };
         }
+        case 'shotCopy': clipboard.writeImage(nativeImage.createFromPath(arg.path)); return { ok: true };
+        case 'shotSave': {
+          const r = await dialog.showSaveDialog(win, { title: t('Save picture as'), defaultPath: path.join(app.getPath('pictures'), (arg.title || 'RetroStream').replace(/[\\/:*?"<>|]/g, '') + ' ' + new Date((arg.date || 0) * 1000).toISOString().substring(0, 10) + '.jpg'), filters: [{ name: 'JPEG', extensions: ['jpg'] }] });
+          if (r.canceled || !r.filePath) return null; fs.copyFileSync(arg.path, r.filePath); return { ok: true };
+        }
+        case 'shotFriends': await friends.sendPhoto(arg.path, arg.w, arg.h, '📸 ' + (arg.title || '')); return { ok: true };
         case 'walkthrough': shell.openExternal('https://www.google.com/search?q=' + encodeURIComponent(arg + ' walkthrough guide')); return { ok: true };
         default: return null;
       }

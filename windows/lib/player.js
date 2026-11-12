@@ -185,6 +185,7 @@ class Player {
           const m = JSON.parse(line); if (m.event === 'exit') played = m.played || 0; if (m.event === 'error') error = m.reason;
           if (m.event === 'state') { this.state = { paused: !!m.paused, ff: !!m.ff, filter: m.filter || '' }; if (this.onState) this.onState(this.state); }
           if (m.event === 'done') { const w = this.waiters.shift(); if (w) w(m); }
+          if (m.event === 'shot' && this.onShot) this.onShot();
         } catch (_) { /* not ours */ }
       }
     });

@@ -245,7 +245,17 @@ function screenshots(g) {
     window.rs.tools('shots', g.id).then((r) => {
       if (r.error) { grid.replaceChildren(h('p', { class: 'error' }, r.error)); return; }
       if (!r.list.length) { grid.replaceChildren(h('p', {}, t('No screenshots of this game yet. Take one in the game menu (or F12).'))); return; }
-      grid.replaceChildren(...r.list.map((s) => h('button', { class: 'shot', onClick: () => modal((b2, c2) => { b2.classList.add('wide'); b2.append(h('img', { src: s.url, alt: '', style: 'width:100%;border-radius:10px' }), h('p', {}, new Date(s.date * 1000).toLocaleString()), h('div', { class: 'buttons' }, h('button', { class: 'btn primary', onClick: c2 }, t('Close')))); }) },
+      grid.replaceChildren(...r.list.map((s) => h('button', { class: 'shot', onClick: () => modal((b2, c2) => {
+        const info = { path: s.path, w: s.w, h: s.h, date: s.date, title: g.title };
+        const run = async (what, ok) => { const x = await window.rs.tools(what, info); if (x && x.error) toast(x.error); else if (x) toast(ok); };
+        b2.classList.add('wide');
+        b2.append(h('img', { src: s.url, alt: '', style: 'width:100%;border-radius:10px' }), h('p', {}, new Date(s.date * 1000).toLocaleString()),
+          h('div', { class: 'buttons' },
+            h('button', { class: 'btn ghost', onClick: () => run('shotCopy', t('Picture copied: paste it in WhatsApp, Discord or any chat')) }, t('Copy picture')),
+            h('button', { class: 'btn ghost', onClick: () => run('shotSave', t('Picture saved')) }, t('Save as…')),
+            (S.friends && S.friends.chat) ? h('button', { class: 'btn ghost', onClick: () => run('shotFriends', t('Sent to the friends group')) }, t('Send to friends')) : null,
+            h('button', { class: 'btn primary', onClick: c2 }, t('Close'))));
+      }) },
         h('img', { src: s.url, alt: t('Screenshot') + ' ' + new Date(s.date * 1000).toLocaleString() }))));
     });
   });

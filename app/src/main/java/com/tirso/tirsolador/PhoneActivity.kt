@@ -1556,7 +1556,10 @@ class PhoneActivity : Activity() {
                     drive.downloadPicture(s.fullId) { path, _ ->
                         if (path == null) return@downloadPicture
                         val big = ImageView(this); big.adjustViewBounds = true; big.setImageBitmap(android.graphics.BitmapFactory.decodeFile(path))
-                        AlertDialog.Builder(this).setView(big).setPositiveButton(T.t("Cerrar"), null).show()
+                        val b = AlertDialog.Builder(this).setView(big).setPositiveButton(T.t("Cerrar"), null)
+                            .setNeutralButton(T.t("Compartir")) { _, _ -> Screenshots.shareToApps(this, path, g.title) }
+                        if (drive.friendsChat() != 0L) b.setNegativeButton(T.t("A amigos")) { _, _ -> Screenshots.shareToFriends(this, drive, path, g.title) }
+                        b.show()
                     }
                 }
             }

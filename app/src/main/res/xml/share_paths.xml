@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Screenshots shared to other apps are copied here first (Settings > screenshots > Share). -->
+<paths>
+    <cache-path name="shared" path="shared/" />
+</paths>

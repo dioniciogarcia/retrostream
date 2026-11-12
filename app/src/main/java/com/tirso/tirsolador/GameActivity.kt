@@ -1069,6 +1069,8 @@ open class GameActivity : AppCompatActivity() {
     private fun takeScreenshot() {
         val view = retroView ?: return
         Screenshots.capture(this, view, intent.getStringExtra("gameid") ?: gameId, gameTitle, console) { ok ->
+            // Sent to the Telegram screenshots channel right away (games in their own process send it when you leave).
+            if (ok && !isolated) runCatching { Screenshots.uploadPending(this, TirsoDrive.get(this)) }
             toast(if (ok) "Screenshot saved (Gallery > RetroStream), it goes to Telegram too" else "The screenshot couldn't be taken")
         }
     }

@@ -3,6 +3,10 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("Compartir captura", "Share screenshot");
+        m.put("No se pudo compartir la captura.", "Couldn't share the screenshot.");
+        m.put("Compartir", "Share");
+        m.put("A amigos", "To friends");
         m.put("Trucos", "Cheats");
         m.put("Cargando trucos…", "Loading cheats…");
         m.put("No hay trucos para este juego.", "There are no cheats for this game.");

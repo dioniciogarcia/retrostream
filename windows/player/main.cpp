@@ -423,6 +423,7 @@ static void screenshot() {
     std::string esc; for (char c : title) { if (c == '"' || c == '\\') esc += '\\'; esc += c; }
     std::string meta = "{\"id\":\"" + gameId + "\",\"title\":\"" + esc + "\",\"console\":\"" + consoleId + "\",\"w\":" + std::to_string(w) + ",\"h\":" + std::to_string(h) + ",\"time\":" + std::to_string((long long)now * 1000) + "}";
     writeFile(shotsQueue / (std::string(stamp) + ".json"), meta.data(), meta.size());
+    printf("{\"event\":\"shot\"}\n"); fflush(stdout);   // the app sends it to Telegram right away
   }
   toast(tr("Screenshot saved (Pictures > RetroStream)"));
 }
