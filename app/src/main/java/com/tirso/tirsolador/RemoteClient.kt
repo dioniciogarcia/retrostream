@@ -105,18 +105,22 @@ object RemoteClient {
     /** One request, one answer. Network problems come back as {"error":"offline"}. */
     fun call(host: String, port: Int, req: JSONObject, timeoutMs: Int = 6000, done: (JSONObject) -> Unit) {
         pool.execute {
-            val res = runCatching {
-                Socket().use { s ->
-                    wifi()?.let { n -> runCatching { n.bindSocket(s) } }
-                    s.connect(InetSocketAddress(host, port), 2500); s.soTimeout = timeoutMs
-                    s.getOutputStream().write((req.toString() + "\n").toByteArray(Charsets.UTF_8)); s.getOutputStream().flush()
-                    val line = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8)).readLine() ?: error("no answer")
-                    JSONObject(line)
-                }
-            }.getOrElse { JSONObject().put("error", "offline") }
+            fun once(onWifi: Boolean): JSONObject = Socket().use { s ->
+                if (onWifi) wifi()?.let { n -> runCatching { n.bindSocket(s) } }
+                s.connect(InetSocketAddress(host, port), 2500); s.soTimeout = timeoutMs
+                s.getOutputStream().write((req.toString() + "\n").toByteArray(Charsets.UTF_8)); s.getOutputStream().flush()
+                val line = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8)).readLine() ?: error("no answer")
+                JSONObject(line)
+            }
+            // Tied to the Wi-Fi first; if that fails (the Wi-Fi was just coming back), once more the normal way.
+            val res = runCatching { once(true) }.recoverCatching { once(false) }.getOrElse { e ->
+                lastError = (e.javaClass.simpleName + ": " + (e.message ?: "")).take(160)
+                JSONObject().put("error", "offline").put("detail", lastError)
+            }
             main.post { done(res) }
         }
     }
+    @Volatile var lastError = ""
     fun call(d: Device, req: JSONObject, timeoutMs: Int = 6000, done: (JSONObject) -> Unit) = call(d.host, d.port, req.put("token", d.token), timeoutMs, done)
 
     /** A device's answer turned into words for the person (null when it worked). */

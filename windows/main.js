@@ -205,6 +205,9 @@ app.whenReady().then(() => {
     }
     if (!player.child) { done({ error: 'not playing' }); return; }
     if (['pause', 'resume', 'shot', 'ff', 'reset', 'exit'].includes(a)) { await player.command(a); done({ ok: true }); return; }
+    if (a === 'cheats') { const r = await player.command('cheats'); done(r.ok ? { ok: true, list: r.list || [] } : { error: 'failed' }); return; }
+    if (a === 'cheat') { const r = await player.command('cheat ' + Math.max(0, Number(req.slot) || 0) + ' ' + (req.value === 'on' ? 'on' : 'off')); done(r.ok ? { ok: true } : { error: 'failed' }); return; }
+    if (a === 'cheatsoff') { const r = await player.command('cheatsoff'); done(r.ok ? { ok: true } : { error: 'failed' }); return; }
     if (a === 'frame') {
       const f = path.join(app.getPath('temp'), 'retrostream-live.jpg');
       const r = await player.command('frame ' + f);
@@ -300,7 +303,7 @@ app.whenReady().then(() => {
       }
       if (entry) { const m = store.get('saveOf') || {}; m[game.id] = entry; store.set('saveOf', m); }
       friends.playing(game);
-      remote.playing(game, ext ? ['exit'] : ['pause', 'resume', 'save', 'load', 'shot', 'ff', 'reset', 'backup', 'exit', 'frame', 'res', 'filter'], remoteSettings(game, !!ext));
+      remote.playing(game, ext ? ['exit'] : ['pause', 'resume', 'save', 'load', 'shot', 'ff', 'reset', 'backup', 'exit', 'frame', 'res', 'filter'].concat(game.console === 'MAME' ? [] : ['cheats']), remoteSettings(game, !!ext));
       if (ext) { await external.launch(prep, Object.assign({}, store.prefs.data, opts || {}), afterGame); return { ok: true }; }
       const cheats = await Promise.race([cloud.cheats(game).catch(() => null), new Promise((r) => setTimeout(() => r(null), 6000))]);
       await player.launch(prep, Object.assign({}, store.prefs.data, opts || {}), cheats);

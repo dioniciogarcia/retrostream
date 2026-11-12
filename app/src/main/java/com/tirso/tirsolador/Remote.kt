@@ -146,6 +146,7 @@ object Remote {
             "done" -> {
                 answer = JSONObject().put("ok", i.getBooleanExtra("ok", false)).put("error", i.getStringExtra("error") ?: "")
                     .also { a -> i.getByteArrayExtra("jpg")?.let { a.put("jpg", android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP)) } }
+                    .also { a -> i.getStringExtra("list")?.let { a.put("list", runCatching { JSONArray(it) }.getOrDefault(JSONArray())) } }
                 answerLatch?.countDown()
             }
         }
@@ -157,11 +158,16 @@ object Remote {
         .put("chatId", g.chatId).put("messageId", g.messageId).put("fileName", g.fileName ?: "")
 
     // ------------------------------------------------------------------ network
+    /** Listens for the phone forever: if the TV's Wi-Fi drops and the socket breaks, it starts listening again. */
     private fun serve() {
-        val server = try { ServerSocket().apply { reuseAddress = true; bind(InetSocketAddress(PORT)) } } catch (e: Exception) { error = e.toString(); Log.w("Remote", "server", e); return }
         while (true) {
-            val s = try { server.accept() } catch (e: Exception) { continue }
-            pool.execute { talk(s) }
+            try {
+                ServerSocket().use { server ->
+                    server.reuseAddress = true; server.bind(InetSocketAddress(PORT)); error = ""
+                    while (true) { val s = server.accept(); pool.execute { talk(s) } }
+                }
+            } catch (e: Exception) { error = e.toString(); Log.w("Remote", "server", e) }
+            Thread.sleep(3000)
         }
     }
     private fun talk(s: Socket) {
@@ -175,6 +181,9 @@ object Remote {
         runCatching { s.close() }
     }
     private fun answerFinders() {
+        while (true) { findersOnce(); Thread.sleep(3000) }   // starts again after any network problem
+    }
+    private fun findersOnce() {
         val lock = runCatching {
             (app.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager).createMulticastLock("retrostream-remote").apply { setReferenceCounted(false); acquire() }
         }.getOrNull()
@@ -259,7 +268,7 @@ object Remote {
     @Synchronized private fun control(req: JSONObject): JSONObject {
         if (now == null) return JSONObject().put("error", "not playing")
         val action = req.optString("action")
-        val waits = action == "save" || action == "load" || action == "backup" || action == "frame" || action == "res"
+        val waits = action == "save" || action == "load" || action == "backup" || action == "frame" || action == "res" || action == "cheats" || action == "cheat" || action == "cheatsoff"
         val latch = CountDownLatch(1)
         if (waits) { answer = null; answerLatch = latch }
         val value = req.optString("value")
@@ -267,10 +276,10 @@ object Remote {
         if (action == "filter") settings.put("filter", value)
         app.sendBroadcast(Intent(ACTION_CMD).setPackage(app.packageName).putExtra("action", action).putExtra("slot", req.optInt("slot", 1)).putExtra("value", value))
         if (!waits) return JSONObject().put("ok", true)
-        latch.await(if (action == "backup") 25 else 8, TimeUnit.SECONDS)
+        latch.await(if (action == "backup" || action == "cheats") 25 else 8, TimeUnit.SECONDS)
         val a = answer ?: return JSONObject().put("error", "timeout")
         if (action == "res" && !a.optBoolean("ok")) relaunch = null
-        return if (a.optBoolean("ok")) JSONObject().put("ok", true).also { r -> if (a.has("jpg")) r.put("jpg", a.getString("jpg")) } else JSONObject().put("error", a.optString("error").ifEmpty { "failed" })
+        return if (a.optBoolean("ok")) JSONObject().put("ok", true).also { r -> if (a.has("jpg")) r.put("jpg", a.getString("jpg")); if (a.has("list")) r.put("list", a.getJSONArray("list")) } else JSONObject().put("error", a.optString("error").ifEmpty { "failed" })
     }
 
     // ------------------------------------------------------------------ the pairing code on the TV

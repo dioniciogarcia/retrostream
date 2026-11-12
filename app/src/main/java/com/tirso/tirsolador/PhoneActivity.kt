@@ -1011,8 +1011,27 @@ class PhoneActivity : Activity() {
             root.postDelayed(this, if (page == "remote") 2500 else 6000)
         }
     }
-    private fun startPolling() { RemoteClient.init(this); misses = 0; lastSearch = 0; if (!polling) { polling = true; root.post(poller) } }
-    private fun stopPolling() { polling = false; root.removeCallbacks(poller) }
+    private fun startPolling() {
+        RemoteClient.init(this); misses = 0; lastSearch = 0
+        if (!polling) { polling = true; root.post(poller) }
+        // Coming back to the app: look for paired devices again right away (their address may have changed).
+        if (RemoteClient.saved(this).any { it.paired }) findAgain()
+        watchWifi(true)
+    }
+    private fun stopPolling() { polling = false; root.removeCallbacks(poller); watchWifi(false) }
+    /** When the Wi-Fi comes back (after the screen was off, for example), reconnect at once. */
+    private var wifiWatch: android.net.ConnectivityManager.NetworkCallback? = null
+    private fun watchWifi(on: Boolean) {
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return
+        wifiWatch?.let { runCatching { cm.unregisterNetworkCallback(it) } }; wifiWatch = null
+        if (!on) return
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                root.postDelayed({ if (polling) { lastSearch = 0; findAgain(); pollDevices() } }, 1200)
+            }
+        }
+        runCatching { cm.registerNetworkCallback(android.net.NetworkRequest.Builder().addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI).build(), cb); wifiWatch = cb }
+    }
     private var misses = 0
     private var lastSearch = 0L
     /** If a paired TV / PC stops answering (phone asleep, Wi-Fi back, its address changed), look for it again on the Wi-Fi. */
@@ -1229,6 +1248,31 @@ class PhoneActivity : Activity() {
             root.postDelayed({ pollDevices() }, 400)
         }
     }
+    /** The game's cheats on the TV / PC: tick to turn on or off, or all off. */
+    private fun cheatsDialog(d0: RemoteClient.Device) {
+        val d = fresh(d0)
+        toast(T.t("Cargando trucos…"))
+        RemoteClient.call(d, JSONObject().put("cmd", "control").put("action", "cheats"), 30000) { r ->
+            RemoteClient.problem(r)?.let { toast(it); return@call }
+            val a = r.optJSONArray("list") ?: JSONArray()
+            if (a.length() == 0) { toast(T.t("No hay trucos para este juego.")); return@call }
+            val names = Array(a.length()) { a.optJSONObject(it)?.optString("name") ?: "" }
+            val on = BooleanArray(a.length()) { a.optJSONObject(it)?.optBoolean("on") == true }
+            val count = { on.count { it } }
+            val dialog = AlertDialog.Builder(this).setTitle(T.t("Trucos") + " (" + count() + " " + T.t("activos") + ")")
+                .setMultiChoiceItems(names, on) { dlg, i, checked ->
+                    on[i] = checked
+                    RemoteClient.call(d, JSONObject().put("cmd", "control").put("action", "cheat").put("slot", i).put("value", if (checked) "on" else "off")) { x -> RemoteClient.problem(x)?.let { toast(it) } }
+                    (dlg as? AlertDialog)?.setTitle(T.t("Trucos") + " (" + count() + " " + T.t("activos") + ")")
+                }
+                .setPositiveButton(T.t("Listo"), null)
+                .setNeutralButton(T.t("Todo apagado")) { _, _ ->
+                    RemoteClient.call(d, JSONObject().put("cmd", "control").put("action", "cheatsoff")) { x -> toast(RemoteClient.problem(x) ?: T.t("Trucos apagados")) }
+                }.create()
+            dialog.show()
+            toast(T.t("Los trucos marcados con (M) o Master deben estar activos para que funcionen los demás. Guarda antes: un truco puede romper el juego."))
+        }
+    }
     private fun chooseSlot(d: RemoteClient.Device, save: Boolean) {
         AlertDialog.Builder(this).setTitle(T.t(if (save) "Guardar en" else "Cargar desde"))
             .setItems(arrayOf(T.t("Espacio 1"), T.t("Espacio 2"), T.t("Espacio 3"))) { _, i -> castControl(d, if (save) "save" else "load", i + 1) }
@@ -1306,15 +1350,16 @@ class PhoneActivity : Activity() {
                     .setPositiveButton(T.t("Reiniciar")) { _, _ -> castControl(d, "reset") }.setNegativeButton(T.t("Cancelar"), null).show()
                 Unit
             })
+            if ("cheats" in can) tiles += Triple("cheat", T.t("Trucos"), { cheatsDialog(d) })
             if (tiles.isNotEmpty()) {
                 val row = horizontal(); row.setPadding(0, dp(12), 0, 0)
                 for ((k, t) in tiles.withIndex()) {
                     val good = t.first == "cloud"; val fg = if (good) 0xFF22C55E.toInt() else p.text
                     val tile = vertical(); tile.gravity = Gravity.CENTER_HORIZONTAL; tile.setPadding(dp(4), dp(11), dp(4), dp(10))
                     tile.addView(IconView(this, t.first, t.second, fg), LinearLayout.LayoutParams(dp(26), dp(26)))
-                    tile.addView(tv(t.second, 12f, fg, bold = true).apply { gravity = Gravity.CENTER; setSingleLine(); setPadding(0, dp(5), 0, 0) })
+                    tile.addView(tv(t.second, if (tiles.size > 4) 11f else 12f, fg, bold = true).apply { gravity = Gravity.CENTER; setSingleLine(); ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(5), 0, 0) })
                     control(tile, "r_tile_" + t.first, if (good) 0x1A22C55E else p.surface2, 16f, false, t.third)
-                    row.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply { if (k > 0) marginStart = dp(8) })
+                    row.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply { if (k > 0) marginStart = dp(if (tiles.size > 4) 6 else 8) })
                 }
                 col.addView(row)
             }
@@ -1378,6 +1423,12 @@ class PhoneActivity : Activity() {
         if (playing) wide("exit", T.t("Salir"), "r_exit", 0xFFFCA5A5.toInt(), 0xFF3B1219.toInt()) {
             AlertDialog.Builder(this).setTitle(T.t("¿Salir del juego?")).setMessage(T.t("Se guarda dónde lo dejaste, como al salir con el mando."))
                 .setPositiveButton(T.t("Salir")) { _, _ -> castControl(d, "exit") }.setNegativeButton(T.t("Cancelar"), null).show()
+        }
+        if (state == "offline") {
+            col.addView(tv(d.host + " · " + RemoteClient.lastError.ifEmpty { T.t("sin respuesta") }, 11f, p.muted, mono = true).apply { maxLines = 2; setPadding(dp(2), 0, 0, dp(8)) })
+            col.addView(button(T.t("Reconectar"), "r_reconnect", true) {
+                toast(T.t("Buscando en tu Wi-Fi…")); lastSearch = 0; findAgain(); pollDevices()
+            }, LinearLayout.LayoutParams(-1, dp(50)))
         }
         if (bottom.childCount > 0) col.addView(bottom)
         if (landscape) root.addView(scroll(col)) else root.addView(col, FrameLayout.LayoutParams(-1, -1))

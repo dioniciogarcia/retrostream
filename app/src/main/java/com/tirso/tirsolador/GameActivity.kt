@@ -819,19 +819,19 @@ open class GameActivity : AppCompatActivity() {
         androidx.core.content.ContextCompat.registerReceiver(this, r, android.content.IntentFilter(Remote.ACTION_CMD), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         phoneReceiver = r
     }
-    private fun tellPhone(event: String, ok: Boolean = true, error: String = "", jpg: ByteArray? = null) {
+    private fun tellPhone(event: String, ok: Boolean = true, error: String = "", jpg: ByteArray? = null, list: String? = null) {
         if (BuildConfig.PHONE) return
         val i = Intent(Remote.ACTION_STATE).setPackage(packageName).putExtra("event", event)
         when (event) {
             "started" -> i.putExtra("gameid", intent.getStringExtra("gameid") ?: gameId).putExtra("title", gameTitle).putExtra("console", console.name)
                 .putExtra("filename", intent.getStringExtra("filename") ?: "")
-                .putExtra("controls", (listOf("pause", "resume", "save", "load", "shot", "ff", "reset", "exit", "frame") + (if (isolated) emptyList() else listOf("backup"))
+                .putExtra("controls", (listOf("pause", "resume", "save", "load", "shot", "ff", "reset", "exit", "frame") + (if (console != Console.MAME) listOf("cheats") else emptyList()) + (if (isolated) emptyList() else listOf("backup"))
                     + (if (console != Console.MAME && console != Console.NDS) listOf("res") else emptyList()) + (if (isDolphin) emptyList() else listOf("filter"))).toTypedArray())
                 .putExtra("res", Presets.gameResolution(this, intent.getStringExtra("gameid") ?: "") ?: Presets.resolution(this, console))
                 .putExtra("filter", if (isDolphin) "" else screenFilter)
                 .putExtra("filters", if (isDolphin) emptyArray() else SCREEN_FILTERS.map { it.first }.toTypedArray())
             "state" -> i.putExtra("paused", glPaused || menuOpen).putExtra("ff", fastSpeed > 1).putExtra("filter", if (isDolphin) "" else screenFilter)
-            "done" -> { i.putExtra("ok", ok).putExtra("error", error); if (jpg != null) i.putExtra("jpg", jpg) }
+            "done" -> { i.putExtra("ok", ok).putExtra("error", error); if (jpg != null) i.putExtra("jpg", jpg); if (list != null) i.putExtra("list", list) }
         }
         runCatching { sendBroadcast(i) }
     }
@@ -852,6 +852,25 @@ open class GameActivity : AppCompatActivity() {
     private fun fromPhone(action: String, slot: Int, value: String) {
         when (action) {
             "frame" -> { liveFrame(); return }
+            // Cheats: the list with which are on, one on/off, or all off.
+            "cheats" -> {
+                if (!cheats.available()) { tellPhone("done", true, "", list = "[]"); return }
+                cheats.ensure {
+                    val on = cheats.enabled; val a = org.json.JSONArray()
+                    cheats.list().take(400).forEach { c -> a.put(org.json.JSONObject().put("name", c.name).put("on", c.code in on)) }
+                    tellPhone("done", true, "", list = a.toString())
+                }
+                return
+            }
+            "cheat", "cheatsoff" -> {
+                val all = cheats.list()
+                cheats.enabled = if (action == "cheatsoff") emptySet() else {
+                    val c = all.getOrNull(slot) ?: run { tellPhone("done", false, "failed"); return }
+                    if (value == "on") cheats.enabled + c.code else cheats.enabled - c.code
+                }
+                retroView?.let { cheats.apply(it) }
+                tellPhone("done", true); return
+            }
             "filter" -> {
                 if (isDolphin || SCREEN_FILTERS.none { it.first == value }) return
                 prefs.edit().putString(if (ownSettings) "screen_filter_g_$gid" else "screen_filter", value).apply()

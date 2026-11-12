@@ -3,6 +3,15 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("Trucos", "Cheats");
+        m.put("Cargando trucos…", "Loading cheats…");
+        m.put("No hay trucos para este juego.", "There are no cheats for this game.");
+        m.put("activos", "on");
+        m.put("Todo apagado", "All off");
+        m.put("Trucos apagados", "Cheats off");
+        m.put("Los trucos marcados con (M) o Master deben estar activos para que funcionen los demás. Guarda antes: un truco puede romper el juego.", "Cheats marked (M) or Master must be on for the others to work. Save first: a cheat can break the game.");
+        m.put("Reconectar", "Reconnect");
+        m.put("sin respuesta", "no answer");
         m.put("Filtro", "Filter");
         m.put("Cambiando la resolución: el juego se cierra un momento y sigue donde estaba.", "Changing the resolution: the game closes for a moment and continues where it was.");
         m.put("Pantalla en vivo", "Live screen");

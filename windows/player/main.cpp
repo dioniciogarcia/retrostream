@@ -129,6 +129,7 @@ static std::string toastText; static Uint32 toastUntil = 0;
 static void toast(const std::string& s) { toastText = s; toastUntil = SDL_GetTicks() + 2600; }
 // Commands from the app (sent by the phone remote): one word per line on stdin, e.g. "pause", "save 2", "exit".
 static std::mutex cmdLock; static std::deque<std::string> cmds;
+static std::string jsonText(const std::string& s) { std::string o; for (unsigned char c : s) { if (c == '"' || c == '\\') { o += '\\'; o += (char)c; } else if (c < 0x20) o += ' '; else o += (char)c; } return o; }
 static void readCommands() { std::string line; while (std::getline(std::cin, line)) { std::lock_guard<std::mutex> g(cmdLock); cmds.push_back(line); } }
 static void tellState() { printf("{\"event\":\"state\",\"paused\":%s,\"ff\":%s,\"filter\":\"%s\"}\n", menuOpen ? "true" : "false", ffToggle ? "true" : "false", smooth ? "smooth" : "sharp"); fflush(stdout); }
 
@@ -667,6 +668,16 @@ int main(int argc, char* argv[]) {
       else if (word == "reset") { C.reset(); toast(tr("Restarted")); }
       else if (word == "frame") { bool ok = c.size() > 6 && liveFrame(c.substr(6)); printf("{\"event\":\"done\",\"what\":\"frame\",\"ok\":%s}\n", ok ? "true" : "false"); fflush(stdout); }
       else if (word == "filter") { smooth = c.find("smooth") != std::string::npos; filterFor(useHw ? fboTex : tex); tellState(); }
+      else if (word == "cheats") {
+        std::string out = "{\"event\":\"done\",\"what\":\"cheats\",\"ok\":true,\"list\":[";
+        for (size_t i = 0; i < cheats.size() && i < 400; i++) out += std::string(i ? "," : "") + "{\"name\":\"" + jsonText(cheats[i].name) + "\",\"on\":" + (cheats[i].on ? "true" : "false") + "}";
+        printf("%s]}\n", out.c_str()); fflush(stdout);
+      }
+      else if (word == "cheat" || word == "cheatsoff") {
+        if (word == "cheatsoff") for (auto& ch : cheats) ch.on = false;
+        else { size_t sp = c.find(' ', 6); int n = atoi(c.c_str() + 6); if (n >= 0 && (size_t)n < cheats.size()) cheats[n].on = sp != std::string::npos && c.find("on", sp) != std::string::npos; }
+        applyCheats(); printf("{\"event\":\"done\",\"what\":\"cheat\",\"ok\":true}\n"); fflush(stdout);
+      }
       else if (word == "flush") { saveSram(true); printf("{\"event\":\"done\",\"what\":\"flush\",\"ok\":true}\n"); fflush(stdout); }
     }
     // Controller shortcuts: Guide or Select+Start opens the menu; Select+R1 screenshot; Select+R2 fast forward; hold Select+L1 to rewind.

@@ -205,7 +205,7 @@ class Player {
 Player.prototype.command = function (cmd) {
   const c = this.child; if (!c || !c.stdin || c.stdin.destroyed) return Promise.resolve({ ok: false, error: 'not playing' });
   const word = cmd.split(' ')[0];
-  const wait = ['save', 'load', 'flush', 'frame'].includes(word) ? new Promise((r) => { this.waiters.push(r); setTimeout(() => { const i = this.waiters.indexOf(r); if (i >= 0) { this.waiters.splice(i, 1); r({ ok: false }); } }, 8000); }) : Promise.resolve({ ok: true });
+  const wait = ['save', 'load', 'flush', 'frame', 'cheats', 'cheat', 'cheatsoff'].includes(word) ? new Promise((r) => { this.waiters.push(r); setTimeout(() => { const i = this.waiters.indexOf(r); if (i >= 0) { this.waiters.splice(i, 1); r({ ok: false }); } }, 8000); }) : Promise.resolve({ ok: true });
   try { c.stdin.write(cmd + '\n'); } catch (_) { return Promise.resolve({ ok: false }); }
   return wait;
 };

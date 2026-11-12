@@ -85,6 +85,9 @@ final class IconView extends View {
             case "photos":
                 canvas.drawRoundRect(new RectF(3,4,21,20),2.5f,2.5f,paint); canvas.drawCircle(8.5f,9.5f,1.6f,paint);
                 p.moveTo(3,17); p.lineTo(9,12); p.lineTo(13,16); p.lineTo(16,13); p.lineTo(21,17.5f); canvas.drawPath(p,paint); break;
+            case "cheat":   // a magic wand with sparkles
+                canvas.drawLine(4,20,14.5f,9.5f,paint); canvas.drawLine(16,3,16,7,paint); canvas.drawLine(14,5,18,5,paint);
+                canvas.drawLine(20,9,20,12,paint); canvas.drawLine(18.5f,10.5f,21.5f,10.5f,paint); canvas.drawLine(9,4,9,6.5f,paint); canvas.drawLine(7.75f,5.25f,10.25f,5.25f,paint); break;
             case "tv":
                 canvas.drawRoundRect(new RectF(2,4,22,17), 2, 2, paint); canvas.drawLine(8,21,16,21,paint); canvas.drawLine(12,17,12,21,paint); break;
             case "pc":
