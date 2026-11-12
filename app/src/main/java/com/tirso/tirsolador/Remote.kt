@@ -129,8 +129,8 @@ object Remote {
                 since = System.currentTimeMillis(); paused = false; ff = false; pending = null
                 controls = JSONArray(i.getStringArrayExtra("controls")?.toList() ?: listOf("pause", "resume", "save", "load", "shot", "ff", "reset", "backup", "exit"))
                 settings = JSONObject().put("res", i.getStringExtra("res") ?: "").put("filter", i.getStringExtra("filter") ?: "")
-                    .put("resOptions", JSONArray(if (controls.toString().contains("\"res\"")) listOf("low", "medium", "high") else emptyList()))
-                    .put("filters", JSONArray(i.getStringArrayExtra("filters")?.toList() ?: emptyList()))
+                    .put("resOptions", JSONArray(if (controls.toString().contains("\"res\"")) listOf("low", "medium", "high") else emptyList<String>()))
+                    .put("filters", JSONArray(i.getStringArrayExtra("filters")?.toList() ?: emptyList<String>()))
             }
             "state" -> { paused = i.getBooleanExtra("paused", paused); ff = i.getBooleanExtra("ff", ff); i.getStringExtra("filter")?.let { if (it.isNotEmpty()) settings.put("filter", it) } }
             "exited" -> {
