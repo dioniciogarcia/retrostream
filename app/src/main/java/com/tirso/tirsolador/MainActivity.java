@@ -698,6 +698,23 @@ public class MainActivity extends Activity {
         if(console!=null&&drive.sources.get(console).chatId==0)return T.t("Vincula ")+TelegramCatalog.expectedTitle(console)+T.t(" en TirsoDrive");
         return T.t("Actualizada automáticamente");
     }
+    /** Box art shape per console (width / height): DVD cases tall, N64/SNES boxes wide. Same as the phone app. */
+    private static float coverRatio(Console c) {
+        switch (c) {
+            case PS2: case GC: case WII: return 0.71f; case PSP: return 0.58f;
+            case NES: case MD: case MAME: return 0.72f; case NDS: return 0.89f;
+            case GB: case GBC: case GBA: return 1.0f; default: return 1.38f;   // N64, SNES
+        }
+    }
+    /** Cover picture shown whole (never stretched); the white placeholder and title disappear once it arrives. */
+    private ImageView coverImage(View frame, View placeholder) {
+        ImageView iv = new ImageView(this) {
+            private void arrived() { if (placeholder != null) placeholder.setVisibility(View.INVISIBLE); frame.setBackground(round(0, 18)); }
+            @Override public void setImageBitmap(android.graphics.Bitmap bm) { super.setImageBitmap(bm); if (bm != null) arrived(); }
+            @Override public void setImageDrawable(android.graphics.drawable.Drawable d) { super.setImageDrawable(d); if (d != null) arrived(); }
+        };
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER); return iv;
+    }
     private void libraryScreen() {
         List<Game> games;
         if (mode == 2) {
@@ -746,14 +763,14 @@ public class MainActivity extends Activity {
         for (Game game : games) {
             if (index % columns == 0) { row = horizontal(); row.setGravity(Gravity.TOP); grid.addView(row); }
             LinearLayout cell = vertical();
-            FrameLayout art = new FrameLayout(this);
-            art.setBackground(round(Color.WHITE, 22));
+            FrameLayout art = new FrameLayout(this); art.setClipToOutline(true);
+            art.setBackground(round(Color.WHITE, 18));
             TextView ph = tv(game.title, 26, 0xFF1A1A2E, fHead); ph.setGravity(Gravity.CENTER); ph.setPadding(px(16), px(12), px(16), px(12)); ph.setMaxLines(3); ph.setEllipsize(android.text.TextUtils.TruncateAt.END);
             art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
-            ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER); image.setContentDescription(game.title); image.setPadding(px(14), px(12), px(14), px(12));
-            art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(game, image, "Named_Logos", "Named_Titles", "Named_Boxarts");
+            ImageView image = coverImage(art, ph); image.setContentDescription(game.title);
+            art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(game, image, "Named_Boxarts", "Named_Titles", "Named_Logos");
             if (library.favorite(game)) { TextView fav = tv("★", 30, 0xFFFFB400, fHead); fav.setPadding(px(10), px(4), px(12), 0); art.addView(fav, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END)); }
-            cell.addView(art, new LinearLayout.LayoutParams(cardW, cardH));
+            cell.addView(art, new LinearLayout.LayoutParams(cardW, Math.round(cardW / coverRatio(game.console))));
             cell.setPadding(px(7), px(7), px(7), px(7));
             final int ringColor = focusRing();
             focusableWith(cell, "game_" + game.id, f -> { GradientDrawable g = round(0, 28); if (f) g.setStroke(px(6), ringColor); return g; }, () -> selectGame(game));
@@ -1281,7 +1298,7 @@ public class MainActivity extends Activity {
             focusableWith(all, "home_recent_all", f -> { GradientDrawable g = round(0, 14); if (f) g.setStroke(px(4), focusRing()); return g; }, () -> route("history"));
             head.addView(all); right.addView(head);
             LinearLayout r = horizontal(); r.setGravity(Gravity.TOP); r.setClipChildren(false); r.setClipToPadding(false); r.setPadding(px(6), px(6), px(6), px(6));
-            for (Game g : rec.subList(1, rec.size())) r.addView(recentCardTv(g), new LinearLayout.LayoutParams(px(190), -2));
+            for (Game g : rec.subList(1, rec.size())) r.addView(recentCardTv(g), new LinearLayout.LayoutParams(Math.max(px(190), Math.round(px(230) * coverRatio(g.console)) + px(16)), -2));
             right.addView(hscroll(r));
         }
         if (HomeLayout.shown(this, "consoles")) {
@@ -1320,9 +1337,10 @@ public class MainActivity extends Activity {
         int ink2 = filled ? Color.WHITE : text, soft = filled ? 0xD9FFFFFF : muted;
         if (g != null) {
             FrameLayout cover = new FrameLayout(this); cover.setBackground(round(0xFFF2EEE4, 16)); cover.setClipToOutline(true);
-            ImageView iv = new ImageView(this); iv.setScaleType(ImageView.ScaleType.CENTER_CROP); cover.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+            ImageView iv = coverImage(cover, null); cover.addView(iv, new FrameLayout.LayoutParams(-1, -1));
             artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles"); cover.setRotation(6f);
-            FrameLayout.LayoutParams cl = new FrameLayout.LayoutParams(px(250), px(340), Gravity.END | Gravity.CENTER_VERTICAL); cl.rightMargin = px(-14); card.addView(cover, cl);
+            int cw = Math.min(Math.round(px(340) * coverRatio(g.console)), px(330));
+            FrameLayout.LayoutParams cl = new FrameLayout.LayoutParams(cw, Math.round(cw / coverRatio(g.console)), Gravity.END | Gravity.CENTER_VERTICAL); cl.rightMargin = px(-14); card.addView(cover, cl);
         }
         LinearLayout texts = vertical(); texts.setPadding(px(36), px(36), px(36), 0);
         TextView k = tv(g != null ? T.t("CONTINUAR") + " · " + c.title.toUpperCase(java.util.Locale.ROOT) : T.t("EMPIEZA A JUGAR"), 21, soft, fMono); k.setLetterSpacing(.08f); texts.addView(k);
@@ -1344,9 +1362,9 @@ public class MainActivity extends Activity {
         LinearLayout cell = vertical(); cell.setPadding(px(8), px(8), px(8), px(8));
         FrameLayout art = new FrameLayout(this); art.setBackground(round(0xFFF2EEE4, 14)); art.setClipToOutline(true);
         TextView ph = tv(g.title, 20, 0xFF2B2B2B, fHead); ph.setGravity(Gravity.CENTER); ph.setPadding(px(8), px(8), px(8), px(8)); art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
-        ImageView iv = new ImageView(this); iv.setScaleType(ImageView.ScaleType.CENTER_CROP); art.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+        ImageView iv = coverImage(art, ph); art.addView(iv, new FrameLayout.LayoutParams(-1, -1));
         artwork.loadFirst(g, iv, "Named_Boxarts", "Named_Titles");
-        cell.addView(art, new LinearLayout.LayoutParams(-1, px(230)));
+        cell.addView(art, new LinearLayout.LayoutParams(Math.round(px(230) * coverRatio(g.console)), px(230)));
         TextView t = tv(g.title, 21, text, fBody); t.setSingleLine(true); t.setEllipsize(android.text.TextUtils.TruncateAt.END); t.setPadding(px(2), px(8), px(2), 0); cell.addView(t);
         String pt = PlayTime.label(this, g.id); if (!pt.isEmpty()) { TextView m = tv(pt, 18, muted, fBody); m.setPadding(px(2), px(2), 0, 0); cell.addView(m); }
         focusableWith(cell, "home_recent_" + g.id, f -> { GradientDrawable d = round(0, 20); if (f) d.setStroke(px(5), focusRing()); return d; }, () -> startPlay(g));
@@ -1539,12 +1557,12 @@ public class MainActivity extends Activity {
         for (Object[] play : plays) {
             Game game = (Game) play[0]; if (!seen.add(game.id) || shown >= 8) continue;
             LinearLayout cell = vertical(); cell.setPadding(px(7), px(7), px(7), px(7));
-            FrameLayout art = new FrameLayout(this); art.setBackground(round(Color.WHITE, 22));
+            FrameLayout art = new FrameLayout(this); art.setClipToOutline(true); art.setBackground(round(Color.WHITE, 18));
             TextView ph = tv(game.title, 26, 0xFF1A1A2E, fHead); ph.setGravity(Gravity.CENTER); ph.setPadding(px(16), px(12), px(16), px(12)); ph.setMaxLines(3); ph.setEllipsize(android.text.TextUtils.TruncateAt.END);
             art.addView(ph, new FrameLayout.LayoutParams(-1, -1));
-            ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER); image.setPadding(px(14), px(12), px(14), px(12));
-            art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(game, image, "Named_Logos", "Named_Titles", "Named_Boxarts");
-            cell.addView(art, new LinearLayout.LayoutParams(px(330), px(220)));
+            ImageView image = coverImage(art, ph);
+            art.addView(image, new FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(game, image, "Named_Boxarts", "Named_Titles", "Named_Logos");
+            cell.addView(art, new LinearLayout.LayoutParams(Math.round(px(300) * coverRatio(game.console)), px(300)));
             TextView when = tv(game.console.name() + " · " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(new java.util.Date((Long) play[1])), 22, muted, fMono); when.setPadding(px(6), px(10), 0, 0); cell.addView(when);
             final int ringColor = focusRing(); final int idx = shown;
             focusableWith(cell, "hist_recent_" + idx, f -> { GradientDrawable g = round(0, 28); if (f) g.setStroke(px(6), ringColor); return g; }, () -> startPlay(game));
