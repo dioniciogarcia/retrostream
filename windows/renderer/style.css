@@ -47,13 +47,16 @@ body.kbd .ctile:focus,body.kbd .continue:focus{transform:scale(1.02);transition:
 .rowhead{display:flex;align-items:center;margin-top:6px}
 .rowhead h2{margin:0;font-family:Inter;font-size:12px;letter-spacing:.14em;color:var(--muted);font-weight:600;text-transform:uppercase}
 .rowhead .link{margin-left:auto;color:var(--ring);font-size:13px;padding:4px 8px;border-radius:6px;display:flex;gap:6px;align-items:center}
-.strip{display:flex;gap:16px;overflow-x:auto;padding:8px 4px 10px}
+.strip{display:flex;gap:16px;overflow-x:auto;padding:8px 4px 10px;scrollbar-width:none;scroll-behavior:smooth}
+.strip::-webkit-scrollbar{display:none}
 .mini{flex:none;width:128px;text-align:left;border-radius:12px;padding:4px}
 .mini .t{font-size:13px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini .s{font-size:11px;color:var(--muted)}
-.consoles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding:8px 4px}
-.ctile{border-radius:14px;color:#fff;text-align:left;padding:14px 14px 12px;min-height:76px;display:flex;flex-direction:column;justify-content:space-between}
-.ctile b{font-family:'Space Grotesk';font-size:16px}.ctile span{font-size:12px;opacity:.85}
+.consoles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;padding:8px 4px}
+.ctile{border-radius:16px;color:#fff;text-align:left;padding:16px 18px 14px;min-height:clamp(118px,15.5vh,190px);display:flex;flex-direction:column;justify-content:space-between;gap:10px;overflow:hidden}
+.ctile .clogo{max-width:82%;max-height:clamp(40px,6.5vh,78px);object-fit:contain;object-position:left center;filter:brightness(0) invert(1);align-self:flex-start}
+.ctile .wordmark{font-family:'Space Grotesk';font-size:clamp(18px,1.6vw,24px);line-height:1.1}
+.ctile span{font-size:13px;opacity:.88}
 
 /* covers */
 .cover{position:relative;border-radius:10px;background:#F2EEE4;color:#2B2B2B;overflow:hidden;display:flex;align-items:center;justify-content:center;text-align:center;font-weight:700;font-size:12px;padding:8px}

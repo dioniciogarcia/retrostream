@@ -155,28 +155,35 @@ function home() {
   const rows = h('div', { class: 'rows' });
   if (rec.length > 1) {
     rows.append(h('div', { class: 'rowhead' }, h('h2', {}, t('Recently played'))));
-    rows.append(h('div', { class: 'strip' }, rec.slice(1).map((g) => miniCard(g, 'rec', true))));
+    rows.append(h('div', { class: 'strip', onWheel: sideways }, rec.slice(1).map((g) => miniCard(g, 'rec', true))));
   }
   const fresh = newGames().slice(0, 15);
   if (fresh.length) {
     rows.append(h('div', { class: 'rowhead' }, h('h2', {}, t('New in your channels') + ' · ' + fresh.length)));
-    rows.append(h('div', { class: 'strip' }, fresh.map((g) => { const m = miniCard(g, 'new', false); m.querySelector('.cover').append(h('span', { class: 'tag', style: 'background:#C9363B' }, t('NEW'))); return m; })));
+    rows.append(h('div', { class: 'strip', onWheel: sideways }, fresh.map((g) => { const m = miniCard(g, 'new', false); m.querySelector('.cover').append(h('span', { class: 'tag', style: 'background:#C9363B' }, t('NEW'))); return m; })));
   }
   rows.append(h('div', { class: 'rowhead' }, h('h2', {}, t('Consoles')),
     h('button', { class: 'link', 'data-key': 'surprise', onClick: surprise }, svg(ICON.dice, 16, '#7FA6FF'), t('Surprise me'))));
   rows.append(h('div', { class: 'consoles' }, S.consoles.map((cn) => {
     const n = S.games.filter((g) => g.console === cn.id).length;
-    return h('button', { class: 'ctile', style: `background:${cn.color}`, 'data-key': 'con_' + cn.id, onClick: () => go('library', { console: cn.id, source: 'all', query: '', filter: 'all' }) },
-      h('b', {}, cn.title), h('span', {}, cn.big ? t('New · PC only') : count(n, 'game', 'games')));
+    return h('button', { class: 'ctile', style: `background:${cn.color}`, 'data-key': 'con_' + cn.id, 'aria-label': cn.title, onClick: () => go('library', { console: cn.id, source: 'all', query: '', filter: 'all' }) },
+      consoleLogo(cn), h('span', {}, cn.big && !n ? t('New · PC only') : count(n, 'game', 'games')));
   })));
   if (S.drive.stage === 'ready' && S.games.length === 0 && !S.drive.busy) rows.append(h('p', { class: 'empty' }, t('No games yet. Open Settings > TirsoDrive and tap Scan all channels.')));
   return h('main', { class: 'scroll' }, h('div', { class: 'home' }, left, rows));
+}
+/** The console's logo in white (the same pictures as the phone and TV apps); its name for PS3 and Switch. */
+const LOGOS = new Set(['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA', 'N64', 'NDS', 'MAME', 'PSP', 'PS2', 'GC', 'WII']);
+function consoleLogo(cn) {
+  if (!LOGOS.has(cn.id)) return h('b', { class: 'wordmark' }, cn.id === 'PS3' ? 'PlayStation 3' : cn.id === 'SWITCH' ? 'Nintendo Switch' : cn.title);
+  return h('img', { class: 'clogo', src: 'logos/' + cn.id + '.png', alt: '' });
 }
 function miniCard(g, prefix, recentMenu) {
   const w = 128; const hh = Math.round(w / (RATIO[g.console] || 1)) > 170 ? 170 : Math.round(w / (RATIO[g.console] || 1));
   return h('button', { class: 'mini', 'data-key': prefix + '_' + g.id, 'data-game': g.id, 'data-recent': prefix === 'rec' ? '1' : null, onClick: () => prefix === 'rec' ? playGame(g) : openGame(g), onContextmenu: (e) => { e.preventDefault(); gameMenu(g, e, recentMenu); } },
     cover(g, w, hh), h('div', { class: 't' }, g.title), h('div', { class: 's' }, byId[g.console].title + (playtime(g) ? ' · ' + playtime(g) : '')));
 }
+function sideways(e) { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); } }
 function openGame(g) { go('library', { console: g.console, source: 'all', query: '', selected: g.id }); }
 
 function library() {
