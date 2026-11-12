@@ -169,7 +169,7 @@ function home() {
     h('button', { class: 'link', 'data-key': 'surprise', onClick: surprise }, svg(ICON.dice, 16, '#7FA6FF'), t('Surprise me'))));
   rows.append(h('div', { class: 'consoles' }, S.consoles.map((cn) => {
     const n = S.games.filter((g) => g.console === cn.id).length;
-    return h('button', { class: 'ctile', style: `background:${cn.color}`, 'data-key': 'con_' + cn.id, 'aria-label': cn.title, onClick: () => go('library', { console: cn.id, source: 'all', query: '', filter: 'all' }) },
+    return h('button', { class: 'ctile' + (cn.id === 'SWITCH' ? ' light' : ''), style: `background:${cn.color}`, 'data-key': 'con_' + cn.id, 'aria-label': cn.title, onClick: () => go('library', { console: cn.id, source: 'all', query: '', filter: 'all' }) },
       consoleLogo(cn), h('span', {}, cn.big && !n ? t('New · PC only') : count(n, 'game', 'games')));
   })));
   if (S.drive.stage === 'ready' && S.games.length === 0 && !S.drive.busy) rows.append(h('p', { class: 'empty' }, t('No games yet. Open Settings > TirsoDrive and tap Scan all channels.')));
