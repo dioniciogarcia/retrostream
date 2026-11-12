@@ -105,6 +105,7 @@ function render() {
   const d = S.drive;
   const signingIn = d.stage !== 'ready' && !pref('skipped');
   if (signingIn && !['settings', 'sources'].includes(S.page)) app.append(signIn());
+  else if (S.page === 'home' && homeTheme() === 'cinematic') app.append(cinematic());
   else {
     app.append(header());
     if (S.page === 'library') app.append(library());
@@ -178,6 +179,76 @@ function consoleLogo(cn) {
   if (!LOGOS.has(cn.id)) return h('b', { class: 'wordmark' }, cn.id === 'PS3' ? 'PlayStation 3' : cn.id === 'SWITCH' ? 'Nintendo Switch' : cn.title);
   return h('img', { class: 'clogo', src: 'logos/' + cn.id + '.png', alt: '' });
 }
+// ------------------------------------------------------------------ home theme C: cinematic (one console fills the screen)
+function homeTheme() { return pref('homeTheme') || 'cinematic'; }
+function cineActive() { return S.page === 'home' && homeTheme() === 'cinematic' && document.querySelector('.cine'); }
+const CONSOLE_INFO = {
+  NES: ['1983', 'Home console', 'Nintendo', 'The 8-bit console that brought home video games back to life and introduced Mario, Zelda and Metroid.'],
+  SNES: ['1990', 'Home console', 'Nintendo', 'Nintendo\u2019s 16-bit console, home of Super Mario World, A Link to the Past and Super Metroid.'],
+  MD: ['1988', 'Home console', 'Sega', 'Sega\u2019s 16-bit console, called Genesis in North America, and the home of Sonic the Hedgehog.'],
+  GB: ['1989', 'Handheld', 'Nintendo', 'The handheld that made gaming portable. It launched with Tetris.'],
+  GBC: ['1998', 'Handheld', 'Nintendo', 'The Game Boy in color, still able to play the original Game Boy cartridges.'],
+  GBA: ['2001', 'Handheld', 'Nintendo', 'Nintendo\u2019s 32-bit handheld, with a wide screen and a huge library of 2D classics.'],
+  N64: ['1996', 'Home console', 'Nintendo', 'Nintendo\u2019s first console with an analog stick, home of Super Mario 64 and Ocarina of Time.'],
+  NDS: ['2004', 'Handheld', 'Nintendo', 'Two screens, one of them a touch screen, in a clamshell you can take anywhere.'],
+  MAME: ['1970s – 2000s', 'Arcade', 'Many makers', 'Arcade machines from the golden age, played through MAME.'],
+  PSP: ['2004', 'Handheld', 'Sony', 'Sony\u2019s first handheld, with its games on small UMD discs.'],
+  PS2: ['2000', 'Home console', 'Sony', 'The best-selling home console of all time, which could also play DVDs.'],
+  GC: ['2001', 'Home console', 'Nintendo', 'Nintendo\u2019s console with small 8 cm discs and a handle on the back.'],
+  WII: ['2006', 'Home console', 'Nintendo', 'The Wii Remote\u2019s motion controls brought the whole family in front of the TV.'],
+  PS3: ['2006', 'Home console', 'Sony', 'Sony\u2019s HD console, with its games on Blu-ray discs.'],
+  SWITCH: ['2017', 'Hybrid console', 'Nintendo', 'A console you can play on the TV or take with you as a handheld.']
+};
+function cineConsoles() { return S.consoles; }
+function cineIndex() { const list = cineConsoles(); const i = list.findIndex((c) => c.id === S.cineConsole); return i < 0 ? Math.max(0, list.findIndex((c) => S.games.some((g) => g.console === c.id))) : i; }
+function cineStep(step) {
+  const list = cineConsoles(); const i = (cineIndex() + step + list.length) % list.length;
+  S.cineConsole = list[i].id; render();
+  const f = document.querySelector('[data-key="cine_enter"]'); if (f) f.focus({ preventScroll: true });
+}
+/** A box art from the console's games, changing every few seconds (games without a cover are skipped). */
+function cineArt(consoleId, img, tries) {
+  const pool = visibleGames().filter((g) => g.console === consoleId);
+  if (!pool.length || (tries || 0) > 6) { img.style.opacity = '0'; return; }
+  const g = pool[Math.floor(Math.random() * pool.length)]; const urls = coverUrls(g).filter((u) => !missing.has(u)); let i = 0;
+  if (!urls.length) { cineArt(consoleId, img, (tries || 0) + 1); return; }
+  const probe = new Image();
+  probe.onload = () => { if (!img.isConnected) return; img.style.opacity = '0'; setTimeout(() => { img.src = probe.src; img.alt = g.title; img.style.opacity = '1'; }, 250); };
+  probe.onerror = () => { missing.add(urls[i]); saveMissing(); i++; if (i < urls.length) probe.src = urls[i]; else cineArt(consoleId, img, (tries || 0) + 1); };
+  probe.src = urls[0];
+}
+setInterval(() => { const img = document.querySelector('.cine-art img'); if (img && cineActive() && !document.querySelector('#layer .shade') && !document.hidden) cineArt(S.cineConsole, img); }, 7000);
+function cinematic() {
+  const list = cineConsoles(); const c = list[cineIndex()]; S.cineConsole = c.id;
+  const info = CONSOLE_INFO[c.id] || ['', '', '', ''];
+  const n = S.games.filter((g) => g.console === c.id && !listPref('hidden').has(g.id)).length;
+  const last = plays().find((p) => p.game.console === c.id);
+  const img = h('img', { alt: '', style: 'opacity:0' });
+  setTimeout(() => cineArt(c.id, img), 0);
+  const dots = h('nav', { class: 'cine-dots', 'aria-label': t('Consoles') }, list.map((x, i) => h('button', { class: 'dot' + (x.id === c.id ? ' on' : ''), 'aria-label': x.title, tabindex: '-1',
+    onClick: () => { S.cineConsole = x.id; render(); } })));
+  const enter = h('button', { class: 'cine-enter', 'data-key': 'cine_enter', onClick: () => go('library', { console: c.id, source: 'all', query: '', filter: 'all' }) }, h('span', {}, 'A'), t('ENTER'));
+  const d = S.drive;
+  return h('main', { class: 'cine', style: `--tone:${c.color}`, onWheel: (e) => { if (Math.abs(e.deltaY) > 20 && !cineActive.lock) { cineActive.lock = true; setTimeout(() => { cineActive.lock = false; }, 280); cineStep(e.deltaY > 0 ? 1 : -1); } } },
+    h('div', { class: 'cine-art' }, img),
+    h('div', { class: 'cine-fade' }),
+    dots,
+    h('section', { class: 'cine-text' },
+      h('span', { class: 'cine-meta' }, [info[0], t(info[1]), t(info[2])].filter(Boolean).join(' · ')),
+      h('h1', {}, c.title.toUpperCase()),
+      h('span', { class: 'cine-count' }, c.big && !n ? t('NEW · PC ONLY') : n + ' ' + (n === 1 ? t('GAME AVAILABLE') : t('GAMES AVAILABLE'))),
+      h('p', {}, t(info[3])),
+      h('div', { class: 'cine-actions' }, enter, last ? h('span', { class: 'cine-last' }, t('Last played:') + ' ' + last.game.title + (playtime(last.game) ? ' · ' + playtime(last.game) : '')) : null)),
+    h('div', { class: 'cine-top' },
+      h('span', { class: 'status' }, h('span', { class: 'dot' + (d.stage === 'ready' ? ' ok' : '') }), h('span', { id: 'statustext' }, statusText())),
+      h('button', { class: 'iconbtn', 'aria-label': t('Search games'), onClick: askSearch }, svg(ICON.search, 18, '#E9ECF5')),
+      h('button', { class: 'iconbtn', 'aria-label': t('Favorites & collections'), onClick: () => go('library', { source: 'fav', console: null, query: '' }) }, svg(ICON.star, 18, '#E9ECF5')),
+      h('button', { class: 'iconbtn', 'aria-label': t('Downloads'), onClick: showDownloads }, svg(ICON.down, 18, '#E9ECF5')),
+      h('button', { class: 'iconbtn', 'aria-label': t('Settings'), onClick: () => go('settings') }, svg('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z|M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z', 18, '#E9ECF5'))),
+    h('div', { class: 'cine-hints' },
+      h('span', {}, h('b', {}, '▲ ▼'), t('Console')), h('span', {}, h('b', {}, 'A'), t('Open')), h('span', {}, h('b', {}, 'Y'), t('Surprise me')), h('span', {}, h('b', {}, 'B / ⌂'), t('Menu'))));
+}
+function askSearch() { ask(t('Search games'), '', (q) => go('library', { query: q, console: null, source: 'all' })); }
 function miniCard(g, prefix, recentMenu) {
   const w = 128; const hh = Math.round(w / (RATIO[g.console] || 1)) > 170 ? 170 : Math.round(w / (RATIO[g.console] || 1));
   return h('button', { class: 'mini', 'data-key': prefix + '_' + g.id, 'data-game': g.id, 'data-recent': prefix === 'rec' ? '1' : null, onClick: () => prefix === 'rec' ? playGame(g) : openGame(g), onContextmenu: (e) => { e.preventDefault(); gameMenu(g, e, recentMenu); } },
@@ -351,6 +422,9 @@ function settings() {
     h('div', { class: 'pagehead' }, h('button', { class: 'iconbtn', 'aria-label': t('Back to Home'), 'data-key': 'back', onClick: () => go('home') }, svg(ICON.back, 20, '#E9ECF5')), h('h1', {}, t('Settings'))),
     h('div', { class: 'settings' },
       h('section', { class: 'group' }, h('h2', {}, t('Appearance')),
+        srow(t('Home screen style'), homeTheme() === 'cinematic' ? t('Cinematic') : t('Classic (tiles and rows)'), '#7A4DFF', () => choose(t('Home screen style'), [
+          { label: t('Cinematic'), on: homeTheme() === 'cinematic', pick: () => { setPref('homeTheme', 'cinematic'); render(); } },
+          { label: t('Classic (tiles and rows)'), on: homeTheme() === 'classic', pick: () => { setPref('homeTheme', 'classic'); render(); } }]), 's_theme'),
         srow('Idioma / Language', pref('lang') === 'es' ? 'Español' : 'English', '#2AA8FF', () => choose('Idioma / Language', [['es', 'Español'], ['en', 'English']].map(([k, v]) => ({ label: v, on: pref('lang') === k, pick: () => { setPref('lang', k); t = I18N.make(k); render(); } }))))),
       h('section', { class: 'group' }, h('h2', {}, t('Library')),
         srow('TirsoDrive', d.stage === 'ready' ? t('Connected as') + ' ' + d.me + ' · ' + t('manage channels') : t('Not connected · sign in'), '#14C9AA', () => d.stage === 'ready' ? go('sources') : (setPref('skipped', false), go('home'))),
@@ -475,6 +549,8 @@ function signIn() {
 
 // ------------------------------------------------------------------ keyboard and controller: move between items with arrows / stick
 function moveFocus(dir) {
+  // Cinematic home: the arrows / stick move between consoles (the small top buttons are reached with Tab or the mouse).
+  if (cineActive() && !document.querySelector('#layer .shade') && !(document.activeElement && document.activeElement.closest('.cine-top'))) { cineStep(dir === 'up' || dir === 'left' ? -1 : 1); return; }
   const all = [...document.querySelectorAll('#layer .shade:last-child button, #layer .shade:last-child input')];
   const pool = all.length ? all : [...document.querySelectorAll('#app button, #app input')].filter((el) => el.offsetParent !== null);
   const cur = document.activeElement; if (!pool.includes(cur)) { if (pool[0]) pool[0].focus(); return; }
@@ -519,6 +595,9 @@ async function quickMenu() {
   const full = await window.rs.win('isFull');
   const d = S.drive;
   choose('RetroStream', [
+    { label: t('Library'), pick: () => go('library', { source: 'all', console: S.cineConsole || S.console || firstConsole(), query: '' }) },
+    { label: t('Favorites & collections'), pick: () => go('library', { source: 'fav', console: null, query: '' }) },
+    { label: t('Search games'), pick: askSearch },
     { label: full ? t('Leave full screen') : t('Full screen'), pick: () => window.rs.fullscreen() },
     { label: t('Surprise me'), pick: surprise },
     { label: t('Downloads'), pick: showDownloads },
@@ -541,7 +620,7 @@ function pollPads() {
     if (gp.buttons.some((x) => x.pressed) || gp.axes.some((v) => Math.abs(v) > 0.6)) kbd(true);
     const st = { up: b(12) || gp.axes[1] < -0.6, down: b(13) || gp.axes[1] > 0.6, left: b(14) || gp.axes[0] < -0.6, right: b(15) || gp.axes[0] > 0.6,
       a: b(0), b: b(1), x: b(2), y: b(3), lb: b(4), rb: b(5), lt: b(6), rt: b(7), view: b(8), menu: b(9), home: b(16) };
-    if (!document.querySelector('#app :focus') && !document.querySelector('#layer :focus') && Object.values(st).some(Boolean)) { const f = document.querySelector('#app [data-key="continue"], #app .card, #app button'); if (f) f.focus(); }
+    if (!document.querySelector('#app :focus') && !document.querySelector('#layer :focus') && Object.values(st).some(Boolean)) { const f = document.querySelector('#app [data-key="cine_enter"]') || document.querySelector('#app [data-key="continue"], #app .card, #app button'); if (f) f.focus(); }
     // Held directions repeat: a short pause first, then quickly.
     for (const k of ['up', 'down', 'left', 'right']) {
       if (!st[k]) continue;
@@ -555,7 +634,8 @@ function pollPads() {
     if (press('home')) { const top = document.querySelector('#layer .shade:last-child'); if (top) top.remove(); else quickMenu(); }
     if (!layerOpen) {
       if (press('x')) { const g = focusedGame(); if (g) { toggleIn('favorites', g.id); render(); toast(listPref('favorites').has(g.id) ? t('Added to favorites') : t('Removed from favorites')); } }
-      if (press('y') || press('menu')) optionsForFocus();
+      if (press('y') && cineActive()) surprise();
+      else if (press('y') || press('menu')) optionsForFocus();
       if (press('lb')) switchTab(-1);
       if (press('rb')) switchTab(1);
       if (press('lt') || press('rt')) { for (let i = 0; i < 3; i++) moveFocus(press('lt') ? 'up' : 'down'); }
