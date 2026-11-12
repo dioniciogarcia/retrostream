@@ -176,7 +176,7 @@ function home() {
   return h('main', { class: 'scroll' }, h('div', { class: 'home' }, left, rows));
 }
 /** The console's logo in white (the same pictures as the phone and TV apps); its name for PS3 and Switch. */
-const LOGOS = new Set(['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA', 'N64', 'NDS', 'MAME', 'PSP', 'PS2', 'GC', 'WII']);
+const LOGOS = new Set(['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA', 'N64', 'NDS', 'MAME', 'PSP', 'PS2', 'GC', 'WII', 'PS3', 'SWITCH']);
 function consoleLogo(cn) {
   if (!LOGOS.has(cn.id)) return h('b', { class: 'wordmark' }, cn.id === 'PS3' ? 'PlayStation 3' : cn.id === 'SWITCH' ? 'Nintendo Switch' : cn.title);
   return h('span', { class: 'clogo-plate' }, h('img', { class: 'clogo', src: 'logos/' + cn.id + '-color.png', alt: '' }));
