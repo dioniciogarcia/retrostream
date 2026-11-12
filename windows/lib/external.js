@@ -168,7 +168,7 @@ class External {
   }
 
   // ------------------------------------------------------------------ Dolphin's settings for each game's own user folder
-  dolphinConfig(userDir, wii, lang) {
+  dolphinConfig(userDir, wii, lang, res) {
     const cfg = path.join(userDir, 'Config'); fs.mkdirSync(cfg, { recursive: true });
     const ini = (file, sections) => {
       const p = path.join(cfg, file); let text = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
@@ -190,7 +190,7 @@ class External {
       Analytics: { Enabled: 'False', PermissionAsked: 'True' },
       AutoUpdate: { UpdateTrack: '' }
     });
-    ini('GFX.ini', { Settings: { AspectRatio: '0', ShowFPS: 'False' } });
+    ini('GFX.ini', { Settings: { AspectRatio: '0', ShowFPS: 'False', InternalResolution: { low: '2', medium: '3', high: '4' }[res] || '3' } });
     const pad = (keys) => keys.map(([k, v]) => k + ' = ' + v).join('\n');
     const dev = 'XInput/0/Gamepad';
     fs.writeFileSync(path.join(cfg, 'GCPadNew.ini'), '[GCPad1]\nDevice = ' + dev + '\n' + pad([
@@ -215,7 +215,8 @@ class External {
     let args;
     if (name === 'dolphin') {
       const user = path.join(prep.root, 'saves', 'User');   // the same folder the Android app's Dolphin uses, so backups match
-      this.dolphinConfig(user, game.console === 'WII', prefs.lang);
+      const own = (prefs.gameSettings || {})[game.id] || {};
+      this.dolphinConfig(user, game.console === 'WII', prefs.lang, own.res || (prefs.resolution || {})[game.console] || 'medium');
       args = ['-b', '-u', user, '-e', rom];
     } else if (name === 'rpcs3') {
       if (!this.status().ps3fw) throw new Error(this.t('PS3 games need your own PS3 firmware. Add it in Settings > GameCube, Wii, PS3 and Switch.'));

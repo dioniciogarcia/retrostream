@@ -150,6 +150,23 @@ class Cloud {
     this.busy = false;
   }
 
+  /** This game's screenshots in the Screenshots channel, newest first, as pictures the page can show. */
+  async shots(gameId) {
+    const chat = await this.drive.ownChannel(SHOTS_TITLE, '', false); if (!chat) return [];
+    const out = [];
+    for (const m of await this.drive.search(chat, 'Photo', 1500)) {
+      const c = m.content; if (!c || c._ !== 'messagePhoto' || !c.caption) continue;
+      const text = c.caption.text; if (!text.startsWith('#RSSHOT') || !text.split('\n').includes('id:' + gameId)) continue;
+      const sizes = c.photo.sizes || []; const big = sizes[sizes.length - 1]; if (!big) continue;
+      try {
+        const p = await this.drive.downloadNow(big.photo.id);
+        if (p) out.push({ date: m.date, url: 'data:image/jpeg;base64,' + fs.readFileSync(p).toString('base64'), chatId: m.chat_id, messageId: m.id });
+      } catch (_) { /* skip */ }
+      if (out.length >= 30) break;
+    }
+    return out;
+  }
+
   // ------------------------------------------------------------------ cheats (libretro database), downloaded once per game
   http(url) {
     return new Promise((resolve) => {

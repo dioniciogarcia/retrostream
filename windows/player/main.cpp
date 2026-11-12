@@ -227,8 +227,10 @@ static uint16_t padBits(unsigned port) {
     SDL_GameController* g = pads[port];
     auto btn = [&](SDL_GameControllerButton x) { return SDL_GameControllerGetButton(g, x) != 0; };
     // Xbox layout -> RetroPad (SNES layout): bottom = B, right = A, left = Y, top = X.
-    set(RETRO_DEVICE_ID_JOYPAD_B, btn(SDL_CONTROLLER_BUTTON_A)); set(RETRO_DEVICE_ID_JOYPAD_A, btn(SDL_CONTROLLER_BUTTON_B));
-    set(RETRO_DEVICE_ID_JOYPAD_Y, btn(SDL_CONTROLLER_BUTTON_X)); set(RETRO_DEVICE_ID_JOYPAD_X, btn(SDL_CONTROLLER_BUTTON_Y));
+    // "Swap A/B" in Settings > Controllers: by the letters printed on the buttons instead of their position.
+    const bool sw = arg("swapab") == "1";
+    set(RETRO_DEVICE_ID_JOYPAD_B, btn(sw ? SDL_CONTROLLER_BUTTON_B : SDL_CONTROLLER_BUTTON_A)); set(RETRO_DEVICE_ID_JOYPAD_A, btn(sw ? SDL_CONTROLLER_BUTTON_A : SDL_CONTROLLER_BUTTON_B));
+    set(RETRO_DEVICE_ID_JOYPAD_Y, btn(sw ? SDL_CONTROLLER_BUTTON_Y : SDL_CONTROLLER_BUTTON_X)); set(RETRO_DEVICE_ID_JOYPAD_X, btn(sw ? SDL_CONTROLLER_BUTTON_X : SDL_CONTROLLER_BUTTON_Y));
     set(RETRO_DEVICE_ID_JOYPAD_SELECT, btn(SDL_CONTROLLER_BUTTON_BACK)); set(RETRO_DEVICE_ID_JOYPAD_START, btn(SDL_CONTROLLER_BUTTON_START));
     set(RETRO_DEVICE_ID_JOYPAD_UP, btn(SDL_CONTROLLER_BUTTON_DPAD_UP)); set(RETRO_DEVICE_ID_JOYPAD_DOWN, btn(SDL_CONTROLLER_BUTTON_DPAD_DOWN));
     set(RETRO_DEVICE_ID_JOYPAD_LEFT, btn(SDL_CONTROLLER_BUTTON_DPAD_LEFT)); set(RETRO_DEVICE_ID_JOYPAD_RIGHT, btn(SDL_CONTROLLER_BUTTON_DPAD_RIGHT));

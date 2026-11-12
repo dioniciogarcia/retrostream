@@ -115,7 +115,7 @@ body.kbd .ctile:focus,body.kbd .continue:focus{transform:scale(1.02);transition:
 .error{color:var(--bad);font-size:14px;margin:8px 0}
 
 /* layer: menus and dialogs */
-#layer{position:fixed;inset:0;pointer-events:none}
+#layer{position:fixed;inset:0;pointer-events:none;z-index:100}
 .shade{position:absolute;inset:0;background:rgba(5,7,12,.55);pointer-events:auto;display:flex;align-items:center;justify-content:center}
 .dialog{background:#141927;border:1px solid var(--line);border-radius:18px;padding:22px;width:560px;max-width:92vw;max-height:84vh;overflow:auto}
 .dialog h2{margin:0 0 6px;font-size:22px}.dialog p{color:var(--soft);line-height:1.5}
@@ -127,7 +127,7 @@ body.kbd .ctile:focus,body.kbd .continue:focus{transform:scale(1.02);transition:
 .menu button{display:flex;width:100%;text-align:left;padding:9px 12px;border-radius:8px}
 .menu button:hover,.menu button:focus{background:var(--primary);color:#fff}
 .menu button span{flex:1}.menu button small{color:#8C95AA}
-#toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1E2433;border:1px solid #323A50;border-radius:12px;padding:12px 18px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:70vw}
+#toast{z-index:200;position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1E2433;border:1px solid #323A50;border-radius:12px;padding:12px 18px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:70vw}
 #toast.show{opacity:1}
 
 .hints{display:flex;gap:22px;justify-content:flex-end;padding:10px 32px 14px;border-top:1px solid var(--surface2);color:var(--soft);font-size:13px}
@@ -158,3 +158,35 @@ body.kbd .ctile:focus,body.kbd .continue:focus{transform:scale(1.02);transition:
 .cine-hints span{display:flex;align-items:center;gap:8px}.cine-hints b{border:1px solid #5A6178;border-radius:6px;padding:2px 8px;font-size:12px}
 
 .panel p.desc{font-size:13.5px;line-height:1.55;color:#C9CEDC;margin:4px 0;max-height:9.5em;overflow:auto}
+
+/* switches in settings rows */
+.srow .switch{flex:none;width:40px;height:22px;border-radius:11px;background:var(--line);position:relative;transition:background .15s}
+.srow .switch::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:8px;background:#fff;transition:left .15s}
+.srow .switch.on{background:var(--primary)}.srow .switch.on::after{left:21px}
+.menu{overflow:auto}
+.dialog.wide{width:900px}
+.dialog .facts{border-collapse:collapse;font-size:13px;margin-top:8px}
+.dialog .facts th{text-align:left;color:var(--muted);font-weight:500;padding:3px 14px 3px 0;vertical-align:top;white-space:nowrap}
+.dialog .facts td{padding:3px 0;word-break:break-word}
+.shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin:10px 0}
+.shot{padding:0;border-radius:10px;overflow:hidden;background:var(--surface2)}.shot img{width:100%;display:block;aspect-ratio:4/3;object-fit:cover}
+pre.log{background:#0F121A;border:1px solid var(--line);border-radius:10px;padding:12px;max-height:46vh;overflow:auto;font-size:12px;white-space:pre-wrap;color:var(--soft)}
+.srow .cover{flex:none;font-size:8px;padding:2px}
+/* friends on the home screen */
+.friend{flex:none;display:flex;align-items:center;gap:10px;background:var(--surface);border-radius:14px;padding:10px 14px;min-width:200px;text-align:left}
+.friend .av{width:36px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex:none}
+.friend .tx b{display:block;font-size:14px}.friend .tx small{color:var(--muted);font-size:12px}
+
+/* light mode (Settings > Dark mode off) */
+body.light{--bg:#F3F5FA;--surface:#FFFFFF;--surface2:#E8ECF4;--line:#D3D9E6;--text:#161A24;--soft:#3D4558;--muted:#667089;--bad:#C9363B}
+body.light .iconbtn svg{stroke:#2A3144}
+body.light .nav button.on{color:var(--text)}
+body.light .dialog{background:#FFFFFF}
+body.light .menu,body.light #toast{background:#FFFFFF;border-color:var(--line);color:var(--text)}
+body.light .menu button small{color:var(--muted)}
+body.light .panel p{color:var(--soft)}
+body.light .field input,body.light .seg,body.light pre.log{background:#EEF1F7}
+body.light .hints b{color:var(--text)}
+body.light .shade{background:rgba(20,24,36,.35)}
+body.light .scroll::-webkit-scrollbar-thumb{background:#C3CADB}
+body.light.kbd :focus{outline-color:#161A24}

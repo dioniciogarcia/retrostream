@@ -37,6 +37,7 @@ function options(consoleId, res) {
       if (consoleId === 'WII') Object.assign(v, { dolphin_widescreen: 'enabled', dolphin_wiimote_default_device: 'sideways', dolphin_hotkey_sideways_toggle: 'Disabled' });
       return v;
     }
+    case 'PS2': return { pcsx2_upscale_multiplier: { low: '1x Native (PS2)', medium: '2x Native (~720p)', high: '3x Native (~1080p)' }[res] || '2x Native (~720p)' };
     default: return {};
   }
 }
@@ -157,14 +158,17 @@ class Player {
     const system = this.systemFor(game.console, root);
     const optFile = path.join(this.dir, 'play', 'options-' + game.console + '.txt');
     fs.mkdirSync(path.dirname(optFile), { recursive: true });
-    const opts = options(game.console, (prefs.resolution || {})[game.console] || 'medium');
+    const own = (prefs.gameSettings || {})[game.id] || {};   // "This game's settings" from the game menu
+    const res = own.res || (prefs.resolution || {})[game.console] || 'medium';
+    const opts = options(game.console, res);
     fs.writeFileSync(optFile, Object.entries(opts).map(([k, v]) => k + '=' + v).join('\n'));
     const pictures = path.join(require('electron').app.getPath('pictures'), 'RetroStream');
     const cheatsOn = path.join(this.dir, 'cheats', 'on', game.id.replace(/[^A-Za-z0-9._-]/g, '_') + '.txt');
     const args = ['--core', engine, '--rom', rom, '--title', game.title, '--console', game.console, '--gameid', game.id,
       '--saveroot', root, '--system', system, '--shots', path.join(this.dir, 'screenshots', 'pending'), '--pictures', pictures,
       '--options', optFile, '--lang', prefs.lang || 'en', '--fullscreen', prefs.playerWindowed ? '0' : '1',
-      '--filter', ['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA'].includes(game.console) ? 'sharp' : 'smooth', '--fresh', prefs.fresh ? '1' : '0',
+      '--filter', own.filter || (['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA'].includes(game.console) ? (res === 'high' ? 'smooth' : 'sharp') : 'smooth'), '--fresh', prefs.fresh ? '1' : '0',
+      '--swapab', prefs.swapAB ? '1' : '0',
       '--cheats', cheats || '', '--cheatson', cheatsOn];
     const exe = path.join(this.resources, 'player', 'rs-player.exe');
     if (!fs.existsSync(exe)) throw new Error(this.t('The game player is missing. Reinstall RetroStream.'));

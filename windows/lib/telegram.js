@@ -46,6 +46,7 @@ class Drive extends EventEmitter {
   publish(catalogChanged) { this.emit('state', catalogChanged === true); }
 
   onUpdate(u) {
+    if (u._ === 'updateNewMessage' || u._ === 'updateMessageContent' || u._ === 'updateUser') this.emit('td', u);
     switch (u._) {
       case 'updateAuthorizationState': this.auth(u.authorization_state); break;
       case 'updateNewChat': this.chats.set(u.chat.id, u.chat); break;
@@ -299,7 +300,64 @@ class Drive extends EventEmitter {
     }
     return out;
   }
+  async history(chatId, pages) {
+    const out = []; let from = 0;
+    for (let i = 0; i < (pages || 3); i++) {
+      const r = await this.invoke({ _: 'getChatHistory', chat_id: chatId, from_message_id: from, offset: 0, limit: 100, only_local: false });
+      if (!r.messages.length) break; out.push(...r.messages); from = r.messages[r.messages.length - 1].id;
+    }
+    return out;
+  }
   async downloadNow(fileId) { const f = await this.invoke({ _: 'downloadFile', file_id: fileId, priority: 32, offset: 0, limit: 0, synchronous: true }); return f.local.is_downloading_completed ? f.local.path : null; }
+
+  /** Messages of one kind ('Photo', 'Document'…) in a chat, newest first. */
+  async search(chatId, kind, max) {
+    const out = []; let from = 0;
+    for (let i = 0; i < 50; i++) {
+      const page = await this.invoke({ _: 'searchChatMessages', chat_id: chatId, query: '', from_message_id: from, offset: 0, limit: 100, filter: { _: 'searchMessagesFilter' + kind } });
+      out.push(...page.messages);
+      if (!page.messages.length || !page.next_from_message_id || out.length >= (max || 2000)) break;
+      from = page.next_from_message_id;
+    }
+    return out;
+  }
+  /** "TD - " groups and channels this account created that hold no files, photos, videos or audio (duplicates). */
+  async emptyGroups(keep) {
+    if (this.stage !== 'ready') throw new Error(this.t('Connect Telegram first (Settings > TirsoDrive).'));
+    await this.loadChats();
+    const bound = new Set(Object.values(this.sources).map((s) => s.chatId).filter(Boolean));
+    const out = [];
+    for (const c of this.chats.values()) {
+      if (!this.isGroup(c) || !this.norm(c.title).startsWith('td') || !/^\s*td\s*-/i.test(c.title || '') || bound.has(c.id) || (keep || []).includes(c.id)) continue;
+      try {
+        const m = await this.invoke({ _: 'getChatMember', chat_id: c.id, member_id: { _: 'messageSenderUser', user_id: this.account } });
+        if (!m.status || m.status._ !== 'chatMemberStatusCreator') continue;
+        let total = 0;
+        for (const k of ['Document', 'Photo', 'Video', 'Audio']) {
+          // An unknown answer counts as not empty, so nothing is deleted by mistake.
+          try { const r = await this.invoke({ _: 'searchChatMessages', chat_id: c.id, query: '', from_message_id: 0, offset: 0, limit: 1, filter: { _: 'searchMessagesFilter' + k } }); total += Math.max(r.total_count || 0, r.messages.length); } catch (_) { total += 1; }
+          if (total) break;
+        }
+        if (!total) out.push({ id: c.id, title: c.title });
+      } catch (_) { /* not ours */ }
+    }
+    return out;
+  }
+  async deleteChats(ids) {
+    let n = 0;
+    for (const id of ids) {
+      try { await this.invoke({ _: 'deleteChat', chat_id: id }); n++; }
+      catch (_) { try { await this.invoke({ _: 'leaveChat', chat_id: id }); n++; } catch (__) { /* skip */ } }
+      this.chats.delete(id);
+    }
+    return n;
+  }
+  async messageLink(chatId, messageId) {
+    try { return (await this.invoke({ _: 'getMessageLink', chat_id: chatId, message_id: messageId, media_timestamp: 0, for_album: false, in_message_thread: false })).link; } catch (_) { return ''; }
+  }
+  async forward(toChat, fromChat, messageId) {
+    await this.invoke({ _: 'forwardMessages', chat_id: toChat, from_chat_id: fromChat, message_ids: [messageId], send_copy: false, remove_caption: false });
+  }
 
   snapshot() {
     const sources = {};

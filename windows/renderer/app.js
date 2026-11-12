@@ -42,9 +42,9 @@ const listPref = (k) => new Set(pref(k) || []);
 function toggleIn(k, id) { const s = listPref(k); if (s.has(id)) s.delete(id); else s.add(id); setPref(k, [...s]); return s.has(id); }
 
 // ------------------------------------------------------------------ the library
-function visibleGames() { const hidden = listPref('hidden'); return S.games.filter((g) => !hidden.has(g.id)); }
+function visibleGames() { const hidden = listPref('hidden'); const off = pref('shownConsoles') || {}; return S.games.filter((g) => !hidden.has(g.id) && off[g.console] !== false); }
 function playtime(g) { const m = Math.floor(((pref('playtime') || {})[g.id] || 0) / 60000); return m < 1 ? '' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; }
-function kept(g) { return !!(pref('kept') || {})[g.id]; }
+function kept(g) { return !!g.local || !!(pref('kept') || {})[g.id]; }
 function plays() { return (pref('plays') || []).map((p) => ({ game: S.games.find((g) => g.id === p.id), at: p.at })).filter((p) => p.game); }
 function recent() { const seen = new Set(); const out = []; for (const p of plays()) if (!seen.has(p.game.id)) { seen.add(p.game.id); out.push(p.game); if (out.length >= 12) break; } return out; }
 function newGames() { const added = pref('addedAt') || {}; const since = Date.now() - 14 * 86400000; return visibleGames().filter((g) => (added[g.id] || 0) > since).sort((a, b) => (added[b.id] - added[a.id]) || (b.messageId - a.messageId)); }
@@ -52,6 +52,7 @@ function sorted(list) {
   const s = pref('sort') || 'name';
   const out = [...list];
   if (s === 'added') out.sort((a, b) => b.messageId - a.messageId);
+  else if (s === 'most') { const pt = pref('playtime') || {}; out.sort((a, b) => ((pt[b.id] || 0) - (pt[a.id] || 0)) || a.title.localeCompare(b.title)); }
   else if (s === 'recent') { const r = recent().map((g) => g.id); out.sort((a, b) => (r.indexOf(a.id) + 1 || 1e9) - (r.indexOf(b.id) + 1 || 1e9)); }
   else out.sort((a, b) => a.title.localeCompare(b.title) * (s === 'name_desc' ? -1 : 1));
   return out;
@@ -63,6 +64,7 @@ function shownGames() {
   else if (S.console) list = list.filter((g) => g.console === S.console);
   if (S.query) { const q = S.query.toLowerCase(); list = list.filter((g) => g.title.toLowerCase().includes(q)); }
   if (S.filter === 'downloaded') list = list.filter(kept);
+  if (S.filter === 'pc') list = list.filter((g) => g.local);
   return sorted(list);
 }
 
@@ -106,7 +108,7 @@ function render() {
   app.replaceChildren();
   const d = S.drive;
   const signingIn = d.stage !== 'ready' && !pref('skipped');
-  if (signingIn && !['settings', 'sources'].includes(S.page)) app.append(signIn());
+  if (signingIn && !['settings', 'sources', ...Object.keys(PAGES)].includes(S.page)) app.append(signIn());
   else if (S.page === 'home' && homeTheme() === 'cinematic') app.append(cinematic());
   else {
     app.append(header());
@@ -114,6 +116,7 @@ function render() {
     else if (S.page === 'settings') app.append(settings());
     else if (S.page === 'sources') app.append(sources());
     else if (S.page === 'engines') app.append(engines());
+    else if (PAGES[S.page]) app.append(PAGES[S.page]());
     else app.append(home());
     const hb = hints(); if (hb) app.append(hb);
   }
@@ -130,7 +133,7 @@ function hints() {
 }
 function header() {
   const d = S.drive; const nav = [['home', t('Home')], ['library', t('Library')], ['fav', t('Favorites & collections')], ['settings', t('Settings')]];
-  const on = (k) => (k === 'fav' ? S.page === 'library' && (S.source === 'fav' || S.source === 'col') : k === 'library' ? S.page === 'library' && S.source !== 'fav' && S.source !== 'col' : S.page === k || (k === 'settings' && S.page === 'sources'));
+  const on = (k) => (k === 'fav' ? S.page === 'library' && (S.source === 'fav' || S.source === 'col') : k === 'library' ? S.page === 'library' && S.source !== 'fav' && S.source !== 'col' : S.page === k || (k === 'settings' && (S.page === 'sources' || S.page === 'engines' || !!PAGES[S.page])));
   const input = h('input', { placeholder: t('Search all games  (Ctrl+F)'), value: S.query, 'aria-label': t('Search games'), 'data-key': 'search',
     onKeydown: (e) => { if (e.key === 'Enter') { go('library', { query: e.target.value.trim(), console: null, source: 'all' }); } } });
   return h('header', { class: 'top' },
@@ -144,7 +147,7 @@ function header() {
 }
 function statusText() { const d = S.drive; return d.stage === 'ready' ? (d.busy ? d.status : t('TirsoDrive connected')) : t('Not connected');
 }
-function firstConsole() { const withGames = S.consoles.find((c) => S.games.some((g) => g.console === c.id)); return (withGames || S.consoles[0]).id; }
+function firstConsole() { const list = visibleConsoles(); const withGames = list.find((c) => S.games.some((g) => g.console === c.id)); return (withGames || list[0]).id; }
 
 function home() {
   const rec = recent(); const last = rec[0]; const c = last ? byId[last.console] : byId[firstConsole()];
@@ -156,28 +159,33 @@ function home() {
   last ? h('div', { class: 'art' }, cover(last, 230, Math.round(230 / (RATIO[last.console] || 1)), false)) : null,
   h('div', { class: 'actions' }, h('span', { class: 'btn white' }, svg(ICON.play, 14, '#14161E', '#14161E'), last ? t('Resume') : t('Open library'))));
   const rows = h('div', { class: 'rows' });
-  if (rec.length > 1) {
-    rows.append(h('div', { class: 'rowhead' }, h('h2', {}, t('Recently played'))));
-    rows.append(h('div', { class: 'strip', onWheel: sideways }, rec.slice(1).map((g) => miniCard(g, 'rec', true))));
+  if (sectionOn('friends')) { const fr = friendsRow(); if (fr) rows.append(...fr); }
+  const recRow = sectionOn('continue') ? rec.slice(1) : rec;
+  if (recRow.length && sectionOn('recent')) {
+    rows.append(h('div', { class: 'rowhead' }, h('h2', {}, t('Recently played')), h('button', { class: 'link', 'data-key': 'history', onClick: () => go('history') }, t('History'))));
+    rows.append(h('div', { class: 'strip', onWheel: sideways }, recRow.map((g) => miniCard(g, 'rec', true))));
   }
   const fresh = newGames().slice(0, 15);
-  if (fresh.length) {
+  if (fresh.length && sectionOn('new')) {
     rows.append(h('div', { class: 'rowhead' }, h('h2', {}, t('New in your channels') + ' · ' + fresh.length)));
     rows.append(h('div', { class: 'strip', onWheel: sideways }, fresh.map((g) => { const m = miniCard(g, 'new', false); m.querySelector('.cover').append(h('span', { class: 'tag', style: 'background:#C9363B' }, t('NEW'))); return m; })));
   }
-  rows.append(h('div', { class: 'rowhead' }, h('h2', {}, t('Consoles')),
-    h('button', { class: 'link', 'data-key': 'surprise', onClick: surprise }, svg(ICON.dice, 16, '#7FA6FF'), t('Surprise me'))));
-  rows.append(h('div', { class: 'consoles' }, S.consoles.map((cn) => {
+  if (sectionOn('consoles') || !sectionOn('continue')) rows.append(h('div', { class: 'rowhead' }, h('h2', {}, t('Consoles')),
+    h('button', { class: 'link', 'data-key': 'surprise', onClick: surprise }, svg(ICON.dice, 16, 'var(--ring)'), t('Surprise me'))));
+  if (sectionOn('consoles') || !sectionOn('continue')) rows.append(h('div', { class: 'consoles' }, visibleConsoles().map((cn) => {
     const n = S.games.filter((g) => g.console === cn.id).length;
     return h('button', { class: 'ctile' + (cn.id === 'SWITCH' ? ' light' : ''), style: `background:${cn.color}`, 'data-key': 'con_' + cn.id, 'aria-label': cn.title, onClick: () => go('library', { console: cn.id, source: 'all', query: '', filter: 'all' }) },
       consoleLogo(cn), h('span', {}, cn.big && !n ? t('New · PC only') : count(n, 'game', 'games')));
   })));
   if (S.drive.stage === 'ready' && S.games.length === 0 && !S.drive.busy) rows.append(h('p', { class: 'empty' }, t('No games yet. Open Settings > TirsoDrive and tap Scan all channels.')));
-  return h('main', { class: 'scroll' }, h('div', { class: 'home' }, left, rows));
+  return h('main', { class: 'scroll' }, h('div', { class: 'home' }, sectionOn('continue') ? left : null, rows));
 }
 /** The console's logo in white (the same pictures as the phone and TV apps); its name for PS3 and Switch. */
 const LOGOS = new Set(['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA', 'N64', 'NDS', 'MAME', 'PSP', 'PS2', 'GC', 'WII', 'PS3', 'SWITCH']);
 function consoleLogo(cn) {
+  const style = logoStyle();
+  if (style === 'mono' && MONO.has(cn.id)) return h('span', { class: 'clogo-plate' }, h('img', { class: 'clogo', src: 'logos/' + cn.id + '.png', alt: '' }));
+  if (style === 'text' || style === 'mono') return h('b', { class: 'wordmark' }, cn.id === 'PS3' ? 'PlayStation 3' : cn.id === 'SWITCH' ? 'Nintendo Switch' : cn.title);
   if (!LOGOS.has(cn.id)) return h('b', { class: 'wordmark' }, cn.id === 'PS3' ? 'PlayStation 3' : cn.id === 'SWITCH' ? 'Nintendo Switch' : cn.title);
   return h('span', { class: 'clogo-plate' }, h('img', { class: 'clogo', src: 'logos/' + cn.id + '-color.png', alt: '' }));
 }
@@ -201,7 +209,7 @@ const CONSOLE_INFO = {
   PS3: ['2006', 'Home console', 'Sony', 'Sony\u2019s HD console, with its games on Blu-ray discs.'],
   SWITCH: ['2017', 'Hybrid console', 'Nintendo', 'A console you can play on the TV or take with you as a handheld.']
 };
-function cineConsoles() { return S.consoles; }
+function cineConsoles() { return visibleConsoles(); }
 function cineIndex() { const list = cineConsoles(); const i = list.findIndex((c) => c.id === S.cineConsole); return i < 0 ? Math.max(0, list.findIndex((c) => S.games.some((g) => g.console === c.id))) : i; }
 function cineStep(step) {
   const list = cineConsoles(); const i = (cineIndex() + step + list.length) % list.length;
@@ -266,15 +274,16 @@ function library() {
   if (S.source === 'fav' || S.source === 'col') {
     tabs.append(h('button', { class: 'chip' + (S.source === 'fav' ? ' on' : ''), 'data-key': 'tab_fav', onClick: () => go('library', { source: 'fav', keepFocus: true }) }, '★ ' + t('Favorites')));
     for (const n of cols) tabs.append(h('button', { class: 'chip' + (S.source === 'col' && S.collection === n ? ' on' : ''), 'data-key': 'tab_col_' + n, onClick: () => go('library', { source: 'col', collection: n, keepFocus: true }) }, n));
-  } else for (const c of S.consoles) tabs.append(h('button', { class: 'chip' + (S.console === c.id ? ' on' : ''), 'data-key': 'tab_' + c.id, onClick: () => go('library', { console: c.id, query: '', keepFocus: true }) }, c.id === 'MD' ? 'Mega Drive' : c.id === 'SWITCH' ? 'Switch' : c.id === 'WII' ? 'Wii' : c.id === 'GC' ? 'GameCube' : c.id));
+  } else for (const c of visibleConsoles()) tabs.append(h('button', { class: 'chip' + (S.console === c.id ? ' on' : ''), 'data-key': 'tab_' + c.id, onClick: () => go('library', { console: c.id, query: '', keepFocus: true }) }, c.id === 'MD' ? 'Mega Drive' : c.id === 'SWITCH' ? 'Switch' : c.id === 'WII' ? 'Wii' : c.id === 'GC' ? 'GameCube' : c.id));
   wrap.append(h('div', { class: 'libtop' }, h('button', { class: 'iconbtn', 'aria-label': t('Back to Home'), 'data-key': 'back', onClick: () => go('home') }, svg(ICON.back, 20, '#E9ECF5')), tabs));
   const games = shownGames();
   const title = S.source === 'fav' ? t('Favorites') : S.source === 'col' ? S.collection : S.query && !S.console ? '"' + S.query + '"' : (byId[S.console] || {}).title || t('Library');
-  const sortNames = { name: t('Name A–Z'), name_desc: t('Name Z–A'), added: t('Recently added'), recent: t('Recently played') };
+  const sortNames = { name: t('Name A–Z'), name_desc: t('Name Z–A'), added: t('Recently added'), recent: t('Recently played'), most: t('Most played') };
   wrap.append(h('div', { class: 'libhead' }, h('h1', {}, title), h('span', { class: 'n' }, count(games.length, 'game', 'games')),
     h('div', { class: 'filters' },
       h('button', { class: 'chip' + (S.filter === 'all' ? ' on' : ''), 'data-key': 'f_all', onClick: () => go('library', { filter: 'all', keepFocus: true }) }, t('All')),
       h('button', { class: 'chip' + (S.filter === 'downloaded' ? ' on' : ''), 'data-key': 'f_dl', onClick: () => go('library', { filter: 'downloaded', keepFocus: true }) }, '✓ ' + t('On this PC')),
+      S.games.some((g) => g.local) ? h('button', { class: 'chip' + (S.filter === 'pc' ? ' on' : ''), 'data-key': 'f_pc', onClick: () => go('library', { filter: 'pc', keepFocus: true }) }, t('Only in my folders')) : null,
       h('button', { class: 'chip', 'data-key': 'f_sort', onClick: () => choose(t('Sort by'), Object.entries(sortNames).map(([k, v]) => ({ label: v, on: (pref('sort') || 'name') === k, pick: () => { setPref('sort', k); render(); } }))) }, t('Sort:') + ' ' + sortNames[pref('sort') || 'name']))));
   const grid = h('div', { class: 'grid scroll', role: 'list' });
   if (!games.length) grid.append(h('p', { class: 'empty' }, S.drive.busy ? S.drive.status : t('No games here yet.')));
@@ -292,7 +301,7 @@ function library() {
   setTimeout(() => { if (sel) renderPanel(sel); }, 0);
   return wrap;
 }
-function gameLine(g) { return kept(g) ? t('On this PC') : 'Telegram' + (g.size ? ' · ' + size(g.size) : ''); }
+function gameLine(g) { return g.local ? t('This PC') + (g.size ? ' · ' + size(g.size) : '') : kept(g) ? t('On this PC') : 'Telegram' + (g.size ? ' · ' + size(g.size) : ''); }
 function renderPanel(g) {
   const p = document.getElementById('panel'); if (!p) return;
   const info = S.files[g.fileId] || {};
@@ -339,6 +348,8 @@ function showDownloads() {
     };
     fill(); S.liveDownloads = fill;
     box.append(h('h2', {}, t('Downloads')), body, h('div', { class: 'buttons' },
+      h('button', { class: 'btn ghost', onClick: () => { close(); downloadConsole(); } }, t('Download a whole console')),
+      h('button', { class: 'btn ghost', onClick: openDownloads }, t('Open folder')),
       h('button', { class: 'btn ghost', onClick: () => activeDownloads().forEach((g) => window.rs.game('cancel', g)) }, t('Stop all')),
       h('button', { class: 'btn primary', onClick: close }, t('Close'))));
   });
@@ -354,7 +365,9 @@ function surprise() {
 function gameMenu(g, e, recentMenu) {
   const items = [];
   items.push([kept(g) ? t('Play') : t('Download and play'), 'Enter', () => playGame(g)]);
+  if (recentMenu) items.push([t('Play from the start'), '', () => confirmBox(g.title, t("The game starts without loading where you left off. Your saves are not deleted."), t('Play'), () => playGame(g, true))]);
   items.push([t('View game'), '', () => openGame(g)]);
+  items.push([t('View game information'), 'I', () => gameInfo(g)]);
   items.push([t('Search game info'), '', () => searchInfo(g)]);
   items.push([t('Rename'), '', () => ask(t('Rename'), g.title, async (v) => { await window.rs.meta('rename', g, v); toast(t('Name changed')); })]);
   items.push([t('Reset game info'), '', () => confirmBox(g.title, t('The name, cover and description you chose are removed and looked up again.'), t('Reset'), async () => { await window.rs.meta('reset', g); toast(t('Looking it up again…')); })]);
@@ -363,11 +376,19 @@ function gameMenu(g, e, recentMenu) {
   items.push([listPref('completed').has(g.id) ? t('Remove "Completed"') : t('Mark as completed'), '', () => { toggleIn('completed', g.id); render(); }]);
   if (!kept(g) && (S.files[g.fileId] || {}).state !== 'downloading') items.push([t('Download to play offline'), '', async () => { const i = await window.rs.game('download', g); if (i) S.files[g.fileId] = i; toast(t('Downloading') + ' ' + g.title + '…'); }]);
   if ((S.files[g.fileId] || {}).state === 'downloading') items.push([t('Stop download'), '', () => window.rs.game('cancel', g)]);
-  if (kept(g)) items.push([t('Delete downloaded file'), '', () => confirmBox(g.title, t('It is deleted from this PC to free up space. The game stays in Telegram and in your library.'), t('Delete'), async () => { await window.rs.game('remove', g); toast(t('File deleted')); })]);
+  items.push([t('This game’s settings'), '', () => gameSettings(g)]);
+  items.push([t('Screenshots'), '', () => screenshots(g)]);
+  items.push([t('Back up the save now'), '', () => backupNow(g)]);
+  items.push([t('Share with a friend'), '', () => shareGame(g)]);
+  items.push([t('Add to the desktop'), '', () => desktopShortcut(g)]);
+  items.push([t('Walkthrough'), '', () => window.rs.tools('walkthrough', g.title + ' ' + byId[g.console].title)]);
+  if (!recentMenu) items.push([t('Play from the start'), '', () => confirmBox(g.title, t("The game starts without loading where you left off. Your saves are not deleted."), t('Play'), () => playGame(g, true))]);
+  if (kept(g)) items.push([t('Show the file in its folder'), '', () => window.rs.tools('showFile', g.local ? g.path : (pref('kept') || {})[g.id])]);
+  if (kept(g) && !g.local && !(pref('pcLinked') || {})[g.id]) items.push([t('Delete downloaded file'), '', () => confirmBox(g.title, t('It is deleted from this PC to free up space. The game stays in Telegram and in your library.'), t('Delete'), async () => { const r = await window.rs.game('remove', g); toast(r && r.error ? r.error : t('File deleted')); })]);
   items.push([t('Hide game'), '', () => confirmBox(g.title, t("It won't show in your library. You can show it again in Settings > Hidden games."), t('Hide'), () => { toggleIn('hidden', g.id); render(); })]);
   if (recentMenu) {
-    items.push([t('Play from the start'), '', () => confirmBox(g.title, t("The game starts without loading where you left off. Your saves are not deleted."), t('Play'), () => playGame(g, true))]);
     items.push([t('Remove from recents'), '', () => { setPref('plays', (pref('plays') || []).filter((p) => p.id !== g.id)); render(); }]);
+    items.push([t('Clear all recents'), '', clearRecents]);
   }
   const layer = document.getElementById('layer'); const shade = h('div', { class: 'shade', style: 'background:transparent;display:block', onMousedown: (ev) => { if (ev.target === shade) close(); } });
   const menu = h('div', { class: 'menu', role: 'menu', 'aria-label': g.title }, items.map(([label, key, fn]) => h('button', { role: 'menuitem', onClick: () => { close(); fn(); } }, h('span', {}, label), h('small', {}, key))));
@@ -376,6 +397,7 @@ function gameMenu(g, e, recentMenu) {
   menu.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } });
   shade.append(menu); layer.append(shade);
   const x = e && e.clientX ? e.clientX : innerWidth / 2 - 150, y = e && e.clientY ? e.clientY : innerHeight / 2 - 200;
+  menu.style.maxHeight = (innerHeight - 20) + 'px';
   menu.style.left = Math.min(x, innerWidth - 320) + 'px'; menu.style.top = Math.max(10, Math.min(y, innerHeight - menu.offsetHeight - 10)) + 'px';
   menu.querySelector('button').focus();
 }
@@ -448,32 +470,53 @@ function srow(title, value, color, fn, key) {
 }
 function settings() {
   const d = S.drive; const hidden = listPref('hidden'); const cols = Object.keys(pref('collections') || {});
+  const res = pref('resolution') || {}; const resVals = [...new Set(S.consoles.filter((c) => !c.big && c.id !== 'MAME' && c.id !== 'NDS').map((c) => res[c.id] || 'medium'))];
+  const shown = visibleConsoles().length; const fr = S.friends || {};
+  const pal = PALETTES[pref('palette')] || PALETTES.blue;
   return h('main', { class: 'scroll' },
     h('div', { class: 'pagehead' }, h('button', { class: 'iconbtn', 'aria-label': t('Back to Home'), 'data-key': 'back', onClick: () => go('home') }, svg(ICON.back, 20, '#E9ECF5')), h('h1', {}, t('Settings'))),
     h('div', { class: 'settings' },
       h('section', { class: 'group' }, h('h2', {}, t('Appearance')),
-        srow(t('Home screen style'), homeTheme() === 'cinematic' ? t('Cinematic') : t('Classic (tiles and rows)'), '#7A4DFF', () => choose(t('Home screen style'), [
-          { label: t('Cinematic'), on: homeTheme() === 'cinematic', pick: () => { setPref('homeTheme', 'cinematic'); render(); } },
-          { label: t('Classic (tiles and rows)'), on: homeTheme() === 'classic', pick: () => { setPref('homeTheme', 'classic'); render(); } }]), 's_theme'),
+        srow(t('Home screen'), (homeTheme() === 'cinematic' ? t('Cinematic') : t('Classic (tiles and rows)')) + ' · ' + t('which sections show'), '#7A4DFF', () => go('homeLayout'), 's_theme'),
+        srow(t('Accent color'), t(pal[0]), pal[1], () => choose(t('Accent color'), Object.entries(PALETTES).map(([k, v]) => ({ label: t(v[0]), on: (pref('palette') || 'blue') === k, pick: () => { setPref('palette', k); applyLook(); render(); } }))), 's_palette'),
+        toggleRow(t('Dark mode'), pref('dark') === false ? t('Light') : t('Dark'), pref('dark') !== false, '#4DB36B', () => { setPref('dark', pref('dark') === false); applyLook(); render(); }, 's_dark'),
+        srow(t('Console logos'), logoStyle() === 'mono' ? t('Monochrome logos') : logoStyle() === 'text' ? t('Text') : t('Color logos'), '#FF9A2E', () => choose(t('Console logos'), [['color', t('Color logos')], ['mono', t('Monochrome logos')], ['text', t('Text')]].map(([k, v]) => ({ label: v, on: logoStyle() === k, pick: () => { setPref('logoStyle', k); render(); } }))), 's_logos'),
         srow('Idioma / Language', pref('lang') === 'es' ? 'Español' : 'English', '#2AA8FF', () => choose('Idioma / Language', [['es', 'Español'], ['en', 'English']].map(([k, v]) => ({ label: v, on: pref('lang') === k, pick: () => { setPref('lang', k); t = I18N.make(k); render(); } }))))),
       h('section', { class: 'group' }, h('h2', {}, t('Library')),
         srow('TirsoDrive', d.stage === 'ready' ? t('Connected as') + ' ' + d.me + ' · ' + t('manage channels') : t('Not connected · sign in'), '#14C9AA', () => d.stage === 'ready' ? go('sources') : (setPref('skipped', false), go('home'))),
+        srow(t('Games on this PC'), ((S.pcInfo || {}).folders || S.folders || []).length + ' ' + t('folders') + ' · ' + t('ROMs you already have show as downloaded'), '#22C55E', () => go('pc'), 's_pc'),
+        srow(t('Open the downloads folder'), t('Where the games from Telegram are kept'), '#2AA8FF', openDownloads, 's_dlfolder'),
+        srow(t('Consoles'), shown + ' ' + t('of') + ' ' + S.consoles.length + ' ' + t('visible'), '#2F6DF6', () => go('consoles'), 's_consoles'),
+        srow(t('Download a whole console'), t('Every game of a console, one after another'), '#7A4DFF', downloadConsole, 's_dlconsole'),
+        srow(t('Download covers'), t('All the box art, for browsing without waiting'), '#FF9A2E', downloadCovers, 's_covers'),
+        toggleRow(t('Keep downloaded games'), pref('keep') !== false ? t('Kept on this PC to play offline') : t('Deleted after playing (they stay in Telegram)'), pref('keep') !== false, '#4DB36B', () => { setPref('keep', pref('keep') === false); render(); }, 's_keep'),
         srow(t('Collections'), cols.length + ' ' + t('lists'), '#7A4DFF', () => choose(t('Collections'), cols.length ? cols.map((n) => ({ label: n, pick: () => go('library', { source: 'col', collection: n }) })) : [{ label: t('Long-press or right-click a game and choose "Add to a collection".'), pick: () => {} }])),
-        srow(t('Save backups'), t('In your Telegram channel · shared with the phone and TV'), '#2DE2C8', backupsMenu),
+        srow(t('History'), t('What you played, day by day'), '#38BDF8', () => go('history'), 's_history'),
+        srow(t('Play stats'), t('Hours per console and most played'), '#2AA8FF', statsDialog, 's_stats'),
+        srow(t('Games without information'), t('Search by hand for the missing information or cover'), '#F0B455', () => go('missing'), 's_missing'),
         srow(t('Hidden games'), hidden.size + ' ' + t('hidden'), '#8C95AA', () => {
           const list = S.games.filter((g) => hidden.has(g.id));
           if (!list.length) { toast(t('You have no hidden games.')); return; }
           choose(t('Hidden games'), list.map((g) => ({ label: g.title + ' · ' + byId[g.console].title, pick: () => { toggleIn('hidden', g.id); toast(t('Showing again:') + ' ' + g.title); render(); } })));
-        })),
+        }),
+        srow(t('Space used'), t('Downloads, covers, saves · free up space'), '#22C55E', () => { S.space = null; go('space'); }, 's_space'),
+        srow(t('Clean empty groups'), t('Deletes duplicate TD groups with no files'), '#FF4D73', cleanGroups, 's_clean')),
       h('section', { class: 'group' }, h('h2', {}, t('Games')),
-        srow(t('PS2 BIOS'), S.bios && S.bios.length ? S.bios.join(', ') : t('Add your own PS2 BIOS file (needed for PS2 games)'), '#4DB36B', async () => {
-          const r = await window.rs.bios('add'); if (!r) return; if (r.error) { toast(r.error); return; }
-          toast(t('BIOS added:') + ' ' + r.ok); S.bios = await window.rs.bios('list'); render();
-        }, 's_bios'),
+        srow(t('Resolution'), (resVals.length === 1 ? t(RES_LABEL[resVals[0]]) : t('Mixed')) + ' · ' + t('per console'), '#2F6DF6', () => go('resolution'), 's_res'),
+        srow(t('Controllers'), (pref('swapAB') ? t('A/B swapped') : t('Xbox layout')) + ' · ' + t('buttons and shortcuts'), '#FF4D73', () => go('controllers'), 's_ctl'),
+        srow(t('Save backups'), t('In your Telegram channel · shared with the phone and TV'), '#2DE2C8', backupsMenu),
+        srow(t('Friends'), fr.chat ? (fr.friends || []).filter((x) => x.userId !== fr.me && x.online).length + ' ' + t('online') : t('See who is online and what they play'), '#22C55E', () => go('friends'), 's_friends'),
+        srow(t('System files (BIOS)'), S.bios && S.bios.length ? 'PS2: ' + S.bios.join(', ') : t('Add your own PS2 BIOS file (needed for PS2 games)'), '#4DB36B', () => choose(t('System files (BIOS)'), [
+          { label: t('Add a PS2 BIOS file'), pick: async () => { const r = await window.rs.bios('add'); if (!r) return; if (r.error) { toast(r.error); return; } toast(t('BIOS added:') + ' ' + r.ok); S.bios = await window.rs.bios('list'); render(); } },
+          { label: t('Open the system files folder'), pick: () => window.rs.tools('openFolder', 'bios') },
+          { label: t('PS3 firmware, Switch keys and firmware'), pick: () => go('engines') }]), 's_bios'),
         srow(t('GameCube, Wii, PS3 and Switch'), t('Dolphin, RPCS3 and Eden: install, firmware and keys'), '#B23A3A', () => go('engines'), 's_engines')),
       h('section', { class: 'group' }, h('h2', {}, t('App')),
-        srow(t('Updates'), 'RetroStream ' + S.version + ' · ' + t('open the downloads page'), '#7A4DFF', () => window.rs.open('https://github.com/dioniciogarcia/retrostream/releases/tag/windows-latest')),
-        srow(t('Open in full screen'), (pref('fullscreen') !== false ? t('On') : t('Off')) + ' · ' + t('F11 switches at any time'), '#38BDF8', () => { setPref('fullscreen', pref('fullscreen') === false); render(); }, 's_full'),
+        srow(t('Updates'), t('Check for and install the latest version'), '#7A4DFF', checkUpdates, 's_updates'),
+        srow(t('Problem report'), t('What was recorded if a game failed'), '#FF9A2E', problemReport, 's_report'),
+        srow(t('Licenses and credits'), t('Engines, fonts and databases'), '#4DB36B', licenses, 's_lic'),
+        srow('RetroStream', S.version, '#2AA8FF', about, 's_about'),
+        toggleRow(t('Open in full screen'), t('F11 switches at any time'), pref('fullscreen') !== false, '#38BDF8', () => { setPref('fullscreen', pref('fullscreen') === false); render(); }, 's_full'),
         srow(t('Exit RetroStream'), t('Closes the app'), '#8C95AA', () => window.rs.quit(), 's_exit'),
         d.stage === 'ready' ? srow(t('Sign out of Telegram'), d.me, '#FF4D73', () => confirmBox(t('Sign out of Telegram'), t('The library from your channels is removed from this PC until you sign in again.'), t('Sign out'), () => window.rs.drive('logout'))) : null)));
 }
@@ -604,6 +647,7 @@ document.addEventListener('keydown', (e) => {
   if (map[e.key] && !(typing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'))) { e.preventDefault(); moveFocus(map[e.key]); }
   else if (e.key === 'f' && e.ctrlKey) { e.preventDefault(); const s = document.querySelector('[data-key="search"]'); if (s) s.focus(); }
   else if (e.key === 'Escape' && !document.querySelector('#layer .shade')) goBack();
+  else if (e.key === 'i' && !typing && !document.querySelector('#layer .shade') && focusedGame()) gameInfo(focusedGame());
   else if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && S.page === 'library' && S.selected) { e.preventDefault(); const g = S.games.find((x) => x.id === S.selected); if (g) gameMenu(g, null, false); }
 });
 function focusedGame() { const el = document.activeElement; const id = el && el.dataset && el.dataset.game; return id ? S.games.find((g) => g.id === id) : null; }
@@ -615,7 +659,7 @@ function switchTab(step) {
     const tabs = ['*fav', ...Object.keys(pref('collections') || {})]; const cur = S.source === 'fav' ? 0 : tabs.indexOf(S.collection);
     const n = tabs[(cur + step + tabs.length) % tabs.length]; go('library', n === '*fav' ? { source: 'fav' } : { source: 'col', collection: n });
   } else {
-    const ids = S.consoles.map((c) => c.id); const cur = Math.max(0, ids.indexOf(S.console));
+    const ids = visibleConsoles().map((c) => c.id); const cur = Math.max(0, ids.indexOf(S.console));
     go('library', { console: ids[(cur + step + ids.length) % ids.length], query: '', selected: null });
   }
 }
@@ -631,6 +675,8 @@ async function quickMenu() {
     { label: full ? t('Leave full screen') : t('Full screen'), pick: () => window.rs.fullscreen() },
     { label: t('Surprise me'), pick: surprise },
     { label: t('Downloads'), pick: showDownloads },
+    { label: t('History'), pick: () => go('history') },
+    { label: t('Friends'), pick: () => go('friends') },
     ...(d.stage === 'ready' ? [
       { label: t('Back up all saves now'), pick: async () => { toast(t('Backing up…')); const r = await window.rs.backups('all'); toast(r.error || (r.total ? r.ok + ' / ' + r.total + ' ' + t('backed up') : t('Everything is up to date.'))); } },
       { label: t('Restore saves from Telegram'), pick: backupsMenu },
@@ -640,7 +686,7 @@ async function quickMenu() {
     { label: t('Exit RetroStream'), pick: () => window.rs.quit() }
   ]);
 }
-function goBack() { if (S.page === 'sources' || S.page === 'engines') go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
+function goBack() { if (S.page === 'sources' || S.page === 'engines' || PAGES[S.page]) go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
 const pad = { last: {}, at: {}, first: {} };
 function pollPads() {
   const gp = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(Boolean);
@@ -649,7 +695,7 @@ function pollPads() {
     const now = performance.now();
     if (gp.buttons.some((x) => x.pressed) || gp.axes.some((v) => Math.abs(v) > 0.6)) kbd(true);
     const st = { up: b(12) || gp.axes[1] < -0.6, down: b(13) || gp.axes[1] > 0.6, left: b(14) || gp.axes[0] < -0.6, right: b(15) || gp.axes[0] > 0.6,
-      a: b(0), b: b(1), x: b(2), y: b(3), lb: b(4), rb: b(5), lt: b(6), rt: b(7), view: b(8), menu: b(9), home: b(16) };
+      a: b(pref('swapAB') ? 1 : 0), b: b(pref('swapAB') ? 0 : 1), x: b(pref('swapAB') ? 3 : 2), y: b(pref('swapAB') ? 2 : 3), lb: b(4), rb: b(5), lt: b(6), rt: b(7), view: b(8), menu: b(9), home: b(16) };
     if (!document.querySelector('#app :focus') && !document.querySelector('#layer :focus') && Object.values(st).some(Boolean)) { const f = document.querySelector('#app [data-key="cine_enter"]') || document.querySelector('#app [data-key="continue"], #app .card, #app button'); if (f) f.focus(); }
     // Held directions repeat: a short pause first, then quickly.
     for (const k of ['up', 'down', 'left', 'right']) {
@@ -680,7 +726,8 @@ function pollPads() {
 // ------------------------------------------------------------------ start
 (async () => {
   const init = await window.rs.init();
-  Object.assign(S, { prefs: init.prefs, games: init.games, consoles: init.consoles, drive: init.drive, version: init.version });
+  Object.assign(S, { prefs: init.prefs, games: init.games, consoles: init.consoles, drive: init.drive, version: init.version, friends: init.friends, folders: init.folders, unsortedCount: init.unsorted });
+  applyLook();
   for (const c of S.consoles) byId[c.id] = c;
   t = I18N.make(S.prefs.lang);
   document.documentElement.lang = S.prefs.lang || 'en';
@@ -704,6 +751,10 @@ function pollPads() {
   });
   window.rs.on('kept', (k) => { S.prefs.kept = k; render(); });
   window.rs.on('toast', (text) => toast(text));
+  window.rs.on('friends', (f) => { S.friends = f; if (S.page === 'friends' || (S.page === 'home' && homeTheme() === 'classic')) { if (!document.querySelector('#layer .shade')) render(); } });
+  const launch = (id) => { const g = S.games.find((x) => x.id === id); if (g) playGame(g); else toast(t('That game is not in your library any more.')); };
+  window.rs.on('launch', launch);
+  if (init.launch) setTimeout(() => launch(init.launch), 1500);
   window.rs.on('played', (i) => { S.prefs.playtime = i.playtime; if (i.error) dialog(t('The game closed'), i.error + (i.details ? '\n\n' + t('Details for support:') + '\n' + i.details : ''), []); render(); });
   S.bios = await window.rs.bios('list');
   render();
