@@ -582,6 +582,8 @@ int main(int argc, char* argv[]) {
     SDL_GL_MakeCurrent(window, coreCtx);
     if (!makeFbo(std::max(av.geometry.max_width, 1u), std::max(av.geometry.max_height, 1u))) logf("framebuffer not complete");
     logf("engine context: %s · %s", (const char*)glGetString(GL_VERSION), (const char*)glGetString(GL_RENDERER));
+    // Some engines (Dolphin) take whatever framebuffer is bound when they start as "the screen": make it ours.
+    pBindFramebuffer(GL_FRAMEBUFFER, fbo);
     if (hw.context_reset) hw.context_reset();
     logf("engine context ready (error %u)", (unsigned)glGetError());
   }
@@ -604,7 +606,12 @@ int main(int argc, char* argv[]) {
     while (SDL_PollEvent(&e)) {
       ImGui_ImplSDL2_ProcessEvent(&e);
       if (e.type == SDL_QUIT) running = false;
-      else if (e.type == SDL_CONTROLLERDEVICEADDED) { SDL_GameController* g = SDL_GameControllerOpen(e.cdevice.which); if (g) { bool placed = false; for (auto& p : pads) if (!p) { p = g; placed = true; break; } if (!placed) pads.push_back(g); } }
+      else if (e.type == SDL_CONTROLLERDEVICEADDED) {
+        // The same controller can be announced twice: open it once, or games see two players pressing the same buttons.
+        SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(e.cdevice.which); bool known = false;
+        for (auto* p : pads) if (p && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p)) == id) known = true;
+        if (!known) { SDL_GameController* g = SDL_GameControllerOpen(e.cdevice.which); if (g) { bool placed = false; for (auto& p : pads) if (!p) { p = g; placed = true; break; } if (!placed) pads.push_back(g); logf("controller %d: %s", (int)pads.size(), SDL_GameControllerName(g)); } }
+      }
       else if (e.type == SDL_CONTROLLERDEVICEREMOVED) { for (auto& p : pads) if (p && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p)) == e.cdevice.which) { SDL_GameControllerClose(p); p = nullptr; } }
       else if (e.type == SDL_KEYDOWN && !e.key.repeat) {
         switch (e.key.keysym.sym) {
