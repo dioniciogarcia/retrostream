@@ -1064,54 +1064,88 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, px(104), 1); p.setMargins(px(10), px(6), px(10), px(6)); row.addView(card, p);
     }
     private void sFiller(LinearLayout row, int n) { for (int i = 0; i < n; i++) row.addView(new View(this), new LinearLayout.LayoutParams(0, px(104), 1)); }
-    private void settings() {
+    // ------------------------------------------------------------------ Settings: grouped rows (same look as the phone app)
+    private int listSurface() { return th.equals("gba") && !dark ? Color.WHITE : th.equals("midnight") ? ov(0x14FFFFFF) : surface; }
+    /** A titled group: the section name, then a rounded card the rows go into. */
+    private LinearLayout sGroup(String title) {
+        TextView t = tv(title.toUpperCase(java.util.Locale.ROOT), 21, muted, fMono); t.setLetterSpacing(.12f); t.setPadding(px(8), px(26), 0, px(10)); content.addView(t);
+        LinearLayout g = vertical(); g.setPadding(0, px(4), 0, px(4)); g.setClipChildren(false); g.setClipToPadding(false);
+        GradientDrawable bg = round(listSurface(), 28); if (th.equals("gba")) bg.setStroke(px(3), ink); g.setBackground(bg);
+        content.addView(g, new LinearLayout.LayoutParams(-1, -2));
+        return g;
+    }
+    /** One row: colored dot, title, value under it, and a switch or a chevron. */
+    private void sItem(LinearLayout g, String title, String value, String tag, int color, Boolean toggle, Runnable click) {
+        if (g.getChildCount() > 0) { View line = new View(this); line.setBackgroundColor(ov(0x14FFFFFF) == 0 ? 0x22808080 : (dark ? 0x1FFFFFFF : 0x1F000000)); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, px(2))); lp.leftMargin = px(96); g.addView(line, lp); }
+        LinearLayout r = horizontal(); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(px(28), px(20), px(28), px(20));
+        View dot = new View(this); dot.setBackground(round(color, 14)); r.addView(dot, new LinearLayout.LayoutParams(px(46), px(46)));
+        LinearLayout tx = vertical(); tx.setPadding(px(24), 0, px(16), 0);
+        tx.addView(tv(title, 30, text, fBody));
+        if (value != null && !value.isEmpty()) { TextView v = tv(value, 22, muted, fBody); v.setPadding(0, px(4), 0, 0); tx.addView(v); }
+        r.addView(tx, new LinearLayout.LayoutParams(0, -2, 1));
+        if (toggle != null) {
+            FrameLayout track = new FrameLayout(this); track.setBackground(round(toggle ? 0xFF22C55E : (dark ? 0x33FFFFFF : 0x22000000), 24));
+            View knob = new View(this); knob.setBackground(round(Color.WHITE, 18));
+            FrameLayout.LayoutParams kp = new FrameLayout.LayoutParams(px(36), px(36), (toggle ? Gravity.END : Gravity.START) | Gravity.CENTER_VERTICAL); kp.setMargins(px(6), 0, px(6), 0); track.addView(knob, kp);
+            r.addView(track, new LinearLayout.LayoutParams(px(88), px(48)));
+        } else r.addView(tv("›", 40, muted, fBody));
+        focusableWith(r, tag, f -> { GradientDrawable d = round(0, 24); if (f) d.setStroke(px(5), focusRing()); return d; }, click);
+        View.OnFocusChangeListener base = r.getOnFocusChangeListener(); r.setOnFocusChangeListener((x, has) -> { base.onFocusChange(x, has); x.setScaleX(1f); x.setScaleY(1f); });
+        g.addView(r, new LinearLayout.LayoutParams(-1, -2));
+    }
+    /** The settings column, centered at a comfortable reading width. */
+    private void sPage(String title) {
         ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
-        content = vertical(); content.setPadding(0, 0, 0, px(24)); content.setClipChildren(false); scroll.addView(content);
+        FrameLayout wrap = new FrameLayout(this); wrap.setClipChildren(false);
+        content = vertical(); content.setPadding(px(6), 0, px(6), px(30)); content.setClipChildren(false);
+        wrap.addView(content, new FrameLayout.LayoutParams(Math.min(px(1180), getResources().getDisplayMetrics().widthPixels - px(160)), -2, Gravity.CENTER_HORIZONTAL));
+        scroll.addView(wrap);
+        if (!mono) { TextView h = tv(title, 50, text, fHead); h.setPadding(px(10), px(4), 0, 0); content.addView(h); }
         body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        if (!mono) { TextView h = tv(T.t("Ajustes"), 50, text, fHead); h.setPadding(px(10), px(4), 0, 0); content.addView(h); }
-        sSection(T.t("Apariencia")); LinearLayout a = sRow();
-        sCard(a, T.t("Diseño"), T.t(themeName()), "DSN", 0xFF7A4DFF, "visual_theme", () -> {
-            String[] themes = {"Moderno", "GBA clásico", "Mosaico", "Consola completa"};
+    }
+    private void settings() {
+        sPage(T.t("Ajustes"));
+        LinearLayout a = sGroup(T.t("Apariencia"));
+        sItem(a, T.t("Tema"), T.t(themeName()), "visual_theme", 0xFF7A4DFF, null, () -> {
+            String[] themes = {"Consola completa", "Moderno", "Mosaico", "GBA clásico"};
             String[] shown = new String[themes.length]; for (int i = 0; i < themes.length; i++) shown[i] = T.t(themes[i]);
             int current = java.util.Arrays.asList(themes).indexOf(themeName());
             new AlertDialog.Builder(this).setTitle(T.t("Tema visual")).setSingleChoiceItems(shown, current, (d, w) -> { library.theme(themes[w]); d.dismiss(); lastFocus = "visual_theme"; render(); }).show();
         });
-        sCard(a, T.t("Color"), dark ? T.t("Oscuro") : T.t("Claro"), "CLR", 0xFF4DB36B, "color_mode", () -> { library.dark(th, !dark); lastFocus = "color_mode"; render(); });
-        sCard(a, "Idioma / Language", T.english() ? "English" : "Español", "LNG", 0xFF2AA8FF, "language", () -> {
+        sItem(a, T.t("Modo oscuro"), null, "color_mode", 0xFF4DB36B, dark, () -> { library.dark(th, !dark); lastFocus = "color_mode"; render(); });
+        sItem(a, T.t("Logotipos"), logoStyle().equals("color") ? T.t("Logos a color") : logoStyle().equals("mono") ? T.t("Logos monocromo") : T.t("Texto"), "logo_mode", 0xFFFF9A2E, null,
+            () -> { String n = logoStyle().equals("color") ? "mono" : logoStyle().equals("mono") ? "text" : "color"; getSharedPreferences("ui", MODE_PRIVATE).edit().putString("logo_style", n).apply(); lastFocus = "logo_mode"; render(); });
+        sItem(a, "Idioma / Language", T.english() ? "English" : "Español", "language", 0xFF2AA8FF, null, () -> {
             String[] codes = {"es", "en"}; String[] names = {"Español", "English"};
             new AlertDialog.Builder(this).setTitle("Idioma / Language").setSingleChoiceItems(names, T.english() ? 1 : 0, (d, w) -> { T.set(this, codes[w]); d.dismiss(); recreate(); }).show();
         });
-        LinearLayout a2 = sRow(); sFiller(a2, 0);
-        sCard(a2, T.t("Logotipos"), logoStyle().equals("color") ? T.t("Logos a color") : logoStyle().equals("mono") ? T.t("Logos monocromo") : T.t("Texto"), "LOG", 0xFFFF9A2E, "logo_mode", () -> { String n = logoStyle().equals("color") ? "mono" : logoStyle().equals("mono") ? "text" : "color"; getSharedPreferences("ui", MODE_PRIVATE).edit().putString("logo_style", n).apply(); lastFocus = "logo_mode"; render(); });
-        sFiller(a2, 2);
-        sSection(T.t("Tu biblioteca")); LinearLayout b = sRow();
-        sCard(b, "TirsoDrive", drive.stage == TirsoDrive.Stage.READY ? T.t("Conectado · gestionar grupos") : T.t("Vincular colección"), "TD", 0xFF14C9AA, "telegram", this::connectScreen);
-        sCard(b, T.t("Copias de partidas"), T.t("Guardadas en tu canal de Telegram"), "BAK", 0xFF2DE2C8, "backups", () -> openBackups());
-        if (BuildConfig.PHONE) sCard(b, T.t("Archivos BIOS"), Bios.ps2(this) != null ? T.t("BIOS de PS2 lista") : T.t("Añade tu BIOS de PS2"), "BIOS", 0xFF4DB36B, "system_files", this::biosFiles);
-        else sCard(b, T.t("Archivos del sistema"), T.t("BIOS y archivos compartidos"), "SYS", 0xFF4DB36B, "system_files", this::importSystemFile);
-        sSection(T.t("Juego")); LinearLayout c = sRow();
+        sItem(a, T.t("Pantalla de inicio"), T.t("Qué secciones se muestran"), "home_layout", 0xFF14C9AA, null, () -> route("home_layout"));
+
+        LinearLayout b = sGroup(T.t("Biblioteca"));
+        sItem(b, "TirsoDrive", drive.stage == TirsoDrive.Stage.READY ? T.t("Conectado · gestionar grupos") : T.t("Vincular colección"), "telegram", 0xFF14C9AA, null, this::connectScreen);
+        int shownConsoles = 0; for (Console cn : Console.all()) if (library.visible(cn)) shownConsoles++;
+        sItem(b, T.t("Consolas"), shownConsoles + T.t(" de ") + Console.all().length + T.t(" visibles"), "consoles_page", 0xFF2F6DF6, null, () -> route("consoles"));
+        sItem(b, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "artwork_dl", 0xFFFF9A2E, null, () -> route("artwork"));
+        sItem(b, T.t("Limpiar grupos vacíos"), T.t("Borra grupos TD duplicados sin archivos"), "cleanup_groups", 0xFFFF4D73, null, this::cleanupGroups);
+
+        LinearLayout c = sGroup(T.t("Juegos"));
         String resSummary = null; boolean resMixed = false;
         for (Console cn : Console.all()) { if (!library.visible(cn) || cn == Console.MAME) continue; String v = Presets.resolution(this, cn); if (resSummary == null) resSummary = v; else if (!resSummary.equals(v)) resMixed = true; }
         String resShown = resMixed ? T.t("Personalizada") : T.t("high".equals(resSummary) ? "Alta" : "low".equals(resSummary) ? "Baja" : "Media");
-        sCard(c, T.t("Resolución"), resShown + " · " + T.t("Por consola"), "RES", 0xFF2F6DF6, "resolution", () -> route("resolution"));
-        sCard(c, T.t("Mandos"), T.t("Perfiles independientes"), "PAD", 0xFFFF4D73, "controllers", this::controllers);
-        sCard(c, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "IMG", 0xFFFF9A2E, "artwork_dl", () -> route("artwork"));
-        if (BuildConfig.PHONE) { LinearLayout d = sRow();
-            sCard(d, T.t("Teléfono y almacenamiento"), T.t("Carpetas, juegos guardados, Wi-Fi"), "TEL", 0xFF38BDF8, "phone_page", () -> route("phone"));
-            sCard(d, T.t("Controlador de GPU"), PhoneGames.driverName(this).isEmpty() ? T.t("El del teléfono") : PhoneGames.driverName(this), "GPU", 0xFFA06BFF, "gpu_driver", this::gpuDriver);
-            sFiller(d, 1); }
-        int shownConsoles = 0; for (Console cn : Console.all()) if (library.visible(cn)) shownConsoles++;
-        LinearLayout cv = sRow();
-        sCard(cv, T.t("Consolas"), shownConsoles + T.t(" de ") + Console.all().length + T.t(" visibles"), "CON", 0xFF14C9AA, "consoles_page", () -> route("consoles"));
-        sCard(cv, T.t("Pantalla de inicio"), T.t("Qué secciones se muestran"), "HOM", 0xFF7A4DFF, "home_layout", () -> route("home_layout"));
-        sCard(cv, T.t("Limpiar grupos vacíos"), T.t("Borra grupos TD duplicados sin archivos"), "DEL", 0xFFFF4D73, "cleanup_groups", this::cleanupGroups);
-        sSection(T.t("Aplicación")); LinearLayout d = sRow();
-        sCard(d, T.t("Actualizaciones"), T.t("Buscar e instalar la última versión"), "UPD", 0xFF7A4DFF, "updates", this::checkUpdates);
-        sCard(d, T.t("Informe de problemas"), T.t("Qué registró Android si un juego falla"), "LOG", 0xFFFF9A2E, "crash_report", this::crashReport);
-        sCard(d, "RetroStream", BuildConfig.VERSION_NAME, "ABT", 0xFF2AA8FF, "about", () -> message("RetroStream " + BuildConfig.VERSION_NAME, T.t("Nueve consolas integradas. Las ROMs se preparan al pulsar Jugar y se eliminan al salir. Tus partidas y estados permanecen en la TV y se copian a tu canal de Telegram.\n\nMAME: ROMs compatibles con MAME 2003-Plus; ciertos juegos requieren BIOS o archivos parent. Puedes añadirlos en Archivos del sistema.\n\nCódigo y licencias de los núcleos incluidos en la release y en los avisos de esta aplicación.")));
-        LinearLayout e = sRow();
-        sCard(e, T.t("Licencias y créditos"), T.t("Motores, fuentes y bases de datos"), "LIC", 0xFF4DB36B, "licenses", this::licenses);
-        sFiller(e, 2);
+        sItem(c, T.t("Resolución"), resShown + " · " + T.t("Por consola"), "resolution", 0xFF2F6DF6, null, () -> route("resolution"));
+        if (BuildConfig.PHONE) {
+            sItem(c, T.t("Archivos BIOS"), Bios.ps2(this) != null ? T.t("BIOS de PS2 lista") : T.t("Añade tu BIOS de PS2"), "system_files", 0xFF4DB36B, null, this::biosFiles);
+            sItem(c, T.t("Controlador de GPU"), PhoneGames.driverName(this).isEmpty() ? T.t("El del teléfono") : PhoneGames.driverName(this), "gpu_driver", 0xFFA06BFF, null, this::gpuDriver);
+        } else sItem(c, T.t("Archivos del sistema"), T.t("BIOS y archivos compartidos"), "system_files", 0xFF4DB36B, null, this::importSystemFile);
+        sItem(c, T.t("Mandos"), T.t("Perfiles independientes"), "controllers", 0xFFFF4D73, null, this::controllers);
+        sItem(c, T.t("Copias de partidas"), T.t("Guardadas en tu canal de Telegram"), "backups", 0xFF2DE2C8, null, this::openBackups);
+        if (BuildConfig.PHONE) sItem(c, T.t("Teléfono y almacenamiento"), T.t("Carpetas, juegos guardados, Wi-Fi"), "phone_page", 0xFF38BDF8, null, () -> route("phone"));
+
+        LinearLayout d = sGroup(T.t("Aplicación"));
+        sItem(d, T.t("Actualizaciones"), T.t("Buscar e instalar la última versión"), "updates", 0xFF7A4DFF, null, this::checkUpdates);
+        sItem(d, T.t("Informe de problemas"), T.t("Qué registró Android si un juego falla"), "crash_report", 0xFFFF9A2E, null, this::crashReport);
+        sItem(d, T.t("Licencias y créditos"), T.t("Motores, fuentes y bases de datos"), "licenses", 0xFF4DB36B, null, this::licenses);
+        sItem(d, "RetroStream", BuildConfig.VERSION_NAME + " · build " + BuildConfig.VERSION_CODE, "about", 0xFF2AA8FF, null, () -> message("RetroStream " + BuildConfig.VERSION_NAME, T.t("Nueve consolas integradas. Las ROMs se preparan al pulsar Jugar y se eliminan al salir. Tus partidas y estados permanecen en la TV y se copian a tu canal de Telegram.\n\nMAME: ROMs compatibles con MAME 2003-Plus; ciertos juegos requieren BIOS o archivos parent. Puedes añadirlos en Archivos del sistema.\n\nCódigo y licencias de los núcleos incluidos en la release y en los avisos de esta aplicación.")));
     }
 
     // ------------------------------------------------------------------ save backups (Telegram)
@@ -1198,39 +1232,32 @@ public class MainActivity extends Activity {
             });
         }).start();
     }
-    private void phoneSection(String title) { TextView t = tv(title, 24, muted, fMono); t.setLetterSpacing(.14f); t.setPadding(px(14), px(22), 0, px(6)); content.addView(t); }
+    private LinearLayout rowGroup;
+    private void phoneSection(String title) { rowGroup = sGroup(title); }
     private void phoneRow(String title, String value, String tag, Runnable click) {
-        LinearLayout row = horizontal(); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(px(26), px(16), px(26), px(16));
-        LinearLayout col = vertical(); TextView t = tv(title, 28, text, fHead); col.addView(t);
-        if (value != null && !value.isEmpty()) { TextView v = tv(value, 22, muted, fBody); v.setPadding(0, px(4), 0, 0); col.addView(v); }
-        row.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
-        focusable(row, tag, surface, click);
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(px(8), px(5), px(8), px(5)); content.addView(row, p);
+        if (rowGroup == null || rowGroup.getParent() != content) rowGroup = sGroup("");
+        sItem(rowGroup, title, value, tag, 0xFF2F6DF6, null, click);
     }
     private String onOff(boolean on) { return on ? T.t("Sí") : T.t("No"); }
     // ------------------------------------------------------------------ Settings > Home screen
     private void homeLayoutScreen() {
-        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
-        content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content);
-        if (!mono) { TextView h = tv(T.t("Pantalla de inicio"), 62, text, fHead); h.setPadding(px(10), px(10), 0, px(6)); body.addView(h); }
-        body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        sPage(T.t("Pantalla de inicio"));
         if (!BuildConfig.PHONE) {
-            phoneSection(T.t("DISEÑO"));
+            LinearLayout d = sGroup(T.t("Diseño"));
             boolean a = HomeLayout.tvStyle(this).equals("a");
-            phoneRow(T.t("Inicio: ") + (a ? T.t("Continuar y filas") : T.t("Clásico")), a ? T.t("Tarjeta Continuar, recientes, consolas y amigos") : T.t("Las pantallas de consolas de antes, según el tema"), "home_style",
-                () -> { HomeLayout.tvStyle(this, a ? "classic" : "a"); render(); });
+            sItem(d, T.t("Continuar y filas"), a ? T.t("Tarjeta Continuar, recientes, consolas y amigos") : T.t("Apagado: las pantallas de consolas de antes, según el tema"), "home_style", 0xFF7A4DFF, a,
+                () -> { HomeLayout.tvStyle(this, a ? "classic" : "a"); lastFocus = "home_style"; render(); });
         } else {
-            phoneSection(T.t("CONSOLAS"));
+            LinearLayout d = sGroup(T.t("Consolas"));
             boolean g = HomeLayout.consoleGrid(this);
-            phoneRow(T.t("Consolas: ") + (g ? T.t("Cuadrícula") : T.t("Fila")), g ? T.t("Las primeras 9 y «Ver todo»") : T.t("Una fila que se desliza (como antes)"), "home_grid",
-                () -> { HomeLayout.consoleGrid(this, !g); render(); });
+            sItem(d, T.t("Consolas en cuadrícula"), g ? T.t("Las primeras 9 y «Ver todo»") : T.t("Una fila que se desliza (como antes)"), "home_grid", 0xFF2F6DF6, g, () -> { HomeLayout.consoleGrid(this, !g); lastFocus = "home_grid"; render(); });
         }
-        phoneSection(T.t("SECCIONES"));
+        LinearLayout sec = sGroup(T.t("Secciones"));
         String[][] names = {{"continue", T.t("Continuar")}, {"recent", T.t("Jugados recientemente")}, {"consoles", T.t("Consolas")}, {"friends", T.t("Amigos")}, {"suggested", T.t("Juegos sugeridos")}};
         for (String[] n : names) {
             if (n[0].equals("suggested") && !BuildConfig.PHONE) continue;
             boolean on = HomeLayout.shown(this, n[0]);
-            phoneRow(n[1] + ": " + onOff(on), n[0].equals("suggested") ? T.t("Solo con el teléfono en vertical") : null, "home_" + n[0], () -> { HomeLayout.shown(this, n[0], !on); render(); });
+            sItem(sec, n[1], n[0].equals("suggested") ? T.t("Solo con el teléfono en vertical") : null, "home_" + n[0], 0xFF14C9AA, on, () -> { HomeLayout.shown(this, n[0], !on); lastFocus = "home_" + n[0]; render(); });
         }
     }
 
@@ -1340,29 +1367,13 @@ public class MainActivity extends Activity {
     }
 
     private void consolesScreen() {
-        ScrollView scroll = new ScrollView(this); scroll.setClipToPadding(false); scroll.setFillViewport(true); activeScroll = scroll;
-        content = vertical(); content.setClipChildren(false); content.setPadding(px(8), px(4), px(8), px(20)); scroll.addView(content);
-        if (!mono) { TextView h = tv(T.t("Consolas"), 62, text, fHead); h.setPadding(px(10), px(10), 0, px(6)); body.addView(h); }
-        body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        sSection(T.t("Consolas visibles"));
-        LinearLayout row = null; int n = 0;
+        sPage(T.t("Consolas"));
+        LinearLayout g = sGroup(T.t("Consolas visibles"));
         for (Console cn : Console.all()) {
-            if (n++ % 3 == 0) { row = sRow(); }
             boolean on = library.visible(cn);
-            LinearLayout chip = horizontal(); chip.setPadding(px(22), px(12), px(22), px(12));
-            View dot = new View(this); dot.setBackground(round(on ? brand(cn) : 0x44808080, 16)); chip.addView(dot, new LinearLayout.LayoutParams(px(32), px(32)));
-            LinearLayout col = vertical(); col.setPadding(px(20), 0, 0, 0);
-            col.addView(tv(cn.title, 25, on ? text : muted, fHead)); col.addView(tv(gameCount(library.count(cn)), 20, muted, fBody));
-            chip.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
-            chip.addView(tv(on ? T.t("SÍ") : T.t("NO"), 24, on ? accent : muted, fMono));
-            chip.setContentDescription(cn.title + ", " + (on ? "visible" : "oculta"));
-            focusableWith(chip, "visible_" + cn.name(), this::cardBg, () -> { library.visible(cn, !library.visible(cn)); lastFocus = "visible_" + cn.name(); render(); });
-            View.OnFocusChangeListener base = chip.getOnFocusChangeListener();
-            chip.setOnFocusChangeListener((x, has) -> { base.onFocusChange(x, has); x.setScaleX(1f); x.setScaleY(1f); });
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, px(88), 1); p.setMargins(px(10), px(6), px(10), px(6)); row.addView(chip, p);
+            sItem(g, cn.title, gameCount(library.count(cn)), "visible_" + cn.name(), on ? brand(cn) : 0x44808080, on, () -> { library.visible(cn, !library.visible(cn)); lastFocus = "visible_" + cn.name(); render(); });
         }
-        sFiller(row, (3 - n % 3) % 3);
-        LinearLayout all = sRow(); all.setGravity(Gravity.START);
+        LinearLayout all = horizontal(); all.setPadding(0, px(18), 0, 0); content.addView(all);
         all.addView(button(T.t("Mostrar todas"), "show_all", () -> { for (Console cn : Console.all()) library.visible(cn, true); lastFocus = "show_all"; render(); }));
     }
     /** Deletes empty "TD - " groups and channels this account created (duplicates with no game files, saves or pictures). */

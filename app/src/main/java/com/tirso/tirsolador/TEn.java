@@ -38,6 +38,10 @@ final class TEn {
         m.put("HISTORIAL", "HISTORY");
         m.put("IMÁGENES", "ARTWORK");
         m.put("Historial de juego", "Played history");
+        m.put("Apagado: las pantallas de consolas de antes, según el tema", "Off: the earlier console screens, by theme");
+        m.put("Modo oscuro", "Dark mode");
+        m.put("Apariencia", "Appearance");
+        m.put("Biblioteca", "Library");
         m.put("Tema", "Theme");
         m.put("Juegos", "Games");
         m.put("juego", "game");
