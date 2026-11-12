@@ -348,20 +348,25 @@ static void ensureTexture(unsigned w, unsigned h) {
 }
 static void filterFor(GLuint t) { glBindTexture(GL_TEXTURE_2D, t); GLint f = smooth ? GL_LINEAR : GL_NEAREST; glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, f);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); }
+/** The engine's drawing target. Created once and only resized afterwards: engines remember its id. */
 static bool makeFbo(unsigned w, unsigned h) {
-  if (fbo) { pDeleteFramebuffers(1, &fbo); fbo = 0; } if (fboTex) { glDeleteTextures(1, &fboTex); fboTex = 0; } if (fboDepth) { pDeleteRenderbuffers(1, &fboDepth); fboDepth = 0; }
+  w = std::max(w, fboW); h = std::max(h, fboH);
+  if (!fbo) pGenFramebuffers(1, &fbo);
+  if (fboTex) glDeleteTextures(1, &fboTex);
   glGenTextures(1, &fboTex); glBindTexture(GL_TEXTURE_2D, fboTex);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr); filterFor(fboTex);
-  pGenFramebuffers(1, &fbo); pBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  pBindFramebuffer(GL_FRAMEBUFFER, fbo);
   pFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTex, 0);
   if (hw.depth) {
-    pGenRenderbuffers(1, &fboDepth); pBindRenderbuffer(GL_RENDERBUFFER, fboDepth);
+    if (!fboDepth) pGenRenderbuffers(1, &fboDepth);
+    pBindRenderbuffer(GL_RENDERBUFFER, fboDepth);
     pRenderbufferStorage(GL_RENDERBUFFER, hw.stencil ? GL_DEPTH24_STENCIL8 : GL_DEPTH_COMPONENT24, w, h);
     pFramebufferRenderbuffer(GL_FRAMEBUFFER, hw.stencil ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, fboDepth);
   }
   bool ok = pCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
   glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT);
   pBindFramebuffer(GL_FRAMEBUFFER, 0); fboW = w; fboH = h;
+  logf("framebuffer %u: %ux%u%s", fbo, w, h, ok ? "" : " (incomplete)");
   return ok;
 }
 static void noBlend(const ImDrawList*, const ImDrawCmd*) { glDisable(GL_BLEND); }
@@ -533,6 +538,7 @@ int main(int argc, char* argv[]) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, compat ? SDL_GL_CONTEXT_PROFILE_COMPATIBILITY : SDL_GL_CONTEXT_PROFILE_CORE);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, major);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minor);
+  if (useHw) logf("engine draws with the graphics card: depth=%d stencil=%d bottom_left=%d", (int)hw.depth, (int)hw.stencil, (int)hw.bottom_left_origin);
   logf("graphics: hw=%d type=%d version=%u.%u compat=%d", (int)useHw, useHw ? (int)hw.context_type : -1, major, minor, (int)compat);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1); SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24); SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
   window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 960,
@@ -646,6 +652,7 @@ int main(int argc, char* argv[]) {
       audioBuf.clear();
       if (avChanged) {
         avChanged = false;
+        logf("new size: %ux%u max %ux%u, %.2f fps", av.geometry.base_width, av.geometry.base_height, av.geometry.max_width, av.geometry.max_height, av.timing.fps);
         if (useHw && (av.geometry.max_width > fboW || av.geometry.max_height > fboH)) { makeFbo(av.geometry.max_width, av.geometry.max_height); }
         fps = av.timing.fps > 1 ? av.timing.fps : fps;
       }
@@ -665,7 +672,12 @@ int main(int argc, char* argv[]) {
       imgX = (ds.x - w) / 2; imgY = (ds.y - h) / 2; imgW = w; imgH = h;
       ImDrawList* dl = ImGui::GetBackgroundDrawList();
       dl->AddCallback(noBlend, nullptr);
-      if (hwFrame && fboTex) dl->AddImage((ImTextureID)(intptr_t)fboTex, ImVec2(imgX, imgY), ImVec2(imgX + w, imgY + h), ImVec2(0, (float)fh / fboH), ImVec2((float)fw / fboW, 0));
+      if (hwFrame && fboTex) {
+        // Most engines draw upside down (OpenGL's origin is the bottom-left corner); the ones that don't say so.
+        float u = (float)fw / fboW, v = (float)fh / fboH;
+        if (hw.bottom_left_origin) dl->AddImage((ImTextureID)(intptr_t)fboTex, ImVec2(imgX, imgY), ImVec2(imgX + w, imgY + h), ImVec2(0, v), ImVec2(u, 0));
+        else dl->AddImage((ImTextureID)(intptr_t)fboTex, ImVec2(imgX, imgY), ImVec2(imgX + w, imgY + h), ImVec2(0, 0), ImVec2(u, v));
+      }
       else if (tex) dl->AddImage((ImTextureID)(intptr_t)tex, ImVec2(imgX, imgY), ImVec2(imgX + w, imgY + h), ImVec2(0, 0), ImVec2((float)fw / texW, (float)fh / texH));
       dl->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
     }
