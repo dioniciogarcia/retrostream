@@ -21,6 +21,7 @@ function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.se
 function createWindow() {
   win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1100, minHeight: 700, backgroundColor: '#0B0E15', autoHideMenuBar: true, show: false,
+    fullscreen: store.get('fullscreen') !== false,   // opens full screen unless turned off in Settings
     title: 'RetroStream', icon: path.join(__dirname, 'renderer', 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
@@ -46,7 +47,7 @@ function noteFile(info) {
   if (changed) { store.set('kept', kept); send('kept', kept); }
 }
 
-const PREF_KEYS = new Set(['lang', 'theme', 'favorites', 'hidden', 'completed', 'collections', 'recent', 'plays', 'onboarded', 'skipped', 'sort', 'keep']);
+const PREF_KEYS = new Set(['fullscreen', 'lang', 'theme', 'favorites', 'hidden', 'completed', 'collections', 'recent', 'plays', 'onboarded', 'skipped', 'sort', 'keep']);
 
 app.whenReady().then(() => {
   const dir = app.getPath('userData');
@@ -96,6 +97,7 @@ app.whenReady().then(() => {
   ipcMain.handle('qr', async (_e, text) => require('qrcode').toDataURL(String(text || ''), { margin: 1, width: 400 }));
   ipcMain.handle('open', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
   ipcMain.handle('fullscreen', () => { if (win) win.setFullScreen(!win.isFullScreen()); });
+  ipcMain.handle('quit', () => app.quit());
 
   createWindow();
   drive.start();

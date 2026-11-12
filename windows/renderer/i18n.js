@@ -2,6 +2,13 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+"game": "juego",
+"Open in full screen": "Abrir en pantalla completa",
+"On": "Sí",
+"Off": "No",
+"F11 switches at any time": "F11 cambia en cualquier momento",
+"Exit RetroStream": "Salir de RetroStream",
+"Closes the app": "Cierra la app",
 "Actions": "Acciones",
 "Add to a collection": "Añadir a una colección",
 "Add to favorites": "Añadir a favoritos",

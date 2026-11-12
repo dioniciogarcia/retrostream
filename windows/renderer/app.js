@@ -34,6 +34,7 @@ const ICON = {
   dice: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z|M8 8h.01|M12 12h.01|M16 16h.01', more: 'M5 12h.01|M12 12h.01|M19 12h.01'
 };
 function toast(msg) { const el = document.getElementById('toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toast.tm); toast.tm = setTimeout(() => el.classList.remove('show'), 3500); }
+function count(n, one, many) { return n + ' ' + (n === 1 ? t(one) : t(many)); }
 function size(b) { if (!b) return ''; const u = ['B', 'KB', 'MB', 'GB']; let i = 0; while (b >= 1024 && i < 3) { b /= 1024; i++; } return b.toFixed(i > 1 ? 1 : 0) + ' ' + u[i]; }
 function pref(k) { return S.prefs[k]; }
 function setPref(k, v) { S.prefs[k] = v; window.rs.setPref(k, v); }
@@ -88,6 +89,8 @@ function cover(g, w, hgt, extras) {
     if (listPref('favorites').has(g.id)) box.append(h('span', { class: 'fav', 'aria-label': t('Favorite') }, '★'));
     if (kept(g)) box.append(h('span', { class: 'got', title: t('On this PC') }, '✓'));
     if (listPref('completed').has(g.id)) box.append(h('span', { class: 'done' }, t('Completed')));
+    const f = S.files[g.fileId];
+    if (f && f.state === 'downloading') box.append(h('div', { class: 'bar', 'data-file': g.fileId }, h('div', { style: `width:${pct(f)}%` })));
   }
   return box;
 }
@@ -154,7 +157,7 @@ function home() {
   rows.append(h('div', { class: 'consoles' }, S.consoles.map((cn) => {
     const n = S.games.filter((g) => g.console === cn.id).length;
     return h('button', { class: 'ctile', style: `background:${cn.color}`, 'data-key': 'con_' + cn.id, onClick: () => go('library', { console: cn.id, source: 'all', query: '', filter: 'all' }) },
-      h('b', {}, cn.title), h('span', {}, cn.big ? t('New · PC only') : n + ' ' + t('games')));
+      h('b', {}, cn.title), h('span', {}, cn.big ? t('New · PC only') : count(n, 'game', 'games')));
   })));
   if (S.drive.stage === 'ready' && S.games.length === 0 && !S.drive.busy) rows.append(h('p', { class: 'empty' }, t('No games yet. Open Settings > TirsoDrive and tap Scan all channels.')));
   return h('main', { class: 'scroll' }, h('div', { class: 'home' }, left, rows));
@@ -178,7 +181,7 @@ function library() {
   const games = shownGames();
   const title = S.source === 'fav' ? t('Favorites') : S.source === 'col' ? S.collection : S.query && !S.console ? '"' + S.query + '"' : (byId[S.console] || {}).title || t('Library');
   const sortNames = { name: t('Name A–Z'), name_desc: t('Name Z–A'), added: t('Recently added'), recent: t('Recently played') };
-  wrap.append(h('div', { class: 'libhead' }, h('h1', {}, title), h('span', { class: 'n' }, games.length + ' ' + t('games')),
+  wrap.append(h('div', { class: 'libhead' }, h('h1', {}, title), h('span', { class: 'n' }, count(games.length, 'game', 'games')),
     h('div', { class: 'filters' },
       h('button', { class: 'chip' + (S.filter === 'all' ? ' on' : ''), 'data-key': 'f_all', onClick: () => go('library', { filter: 'all', keepFocus: true }) }, t('All')),
       h('button', { class: 'chip' + (S.filter === 'downloaded' ? ' on' : ''), 'data-key': 'f_dl', onClick: () => go('library', { filter: 'downloaded', keepFocus: true }) }, '✓ ' + t('On this PC')),
@@ -217,6 +220,7 @@ function renderPanel(g) {
 }
 
 // ------------------------------------------------------------------ playing and downloading
+function pct(i) { return i && i.size ? Math.min(100, Math.round(i.have * 100 / i.size)) : 0; }
 function activeDownloads() { return S.games.filter((g) => (S.files[g.fileId] || {}).state === 'downloading'); }
 async function playGame(g) {
   if (!kept(g)) {
@@ -228,10 +232,23 @@ async function playGame(g) {
   const p = (pref('plays') || []).filter((x) => Date.now() - x.at < 400 * 86400000); p.unshift({ id: g.id, at: Date.now() }); setPref('plays', p.slice(0, 300));
   toast(t('Downloaded and ready. The game player arrives in the next update.'));
 }
+/** Downloads window: updates itself while it is open. */
 function showDownloads() {
-  const list = activeDownloads();
-  dialog(t('Downloads'), list.length ? list.map((g) => { const i = S.files[g.fileId]; return g.title + ' · ' + (i.size ? Math.round(i.have * 100 / i.size) : 0) + '%'; }).join('\n') : t('Nothing is downloading.'),
-    list.length ? [{ label: t('Stop all'), pick: () => list.forEach((g) => window.rs.game('cancel', g)) }] : []);
+  modal((box, close) => {
+    const body = h('div', { class: 'list' });
+    const fill = () => {
+      const list = activeDownloads();
+      body.replaceChildren(...(list.length ? list.map((g) => { const i = S.files[g.fileId];
+        return h('div', { style: 'padding:10px 12px;border-radius:10px;background:#1C2130' }, h('div', { style: 'display:flex;gap:8px' }, h('b', { style: 'flex:1' }, g.title), h('span', {}, pct(i) + '%')),
+          h('div', { class: 'progress', style: 'margin-top:8px' }, h('div', { style: `width:${pct(i)}%` })),
+          h('div', { style: 'font-size:12px;color:#9AA3B8;margin-top:6px' }, size(i.have) + ' / ' + size(i.size))); })
+        : [h('p', {}, t('Nothing is downloading.'))]));
+    };
+    fill(); S.liveDownloads = fill;
+    box.append(h('h2', {}, t('Downloads')), body, h('div', { class: 'buttons' },
+      h('button', { class: 'btn ghost', onClick: () => activeDownloads().forEach((g) => window.rs.game('cancel', g)) }, t('Stop all')),
+      h('button', { class: 'btn primary', onClick: close }, t('Close'))));
+  });
 }
 function surprise() {
   const pool = visibleGames(); if (!pool.length) { toast(t('Your library is empty.')); return; }
@@ -329,7 +346,8 @@ function settings() {
         srow(t('PS3 and Switch'), t('RPCS3 and Eden setup · later update'), '#B23A3A', () => {})),
       h('section', { class: 'group' }, h('h2', {}, t('App')),
         srow(t('Updates'), 'RetroStream ' + S.version + ' · ' + t('open the downloads page'), '#7A4DFF', () => window.rs.open('https://github.com/dioniciogarcia/retrostream/releases/tag/windows-latest')),
-        srow(t('Full screen'), 'F11', '#38BDF8', () => window.rs.fullscreen()),
+        srow(t('Open in full screen'), (pref('fullscreen') !== false ? t('On') : t('Off')) + ' · ' + t('F11 switches at any time'), '#38BDF8', () => { setPref('fullscreen', pref('fullscreen') === false); render(); }, 's_full'),
+        srow(t('Exit RetroStream'), t('Closes the app'), '#8C95AA', () => window.rs.quit(), 's_exit'),
         d.stage === 'ready' ? srow(t('Sign out of Telegram'), d.me, '#FF4D73', () => confirmBox(t('Sign out of Telegram'), t('The library from your channels is removed from this PC until you sign in again.'), t('Sign out'), () => window.rs.drive('logout'))) : null)));
 }
 function sources() {
@@ -406,7 +424,10 @@ function moveFocus(dir) {
   }
   if (best) { best.focus(); best.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
 }
+function kbd(on) { document.body.classList.toggle('kbd', on); }
+document.addEventListener('mousedown', () => kbd(false), true);
 document.addEventListener('keydown', (e) => {
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'Enter'].includes(e.key)) kbd(true);
   const typing = e.target && e.target.tagName === 'INPUT';
   const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
   if (map[e.key] && !(typing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'))) { e.preventDefault(); moveFocus(map[e.key]); }
@@ -421,6 +442,7 @@ function pollPads() {
   if (gp) {
     const b = (i) => gp.buttons[i] && gp.buttons[i].pressed;
     const now = performance.now();
+    if (gp.buttons.some((x) => x.pressed) || gp.axes.some((v) => Math.abs(v) > 0.6)) kbd(true);
     const st = { up: b(12) || gp.axes[1] < -0.6, down: b(13) || gp.axes[1] > 0.6, left: b(14) || gp.axes[0] < -0.6, right: b(15) || gp.axes[0] > 0.6, a: b(0), b: b(1), x: b(2), y: b(3), menu: b(9) };
     for (const k of ['up', 'down', 'left', 'right']) if (st[k] && (!pad.last[k] || now - pad.at > 180)) { moveFocus(k); pad.at = now; }
     if (st.a && !pad.last.a && document.activeElement) document.activeElement.click();
@@ -447,7 +469,12 @@ function pollPads() {
     else { const st = document.getElementById('statustext'); if (st) st.textContent = statusText(); }
   });
   window.rs.on('file', (i) => {
+    const wasActive = (S.files[i.id] || {}).state === 'downloading';
     S.files[i.id] = i;
+    if (S.liveDownloads && document.querySelector('#layer .shade')) S.liveDownloads(); else S.liveDownloads = null;
+    document.querySelectorAll(`.bar[data-file="${i.id}"] > div`).forEach((b) => { b.style.width = pct(i) + '%'; });
+    if (wasActive !== (i.state === 'downloading')) { const badge = document.querySelector('[data-key="downloads"] .badge'); const n = activeDownloads().length;
+      const btn = document.querySelector('[data-key="downloads"]'); if (badge) badge.remove(); if (btn && n) btn.append(h('span', { class: 'badge' }, n)); }
     const g = S.games.find((x) => x.id === S.selected);
     if (g && g.fileId === i.id) renderPanel(g);
     if (i.state === 'done') { const p = S.games.find((x) => x.fileId === i.id && x.id === S.pendingPlay); if (p) { S.pendingPlay = null; setTimeout(() => playGame(p), 300); } }

@@ -6,7 +6,13 @@ button{cursor:pointer;border:0;background:none}
 a{color:var(--ring)}
 h1,h2,.display{font-family:'Space Grotesk',Inter,sans-serif}
 :focus{outline:none}
-:focus-visible,.focus-ring:focus{outline:3px solid var(--ring);outline-offset:2px}
+:focus-visible{outline:3px solid var(--ring);outline-offset:2px}
+/* Keyboard or controller in use: always show where the selection is. */
+body.kbd :focus{outline:4px solid #FFFFFF;outline-offset:3px;box-shadow:0 0 0 9px rgba(47,109,246,.55)}
+body.kbd .card:focus,body.kbd .mini:focus{transform:scale(1.04);transition:transform .12s}
+body.kbd .ctile:focus,body.kbd .continue:focus{transform:scale(1.02);transition:transform .12s}
+.cover .bar{position:absolute;left:6px;right:6px;bottom:6px;height:6px;border-radius:4px;background:rgba(20,22,30,.55);z-index:3;overflow:hidden}
+.cover .bar>div{height:100%;background:var(--primary)}
 #app{height:100%;display:flex;flex-direction:column}
 .scroll{overflow:auto;flex:1;min-height:0}
 .scroll::-webkit-scrollbar{width:10px;height:10px}.scroll::-webkit-scrollbar-thumb{background:#2A3144;border-radius:6px}

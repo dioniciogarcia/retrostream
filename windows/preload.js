@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld('rs', {
   qr: (text) => ipcRenderer.invoke('qr', text),
   open: (url) => ipcRenderer.invoke('open', url),
   fullscreen: () => ipcRenderer.invoke('fullscreen'),
+  quit: () => ipcRenderer.invoke('quit'),
   on: (channel, fn) => { if (['state', 'file', 'kept'].includes(channel)) ipcRenderer.on(channel, (_e, data) => fn(data)); }
 });
