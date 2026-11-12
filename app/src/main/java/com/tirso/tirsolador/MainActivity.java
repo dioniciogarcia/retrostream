@@ -71,6 +71,17 @@ public class MainActivity extends Activity {
         library = new Library(this); artwork = new Artwork(this); controllers = new ControllerProfiles(this);
         if (BuildConfig.PHONE && PhoneGames.scanOn(this) && !PhoneGames.folders(this).isEmpty() && PhoneGames.canReadFolders()) scanFolders(false);
         if (getIntent() != null && getIntent().hasExtra("play_game")) getWindow().getDecorView().post(this::playFromShortcut);
+        String embedAction = getIntent() == null ? null : getIntent().getStringExtra("embed_action");
+        if (embedAction != null) getWindow().getDecorView().post(() -> {
+            // Phone app: a settings action opened straight from the phone's own Settings; closing it returns there.
+            switch (embedAction) {
+                case "updates": checkUpdates(); break;
+                case "report": crashReport(); break;
+                case "licenses": licenses(); break;
+                case "controllers": controllers(); break;
+                case "system_files": importSystemFile(); break;
+            }
+        });
         drive=TirsoDrive.get(this);
         inputManager=(android.hardware.input.InputManager)getSystemService(INPUT_SERVICE);
         inputListener=new android.hardware.input.InputManager.InputDeviceListener(){

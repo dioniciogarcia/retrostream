@@ -142,6 +142,8 @@ class PhoneActivity : Activity() {
             "welcome" -> render()
             "loading" -> updateLoading()
             "home", "library", "consoles" -> if (catalog) render() else updateBadge()
+            "friends" -> if (!friendsQueued) { friendsQueued = true; root.postDelayed({ friendsQueued = false; if (page == "friends") render() }, 600) }
+            "settings" -> render()
         }
     }
 
@@ -245,6 +247,13 @@ class PhoneActivity : Activity() {
             "library" -> libraryPage()
             "detail" -> detailPage()
             "consoles" -> consolesPage()
+            "settings" -> settingsPage()
+            "set_consoles" -> consolesSettingsPage()
+            "set_home" -> homeSettingsPage()
+            "set_storage" -> storagePage()
+            "set_resolution" -> resolutionPage()
+            "friends" -> friendsPage()
+            "history" -> historyPage()
             "loading" -> loadingPage()
             else -> home()
         }
@@ -271,16 +280,16 @@ class PhoneActivity : Activity() {
         row.addView(icon("search", T.t("Buscar juegos"), "h_search") { search() })
         row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         row.addView(icon("star", T.t("Favoritos"), "h_fav") { console = null; source = "fav"; go("library") })
-        row.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { openEmbedded("friends") })
-        if (history) row.addView(icon("history", T.t("Historial de juego"), "h_history") { openEmbedded("history") })
-        row.addView(icon("settings", T.t("Ajustes"), "h_settings") { openEmbedded("settings") })
+        row.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { go("friends") })
+        if (history) row.addView(icon("history", T.t("Historial de juego"), "h_history") { go("history") })
+        row.addView(icon("settings", T.t("Ajustes"), "h_settings") { go("settings") })
         return row
     }
     private fun updateBadge() {
         (root.findViewWithTag<View>("h_friends") as? IconView)?.badge(if (drive.friendsChat() != 0L) drive.friendsOnline() else 0)
     }
-    private fun openEmbedded(target: String) {
-        startActivity(Intent(this, MainActivity::class.java).putExtra("embed_page", target))
+    private fun openEmbedded(target: String, action: String? = null) {
+        startActivity(Intent(this, MainActivity::class.java).putExtra("embed_page", target).apply { if (action != null) putExtra("embed_action", action) })
     }
 
     // ------------------------------------------------------------------ sign in (phone number or QR)
@@ -402,8 +411,8 @@ class PhoneActivity : Activity() {
             top.addView(icon("search", T.t("Buscar juegos"), "h_search") { search() })
             top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
             top.addView(icon("star", T.t("Favoritos"), "h_fav") { console = null; source = "fav"; go("library") })
-            top.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { openEmbedded("friends") })
-            top.addView(icon("settings", T.t("Ajustes"), "h_settings") { openEmbedded("settings") })
+            top.addView(icon("users", T.t("Amigos"), "h_friends", if (drive.friendsChat() != 0L) drive.friendsOnline() else 0) { go("friends") })
+            top.addView(icon("settings", T.t("Ajustes"), "h_settings") { go("settings") })
             right.addView(top)
             if (HomeLayout.shown(this, "recent")) recentBlock(right, dp(78), dp(104))
             if (HomeLayout.shown(this, "consoles")) { right.addView(section(T.t("Consolas"))); right.addView(consoleRow(dp(104), dp(70))) }
@@ -539,7 +548,7 @@ class PhoneActivity : Activity() {
         val list = recent(); if (list.size < 2) return
         val head = horizontal(); head.setPadding(dp(18), dp(16), dp(14), dp(6))
         head.addView(tv(T.t("Jugados recientemente").uppercase(), 11f, p.muted, mono = true).apply { letterSpacing = .1f }, LinearLayout.LayoutParams(0, -2, 1f))
-        head.addView(tv(T.t("Ver todo"), 12f, p.primary).also { control(it, "recent_all", Color.TRANSPARENT, 8f, false) { openEmbedded("history") } })
+        head.addView(tv(T.t("Ver todo"), 12f, p.primary).also { control(it, "recent_all", Color.TRANSPARENT, 8f, false) { go("history") } })
         parent.addView(head)
         val row = horizontal(); row.setPadding(dp(14), 0, dp(14), 0); row.gravity = Gravity.TOP
         for ((g, _) in list.drop(1)) {
@@ -604,7 +613,7 @@ class PhoneActivity : Activity() {
             val av = tv(name.take(1).uppercase(), 13f, 0xFF06210F.toInt(), bold = true).apply { gravity = Gravity.CENTER; background = round(if (f.playing()) 0xFF22C55E.toInt() else 0xFF3B82F6.toInt(), 14f) }
             row.addView(av, LinearLayout.LayoutParams(dp(28), dp(28)))
             row.addView(tv(name + " · " + if (f.playing()) f.game else T.t("En el menú"), 14f, p.text).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(10), 0, 0, 0) })
-            control(row, "friend_${f.userId}", Color.TRANSPARENT, 10f, false) { openEmbedded("friends") }
+            control(row, "friend_${f.userId}", Color.TRANSPARENT, 10f, false) { go("friends") }
             parent.addView(row)
         }
     }
@@ -964,6 +973,309 @@ class PhoneActivity : Activity() {
         }
     }
 
+
+    // ================================================================== settings (phone)
+    private var friendsQueued = false
+    private fun page(title: String, body: (LinearLayout) -> Unit) {
+        val outer = vertical()
+        val top = horizontal(); top.setPadding(dp(10), dp(10), dp(10), dp(6))
+        top.addView(icon("back", T.t("Volver"), "back") { onBackPressed() })
+        top.addView(tv(title, 20f, p.text, bold = true).apply { setPadding(dp(6), 0, 0, 0); maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
+        outer.addView(top)
+        val col = vertical(); col.setPadding(dp(14), 0, dp(14), dp(24))
+        val limit = if (landscape) minOf(resources.displayMetrics.widthPixels - dp(28), dp(760)) else -1
+        val wrap = FrameLayout(this); wrap.addView(col, FrameLayout.LayoutParams(limit, -2, Gravity.CENTER_HORIZONTAL))
+        body(col)
+        outer.addView(scroll(wrap), LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(outer)
+    }
+    private fun group(col: LinearLayout, title: String): LinearLayout {
+        col.addView(section(title))
+        val g = vertical(); g.background = round(p.surface, 14f, if (p.outlined) dp(1.5f) else 0, p.outline); g.setPadding(0, dp(2), 0, dp(2))
+        col.addView(g, LinearLayout.LayoutParams(-1, -2))
+        return g
+    }
+    /** One settings row: icon dot, title, value under it, chevron or switch on the right. */
+    private fun row(g: LinearLayout, title: String, value: String?, tag: String, color: Int, toggle: Boolean? = null, click: () -> Unit) {
+        val r = horizontal(); r.setPadding(dp(14), dp(12), dp(14), dp(12))
+        r.addView(View(this).apply { background = round(color, 8f) }, LinearLayout.LayoutParams(dp(26), dp(26)))
+        val texts = vertical(); texts.setPadding(dp(12), 0, dp(8), 0)
+        texts.addView(tv(title, 15f, p.text))
+        if (!value.isNullOrEmpty()) texts.addView(tv(value, 12f, p.muted).apply { setPadding(0, dp(2), 0, 0) })
+        r.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+        if (toggle != null) {
+            val track = FrameLayout(this); track.background = round(if (toggle) 0xFF22C55E.toInt() else p.surface2, 12f)
+            track.addView(View(this).apply { background = round(Color.WHITE, 9f) }, FrameLayout.LayoutParams(dp(18), dp(18), (if (toggle) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL).apply { setMargins(dp(3), 0, dp(3), 0) })
+            r.addView(track, LinearLayout.LayoutParams(dp(44), dp(24)))
+        } else r.addView(tv("›", 20f, p.muted))
+        control(r, tag, Color.TRANSPARENT, 12f, false, click)
+        if (g.childCount > 0) g.addView(View(this).apply { setBackgroundColor(p.outline) }, LinearLayout.LayoutParams(-1, 1).apply { marginStart = dp(52) })
+        g.addView(r)
+    }
+    private fun themeName(): String = library.theme().let { if (it == "GBA clásico" || it == "Mosaico" || it == "Consola completa") it else "Moderno" }
+    private fun themeKey(): String = when (themeName()) { "GBA clásico" -> "gba"; "Mosaico" -> "tiles"; "Consola completa" -> "console"; else -> "midnight" }
+
+    private fun settingsPage() = page(T.t("Ajustes")) { col ->
+        val a = group(col, T.t("Apariencia"))
+        row(a, T.t("Tema"), T.t(themeName()), "s_theme", 0xFF7A4DFF.toInt()) {
+            val themes = arrayOf("Consola completa", "Moderno", "Mosaico", "GBA clásico")
+            AlertDialog.Builder(this).setTitle(T.t("Tema visual")).setSingleChoiceItems(themes.map { T.t(it) }.toTypedArray(), themes.indexOf(themeName())) { d, w -> library.theme(themes[w]); d.dismiss(); render() }.show()
+        }
+        val dark = library.dark(themeKey())
+        row(a, T.t("Modo oscuro"), null, "s_dark", 0xFF4DB36B.toInt(), dark) { library.dark(themeKey(), !dark); render() }
+        val ls = logoStyle()
+        row(a, T.t("Logotipos"), if (ls == "color") T.t("Logos a color") else if (ls == "mono") T.t("Logos monocromo") else T.t("Texto"), "s_logos", 0xFFFF9A2E.toInt()) {
+            val n = if (ls == "color") "mono" else if (ls == "mono") "text" else "color"; getSharedPreferences("ui", MODE_PRIVATE).edit().putString("logo_style", n).apply(); render()
+        }
+        row(a, "Idioma / Language", if (T.english()) "English" else "Español", "s_lang", 0xFF2AA8FF.toInt()) {
+            AlertDialog.Builder(this).setTitle("Idioma / Language").setSingleChoiceItems(arrayOf("Español", "English"), if (T.english()) 1 else 0) { d, w -> T.set(this, if (w == 1) "en" else "es"); d.dismiss(); render() }.show()
+        }
+        row(a, T.t("Pantalla de inicio"), T.t("Qué secciones se muestran"), "s_home", 0xFF14C9AA.toInt()) { go("set_home") }
+
+        val l = group(col, T.t("Biblioteca"))
+        row(l, "TirsoDrive", if (drive.stage == TirsoDrive.Stage.READY) T.t("Conectado · gestionar grupos") else T.t("Vincular colección"), "s_td", 0xFF14C9AA.toInt()) { page = "welcome"; render() }
+        val shown = Console.all().count { library.visible(it) }
+        row(l, T.t("Consolas"), "$shown" + T.t(" de ") + Console.all().size + T.t(" visibles"), "s_consoles", 0xFF2F6DF6.toInt()) { go("set_consoles") }
+        row(l, T.t("Descargar imágenes"), T.t("Logos y carátulas"), "s_art", 0xFFFF9A2E.toInt()) { openEmbedded("artwork") }
+        row(l, T.t("Limpiar grupos vacíos"), T.t("Borra grupos TD duplicados sin archivos"), "s_clean", 0xFFFF4D73.toInt()) { cleanupGroups() }
+
+        val gm = group(col, T.t("Juegos"))
+        row(gm, T.t("Resolución"), T.t("Por consola"), "s_res", 0xFF2F6DF6.toInt()) { go("set_resolution") }
+        row(gm, T.t("Archivos BIOS"), if (Bios.ps2(this) != null) T.t("BIOS de PS2 lista") else T.t("Añade tu BIOS de PS2"), "s_bios", 0xFF4DB36B.toInt()) { biosMenu() }
+        row(gm, T.t("Controlador de GPU"), PhoneGames.driverName(this).ifEmpty { T.t("El del teléfono") }, "s_gpu", 0xFFA06BFF.toInt()) { gpuMenu() }
+        row(gm, T.t("Mandos"), T.t("Perfiles independientes"), "s_pads", 0xFFFF4D73.toInt()) { openEmbedded("settings", "controllers") }
+        row(gm, T.t("Copias de partidas"), T.t("Guardadas en tu canal de Telegram"), "s_backups", 0xFF2DE2C8.toInt()) { openEmbedded("backups") }
+
+        val st = group(col, T.t("Teléfono"))
+        row(st, T.t("Teléfono y almacenamiento"), T.t("Carpetas, juegos guardados, Wi-Fi"), "s_storage", 0xFF38BDF8.toInt()) { go("set_storage") }
+
+        val ap = group(col, T.t("Aplicación"))
+        row(ap, T.t("Actualizaciones"), T.t("Buscar e instalar la última versión"), "s_update", 0xFF7A4DFF.toInt()) { openEmbedded("settings", "updates") }
+        row(ap, T.t("Informe de problemas"), T.t("Qué registró Android si un juego falla"), "s_report", 0xFFFF9A2E.toInt()) { openEmbedded("settings", "report") }
+        row(ap, T.t("Licencias y créditos"), T.t("Motores, fuentes y bases de datos"), "s_lic", 0xFF4DB36B.toInt()) { openEmbedded("settings", "licenses") }
+        row(ap, "RetroStream", BuildConfig.VERSION_NAME + " · build " + BuildConfig.VERSION_CODE, "s_about", 0xFF2AA8FF.toInt()) { }
+    }
+
+    private fun consolesSettingsPage() = page(T.t("Consolas")) { col ->
+        val g = group(col, T.t("Consolas visibles"))
+        for (c in Console.all()) {
+            val on = library.visible(c); val n = library.count(c)
+            row(g, c.title, if (n == 1) "1 " + T.t("juego") else "$n " + T.t("juegos"), "vis_${c.name}", if (on) c.color else p.surface2, on) { library.visible(c, !on); render() }
+        }
+        col.addView(button(T.t("Mostrar todas"), "vis_all") { Console.all().forEach { library.visible(it, true) }; render() }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12) })
+    }
+
+    private fun homeSettingsPage() = page(T.t("Pantalla de inicio")) { col ->
+        val c = group(col, T.t("Consolas"))
+        val grid = HomeLayout.consoleGrid(this)
+        row(c, T.t("Consolas en cuadrícula"), if (grid) T.t("Las primeras 9 y «Ver todo»") else T.t("Una fila que se desliza (como antes)"), "home_grid", 0xFF2F6DF6.toInt(), grid) { HomeLayout.consoleGrid(this, !grid); render() }
+        val s = group(col, T.t("Secciones"))
+        val names = listOf("continue" to T.t("Continuar"), "recent" to T.t("Jugados recientemente"), "consoles" to T.t("Consolas"), "friends" to T.t("Amigos"), "suggested" to T.t("Juegos sugeridos"))
+        for ((key, name) in names) {
+            val on = HomeLayout.shown(this, key)
+            row(s, name, if (key == "suggested") T.t("Solo con el teléfono en vertical") else null, "home_$key", 0xFF14C9AA.toInt(), on) { HomeLayout.shown(this, key, !on); render() }
+        }
+    }
+
+    private fun resolutionPage() = page(T.t("Resolución")) { col ->
+        col.addView(tv(T.t("Más alta se ve mejor pero exige más al teléfono."), 13f, p.muted).apply { setPadding(dp(4), dp(4), 0, 0) })
+        val g = group(col, T.t("Por consola"))
+        val labels = mapOf("low" to T.t("Baja"), "medium" to T.t("Media"), "high" to T.t("Alta"))
+        for (c in Console.all()) {
+            if (!library.visible(c) || c == Console.MAME) continue
+            val v = Presets.resolution(this, c)
+            row(g, c.title, labels[v] ?: v, "res_${c.name}", c.color) {
+                val keys = arrayOf("low", "medium", "high")
+                AlertDialog.Builder(this).setTitle(c.title).setSingleChoiceItems(keys.map { labels[it] }.toTypedArray(), keys.indexOf(v)) { d, w -> Presets.setResolution(this, c, keys[w]); d.dismiss(); render() }.show()
+            }
+        }
+    }
+
+    private fun storagePage() = page(T.t("Teléfono y almacenamiento")) { col ->
+        val f = group(col, T.t("Carpetas del teléfono"))
+        if (!PhoneGames.canReadFolders()) row(f, T.t("Permitir acceso a los archivos"), T.t("Necesario para encontrar juegos en tus carpetas"), "allow_files", 0xFFFF9A2E.toInt()) {
+            runCatching { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, android.net.Uri.parse("package:$packageName"))) }
+                .onFailure { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+        }
+        val scanOn = PhoneGames.scanOn(this)
+        row(f, T.t("Buscar juegos en carpetas"), T.t("Al abrir la app y con «Buscar ahora»"), "scan_on", 0xFF38BDF8.toInt(), scanOn) { PhoneGames.scanOn(this, !scanOn); render() }
+        for (folder in PhoneGames.folders(this)) row(f, folder.substringAfterLast('/'), folder, "folder_${folder.hashCode()}", 0xFF8C93A8.toInt()) {
+            AlertDialog.Builder(this).setTitle(T.t("Quitar carpeta")).setMessage(folder).setPositiveButton(T.t("Quitar")) { _, _ -> PhoneGames.removeFolder(this, folder); scanFolders(); render() }.setNegativeButton(T.t("Cancelar"), null).show()
+        }
+        row(f, T.t("Añadir carpeta"), T.t("Elige una carpeta con juegos (se buscan también sus subcarpetas)"), "add_folder", 0xFF22C55E.toInt()) {
+            runCatching { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 33) }.onFailure { toast(T.t("No hay un selector de archivos en este teléfono.")) }
+        }
+        val local = library.games.count { it.id.startsWith("local:") }
+        row(f, if (scanning) T.t("Buscando…") else T.t("Buscar ahora"), "$local" + T.t(" juegos del teléfono en la biblioteca"), "scan_now", 0xFF2F6DF6.toInt()) {
+            if (!PhoneGames.canReadFolders()) toast(T.t("Primero permite el acceso a los archivos.")) else { scanFolders(true); render() }
+        }
+        for (u in unsorted) row(f, File(u).name, T.t("Sin clasificar · toca para elegir la consola"), "uns_${u.hashCode()}", 0xFFF0B455.toInt()) {
+            val all = Console.all()
+            AlertDialog.Builder(this).setTitle(File(u).name).setItems(all.map { it.title }.toTypedArray()) { _, w -> PhoneGames.choose(this, u, all[w]); scanFolders(true) }.show()
+        }
+        val t = group(col, T.t("Juegos de Telegram"))
+        val keep = PhoneGames.keep(this); val wifi = PhoneGames.wifiOnly(this)
+        row(t, T.t("Guardar juegos descargados"), T.t("Se quedan en el teléfono para jugar sin volver a descargarlos"), "keep", 0xFF22C55E.toInt(), keep) { PhoneGames.keep(this, !keep); render() }
+        row(t, T.t("Descargar solo con Wi-Fi"), T.t("No usa datos móviles para descargar juegos"), "wifi", 0xFF2AA8FF.toInt(), wifi) { PhoneGames.wifiOnly(this, !wifi); render() }
+        val kept = PhoneGames.kept(this)
+        if (kept.isNotEmpty()) {
+            val total = kept.sumOf { it[4] as Long }
+            val k = group(col, T.t("Juegos guardados") + " · " + fmt(total))
+            for (e in kept) {
+                val id = e[0] as String; val g = library.games.firstOrNull { it.id == id }
+                val name = g?.let { it.title + " · " + it.console.name } ?: File(e[3] as String).name
+                row(k, name, fmt(e[4] as Long) + T.t(" · toca para borrar"), "kept_${id.hashCode()}", g?.console?.color ?: 0xFF8C93A8.toInt()) {
+                    AlertDialog.Builder(this).setTitle(name).setMessage(T.t("Se borra del teléfono; sigue en Telegram.")).setPositiveButton(T.t("Borrar")) { _, _ -> deleteKept(e); render() }.setNegativeButton(T.t("Cancelar"), null).show()
+                }
+            }
+            row(k, T.t("Borrar todos los juegos guardados"), null, "kept_all", 0xFFFF4D73.toInt()) {
+                AlertDialog.Builder(this).setTitle(T.t("Borrar juegos guardados")).setMessage(T.t("Se borran del teléfono; siguen en Telegram."))
+                    .setPositiveButton(T.t("Borrar")) { _, _ -> PhoneGames.kept(this).forEach { deleteKept(it) }; render() }.setNegativeButton(T.t("Cancelar"), null).show()
+            }
+        }
+        val d = group(col, T.t("Pantalla y rendimiento"))
+        val lock = PhoneGames.lockLandscape(this); val max = PhoneGames.perfMax(this)
+        row(d, T.t("Bloquear en horizontal"), T.t("La app no gira al inclinar el teléfono"), "lock", 0xFF7A4DFF.toInt(), lock) { PhoneGames.lockLandscape(this, !lock); requestedOrientation = if (!lock) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER; render() }
+        row(d, T.t("Rendimiento máximo"), if (max) T.t("Toda la potencia del teléfono") else T.t("Equilibrado: más frío y estable en sesiones largas"), "perf", 0xFFFF9A2E.toInt(), max) { PhoneGames.perfMax(this, !max); render() }
+    }
+    private fun deleteKept(e: Array<Any>) {
+        PhoneGames.forget(this, e[0] as String); drive.releaseRom(e[1] as Int, e[2] as Long); File(e[3] as String).delete()
+    }
+    private var unsorted: List<String> = emptyList()
+
+    private fun biosMenu() {
+        val ps2 = Bios.ps2(this)
+        val items = arrayOf(T.t("BIOS de PS2: ") + (ps2?.name ?: T.t("no añadida")), T.t("Quitar la BIOS de PS2"), T.t("Otros archivos (Famicom Disk System, MAME)"))
+        AlertDialog.Builder(this).setTitle(T.t("Archivos BIOS")).setItems(items) { _, w ->
+            when (w) {
+                0 -> runCatching { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 32) }
+                1 -> { Bios.removePs2(this); render() }
+                else -> openEmbedded("settings", "system_files")
+            }
+        }.setNegativeButton(T.t("Cancelar"), null).show()
+    }
+    private fun gpuMenu() {
+        AlertDialog.Builder(this).setTitle(T.t("Controlador de GPU"))
+            .setMessage(T.t("Para PS2, GameCube y Wii (Vulkan). Elige un ZIP de controlador como Turnip de Mr. Purple."))
+            .setPositiveButton(T.t("Elegir controlador (.zip)")) { _, _ -> runCatching { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 34) } }
+            .setNeutralButton(T.t("Usar el del teléfono")) { _, _ -> PhoneGames.removeDriver(this); render() }
+            .setNegativeButton(T.t("Cancelar"), null).show()
+    }
+    private fun cleanupGroups() {
+        if (!drive.ready()) { toast(T.t("Conecta TirsoDrive primero.")); return }
+        Toast.makeText(this, T.t("Buscando grupos vacíos…"), Toast.LENGTH_SHORT).show()
+        drive.emptyGroups { list, err ->
+            if (err != null) { toast(err); return@emptyGroups }
+            if (list.isNullOrEmpty()) { toast(T.t("No hay grupos vacíos que borrar.")); return@emptyGroups }
+            AlertDialog.Builder(this).setTitle(T.t("Borrar ") + list.size + T.t(" grupos vacíos"))
+                .setMessage(T.t("Estos grupos los creaste tú y no tienen juegos, partidas ni capturas. Se borrarán de Telegram:\n\n") + list.joinToString("\n") { "• " + it.title })
+                .setPositiveButton(T.t("Borrar")) { _, _ -> drive.deleteGroups(list) { n, e2 -> toast(e2 ?: (n.toString() + T.t(" grupos borrados."))) } }
+                .setNegativeButton(T.t("Cancelar"), null).show()
+        }
+    }
+    override fun onActivityResult(request: Int, result: Int, data: Intent?) {
+        super.onActivityResult(request, result, data)
+        val uri = data?.data
+        if (result != RESULT_OK || uri == null) return
+        when (request) {
+            32 -> Thread { val err = runCatching { Bios.addPs2(this, uri) }.getOrElse { it.message }; runOnUiThread { toast(err ?: T.t("BIOS de PS2 añadida")); render() } }.start()
+            33 -> { val path = PhoneGames.pathOf(uri); if (path == null) toast(T.t("No se pudo usar esa carpeta.")) else { PhoneGames.addFolder(this, path); if (PhoneGames.canReadFolders()) scanFolders(true); render() } }
+            34 -> {
+                var name = "driver"
+                runCatching { contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) name = it.getString(0) } }
+                Thread { val err = runCatching { PhoneGames.addDriver(this, uri, name) }.getOrElse { it.message }; runOnUiThread { toast(err ?: T.t("Controlador de GPU instalado")); render() } }.start()
+            }
+        }
+    }
+
+    // ================================================================== friends (phone)
+    private fun friendsPage() = page(T.t("Amigos")) { col ->
+        drive.loadFriends()
+        if (!drive.ready()) { col.addView(tv(T.t("Conecta TirsoDrive para ver a tus amigos."), 14f, p.muted)); return@page }
+        if (drive.friendsChat() == 0L) {
+            col.addView(tv(T.t("Mira quién está conectado y a qué juega. Todos entran al mismo grupo privado de Telegram."), 14f, p.muted).apply { setPadding(dp(4), dp(6), dp(4), dp(10)) })
+            col.addView(button(T.t("Pegar enlace de invitación"), "f_join", true) { joinDialog() }, LinearLayout.LayoutParams(-1, -2))
+            col.addView(button(T.t("Crear grupo de amigos"), "f_create") {
+                Toast.makeText(this, T.t("Creando grupo…"), Toast.LENGTH_SHORT).show()
+                drive.friendsCreate { _, error -> if (error != null) toast(error) else { toast(T.t("Grupo creado. Comparte el enlace con tus amigos.")); render() } }
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            return@page
+        }
+        val all = drive.friends.values.toList()
+        val playing = all.filter { it.playing() }.sortedBy { it.name.lowercase() }
+        val online = all.filter { it.online() && !it.playing() }.sortedBy { it.name.lowercase() }
+        val offline = all.filter { !it.online() }.sortedBy { it.name.lowercase() }
+        if (all.size <= 1) col.addView(tv(T.t("Aún no hay amigos aquí. Comparte el enlace de invitación."), 14f, p.muted).apply { setPadding(dp(4), dp(6), 0, 0) })
+        for ((title, list) in listOf(T.t("Jugando ahora") to playing, T.t("En línea") to online, T.t("Desconectados") to offline)) {
+            if (list.isEmpty()) continue
+            col.addView(section("$title · ${list.size}"))
+            val g = vertical(); g.background = round(p.surface, 14f); col.addView(g)
+            for (f in list) {
+                val r = horizontal(); r.setPadding(dp(14), dp(10), dp(14), dp(10))
+                val name = f.name.ifEmpty { "…" }; val color = if (f.playing()) 0xFF22C55E.toInt() else if (f.online()) 0xFF3B82F6.toInt() else 0xFF6B7280.toInt()
+                r.addView(tv(name.take(1).uppercase(), 16f, Color.WHITE, bold = true).apply { gravity = Gravity.CENTER; background = round(color, 20f) }, LinearLayout.LayoutParams(dp(40), dp(40)))
+                val t = vertical(); t.setPadding(dp(12), 0, 0, 0)
+                t.addView(tv(name + if (f.userId == drive.accountId) T.t("  (tú)") else "", 15f, p.text, bold = true))
+                t.addView(tv(if (f.playing()) f.game else if (f.online()) T.t("En el menú") else T.t("Desconectado"), 12f, if (f.playing()) color else p.muted).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
+                r.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
+                if (f.playing()) {
+                    val c = runCatching { Console.valueOf(f.console) }.getOrNull()
+                    val mins = maxOf(0L, (System.currentTimeMillis() - f.since) / 60000)
+                    r.addView(tv((c?.name ?: f.console) + " · " + (if (mins < 60) "$mins min" else "${mins / 60} h"), 11f, Color.WHITE, bold = true).apply { setPadding(dp(8), dp(4), dp(8), dp(4)); background = round(c?.color ?: 0xFF475569.toInt(), 8f) })
+                }
+                g.addView(r)
+            }
+        }
+        val a = group(col, T.t("Opciones"))
+        val share = drive.shareActivity()
+        row(a, T.t("Mostrar mi actividad"), null, "f_share", 0xFF22C55E.toInt(), share) { drive.shareActivity(!share); render() }
+        if (drive.friendsLink().isNotEmpty()) row(a, T.t("Copiar enlace"), drive.friendsLink(), "f_copy", 0xFF2AA8FF.toInt()) {
+            (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("RetroStream", drive.friendsLink()))
+            toast(T.t("Enlace copiado: ") + drive.friendsLink())
+        }
+        row(a, T.t("Actualizar"), null, "f_refresh", 0xFF7A4DFF.toInt()) { drive.loadFriends(); Toast.makeText(this, T.t("Actualizando…"), Toast.LENGTH_SHORT).show() }
+        row(a, T.t("Salir del grupo"), null, "f_leave", 0xFFFF4D73.toInt()) {
+            AlertDialog.Builder(this).setTitle(T.t("Salir de amigos")).setMessage(T.t("Dejarás de ver y de mostrar actividad. Puedes volver a unirte con el enlace."))
+                .setPositiveButton(T.t("Salir")) { _, _ -> drive.friendsLeave(); render() }.setNegativeButton(T.t("Cancelar"), null).show()
+        }
+    }
+    private fun joinDialog() {
+        val input = field("https://t.me/+…", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        AlertDialog.Builder(this).setTitle(T.t("Enlace de invitación")).setView(FrameLayout(this).apply { setPadding(dp(20), dp(8), dp(20), 0); addView(input) })
+            .setPositiveButton(T.t("Unirme")) { _, _ -> drive.friendsJoin(input.text.toString()) { _, error -> if (error != null) toast(error) else render() } }
+            .setNegativeButton(T.t("Cancelar"), null).show()
+    }
+
+    // ================================================================== played history (phone)
+    private fun historyPage() = page(T.t("Historial de juego")) { col ->
+        val plays = library.plays()
+        if (plays.isEmpty()) { col.addView(tv(T.t("Aún no has jugado nada."), 14f, p.muted).apply { setPadding(dp(4), dp(8), 0, 0) }); return@page }
+        var day = ""
+        var g: LinearLayout? = null
+        for (r in plays.take(200)) {
+            val game = r[0] as Game; val t = r[1] as Long
+            val d = dayLabel(t)
+            if (d != day) { day = d; col.addView(section(d)); g = vertical().apply { background = round(p.surface, 14f) }; col.addView(g) }
+            val row = horizontal(); row.setPadding(dp(10), dp(8), dp(14), dp(8))
+            val art = FrameLayout(this); art.background = round(0xFFF2EEE4.toInt(), 6f); art.clipToOutline = true
+            val iv = CoverImage(art, null); art.addView(iv, FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(game, iv, "Named_Boxarts", "Named_Titles")
+            row.addView(art, LinearLayout.LayoutParams((dp(56) * coverRatio(game.console)).toInt(), dp(56)))
+            val tx = vertical(); tx.setPadding(dp(12), 0, 0, 0)
+            tx.addView(tv(game.title, 15f, p.text, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
+            val pt = PlayTime.label(this, game.id)
+            tx.addView(tv(game.console.title + " · " + android.text.format.DateFormat.getTimeFormat(this).format(java.util.Date(t)) + if (pt.isNotEmpty()) " · $pt" else "", 12f, p.muted))
+            row.addView(tx, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(tv("▶", 16f, p.primary))
+            control(row, "hist_${game.id}_$t", Color.TRANSPARENT, 12f, false) { play(game) }
+            g!!.addView(row)
+        }
+    }
+    private fun dayLabel(t: Long): String {
+        val cal = java.util.Calendar.getInstance(); val today = cal.get(java.util.Calendar.DAY_OF_YEAR) + cal.get(java.util.Calendar.YEAR) * 400
+        cal.timeInMillis = t; val d = cal.get(java.util.Calendar.DAY_OF_YEAR) + cal.get(java.util.Calendar.YEAR) * 400
+        return when (today - d) { 0 -> T.t("Hoy"); 1 -> T.t("Ayer"); else -> android.text.format.DateFormat.getMediumDateFormat(this).format(java.util.Date(t)) }
+    }
+
     // ------------------------------------------------------------------ search, folders, keys
     private fun search() {
         val input = field(T.t("Nombre del juego"), InputType.TYPE_CLASS_TEXT); input.setText(query)
@@ -972,13 +1284,17 @@ class PhoneActivity : Activity() {
             .setNegativeButton(T.t("Cancelar"), null).show()
     }
     private var scanning = false
-    private fun scanFolders() {
+    private fun scanFolders(tell: Boolean = false) {
         if (scanning) return; scanning = true
         Thread {
             val r = runCatching { PhoneGames.scan(this) }.getOrNull()
             runOnUiThread {
                 scanning = false
-                if (r != null) { library.replaceLocal(r.games); library = Library(this); if (page == "home" || page == "library") render() }
+                if (r != null) {
+                    library.replaceLocal(r.games); library = Library(this); unsorted = r.unsorted
+                    if (tell) toast(r.games.size.toString() + T.t(" juegos encontrados en tu teléfono") + if (unsorted.isEmpty()) "" else " · " + unsorted.size + T.t(" sin clasificar"))
+                    if (page == "home" || page == "library" || page == "set_storage") render()
+                }
             }
         }.start()
     }
@@ -988,7 +1304,8 @@ class PhoneActivity : Activity() {
             "welcome" -> { if (drive.stage != TirsoDrive.Stage.READY) drive.skip(); go("home") }
             "loading" -> cancelLoading()
             "detail" -> go("library")
-            "consoles" -> go("home")
+            "consoles", "settings", "friends", "history" -> go("home")
+            "set_consoles", "set_home", "set_storage", "set_resolution" -> go("settings")
             "library" -> { query = ""; source = "all"; console = null; go("home") }
             else -> AlertDialog.Builder(this).setTitle(T.t("Salir de RetroStream"))
                 .setPositiveButton(T.t("Salir")) { _, _ -> finish() }.setNegativeButton(T.t("Cancelar"), null).show()
@@ -1006,7 +1323,7 @@ class PhoneActivity : Activity() {
             }
             KeyEvent.KEYCODE_BUTTON_L1 -> if (page == "home") { shiftConsole(-1); return true }
             KeyEvent.KEYCODE_BUTTON_R1 -> if (page == "home") { shiftConsole(1); return true }
-            KeyEvent.KEYCODE_BUTTON_START -> { openEmbedded("settings"); return true }
+            KeyEvent.KEYCODE_BUTTON_START -> { go("settings"); return true }
         }
         return super.onKeyDown(keyCode, event)
     }
