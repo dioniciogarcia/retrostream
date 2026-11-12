@@ -228,7 +228,7 @@ static uint16_t padBits(unsigned port) {
     set(RETRO_DEVICE_ID_JOYPAD_R2, SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000);
     set(RETRO_DEVICE_ID_JOYPAD_L3, btn(SDL_CONTROLLER_BUTTON_LEFTSTICK)); set(RETRO_DEVICE_ID_JOYPAD_R3, btn(SDL_CONTROLLER_BUTTON_RIGHTSTICK));
     // Consoles with no analog stick: the left stick also works as the d-pad.
-    if (consoleId != "N64") {
+    if (consoleId != "N64" && consoleId != "PSP" && consoleId != "PS2" && consoleId != "GC" && consoleId != "WII") {
       int ax = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_LEFTX), ay = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_LEFTY);
       set(RETRO_DEVICE_ID_JOYPAD_LEFT, ax < -16000); set(RETRO_DEVICE_ID_JOYPAD_RIGHT, ax > 16000);
       set(RETRO_DEVICE_ID_JOYPAD_UP, ay < -16000); set(RETRO_DEVICE_ID_JOYPAD_DOWN, ay > 16000);

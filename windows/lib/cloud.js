@@ -10,7 +10,9 @@ const catalog = require('./catalog');
 const BACKUP_TITLE = 'TD - RetroStream - Save file back-ups';
 const SHOTS_TITLE = 'TD - RetroStream - Screenshots';
 const KEEP = 10;
-const SKIP = new Set(['Cache', 'ShaderCache', 'Logs', 'Dump', 'ScreenShots', 'Load', 'ResourcePacks']);
+const SKIP = new Set(['Cache', 'ShaderCache', 'Logs', 'Dump', 'ScreenShots', 'Load', 'ResourcePacks',
+  // PS2: only the memory cards are saves; the rest is shared files (the BIOS) and caches.
+  'resources', 'bios', 'inis', 'cache', 'covers', 'logs', 'snaps', 'textures', 'videos', 'gamesettings', 'sstates', 'patches', 'cheats', 'inputprofiles', 'upscale']);
 
 function seven() { return require('7zip-bin').path7za.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep); }
 function run7(args, cwd) { return new Promise((res, rej) => execFile(seven(), args, { cwd, windowsHide: true }, (e) => (e ? rej(e) : res()))); }

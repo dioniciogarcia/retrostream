@@ -12,5 +12,7 @@ contextBridge.exposeInMainWorld('rs', {
   quit: () => ipcRenderer.invoke('quit'),
   play: (game, opts) => ipcRenderer.invoke('play', game, opts),
   backups: (action, arg) => ipcRenderer.invoke('backups', action, arg),
+  bios: (action) => ipcRenderer.invoke('bios', action),
+  win: (action) => ipcRenderer.invoke('window', action),
   on: (channel, fn) => { if (['state', 'file', 'kept', 'played', 'toast'].includes(channel)) ipcRenderer.on(channel, (_e, data) => fn(data)); }
 });

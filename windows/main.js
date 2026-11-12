@@ -1,6 +1,6 @@
 'use strict';
 // RetroStream for Windows: the app window, settings, and the Telegram connection.
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Store } = require('./lib/store');
@@ -48,6 +48,30 @@ function noteFile(info) {
     if (info.state === 'none' && kept[g.id]) { delete kept[g.id]; changed = true; }
   }
   if (changed) { store.set('kept', kept); send('kept', kept); }
+}
+
+/** PS2 BIN/CUE: the .bin tracks the .cue names are separate files in the same channel; download them and put them next to it. */
+const docsCache = new Map();
+async function withTracks(game, cue) {
+  const text = fs.readFileSync(cue, 'utf8');
+  const names = [...text.matchAll(/FILE\s+"?([^"\r\n]+?)"?\s+(BINARY|MOTOROLA|WAVE|MP3)/gi)].map((m) => m[1]);
+  if (!names.length) return cue;
+  const dir = path.join(app.getPath('userData'), 'play', 'disc-' + Date.now()); fs.mkdirSync(dir, { recursive: true });
+  const norm = (s) => s.toLowerCase().replace(/\.[a-z0-9]+$/, '').replace(/[^a-z0-9]/g, '');
+  let docs = docsCache.get(game.chatId);
+  if (!docs) { docs = await drive.documents(game.chatId); docsCache.set(game.chatId, docs); }
+  for (const name of names) {
+    const exact = docs.find((m) => m.content.document.file_name.toLowerCase() === name.toLowerCase());
+    const loose = exact || docs.find((m) => norm(m.content.document.file_name) === norm(name) && /\.bin$/i.test(m.content.document.file_name));
+    if (!loose) throw new Error(t('A track of this game is missing in the channel:') + ' ' + name);
+    send('toast', t('Downloading') + ' ' + name + '…');
+    const p = await drive.downloadNow(loose.content.document.document.id);
+    if (!p) throw new Error(t('A track could not be downloaded:') + ' ' + name);
+    const out = path.join(dir, name);
+    try { fs.linkSync(p, out); } catch (_) { fs.copyFileSync(p, out); }
+  }
+  const out = path.join(dir, path.basename(cue)); fs.copyFileSync(cue, out);
+  return out;
 }
 
 const PREF_KEYS = new Set(['fullscreen', 'lang', 'theme', 'favorites', 'hidden', 'completed', 'collections', 'recent', 'plays', 'onboarded', 'skipped', 'sort', 'keep']);
@@ -119,6 +143,7 @@ app.whenReady().then(() => {
       let file = (store.get('kept') || {})[game.id];
       if (!file || !fs.existsSync(file)) { const i = await drive.inspect(game.fileId); file = i.path; }
       if (!file || !fs.existsSync(file)) return { error: t('Download the game first.') };
+      if (file.toLowerCase().endsWith('.cue')) file = await withTracks(game, file);
       const prep = await player.prepare(game, file);
       if (drive.stage === 'ready') {
         // The newest save from the phone or TV first (but never wait more than ~8 seconds for it).
@@ -138,6 +163,26 @@ app.whenReady().then(() => {
       if (action === 'restoreAll') { const list = cloud.latestPerGame(await cloud.list()); let n = 0; for (const b of list) { try { await cloud.restore(b); n++; } catch (_) { /* next */ } } return { ok: true, n }; }
     } catch (e) { return { error: String(e.message || e) }; }
     return {};
+  });
+  ipcMain.handle('bios', async (_e, action) => {
+    const dir = path.join(app.getPath('userData'), 'bios', 'pcsx2', 'bios');
+    if (action === 'list') return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => !f.startsWith('.')) : [];
+    if (action === 'add') {
+      const r = await dialog.showOpenDialog(win, { title: t('Choose your PS2 BIOS file'), properties: ['openFile'], filters: [{ name: 'PS2 BIOS', extensions: ['bin', 'rom', 'BIN', 'ROM'] }] });
+      if (r.canceled || !r.filePaths.length) return null;
+      const f = r.filePaths[0]; const size = fs.statSync(f).size;
+      if (size < 2 * 1024 * 1024 || size > 16 * 1024 * 1024) return { error: t('That file does not look like a PS2 BIOS (it should be about 4 MB).') };
+      fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(f, path.join(dir, path.basename(f)));
+      return { ok: path.basename(f) };
+    }
+    return null;
+  });
+  ipcMain.handle('window', (_e, action) => {
+    if (!win) return null;
+    if (action === 'minimize') win.minimize();
+    if (action === 'isFull') return win.isFullScreen();
+    if (action === 'reload') { drive.sync(); }
+    return null;
   });
   ipcMain.handle('qr', async (_e, text) => require('qrcode').toDataURL(String(text || ''), { margin: 1, width: 400 }));
   ipcMain.handle('open', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });

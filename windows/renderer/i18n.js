@@ -2,6 +2,19 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+"Leave full screen": "Salir de pantalla completa",
+"Restore saves from Telegram": "Restaurar partidas desde Telegram",
+"Reading your channels…": "Leyendo tus canales…",
+"Minimize": "Minimizar",
+"Menu": "Menú",
+"Games": "Juegos",
+"PS2 BIOS": "BIOS de PS2",
+"Add your own PS2 BIOS file (needed for PS2 games)": "Añade tu propia BIOS de PS2 (necesaria para juegos de PS2)",
+"BIOS added:": "BIOS añadida:",
+"Choose your PS2 BIOS file": "Elige tu archivo de BIOS de PS2",
+"That file does not look like a PS2 BIOS (it should be about 4 MB).": "Ese archivo no parece una BIOS de PS2 (debería pesar unos 4 MB).",
+"A track of this game is missing in the channel:": "Falta una pista de este juego en el canal:",
+"A track could not be downloaded:": "No se pudo descargar una pista:",
 "Details for support:": "Detalles para soporte:",
 "Options": "Opciones",
 "Console": "Consola",

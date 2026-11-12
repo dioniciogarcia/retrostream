@@ -53,6 +53,13 @@ jobs:
             done; return 1; }
           get fceumm; get snes9x; get genesis_plus_gx; get mgba; get mupen64plus_next; get mame2003_plus
           get melondsds || get melonds
+          get ppsspp; get dolphin; get pcsx2 || get play
+          # Engine data files (PSP fonts and shaders, Dolphin's Sys folder), as RetroArch downloads them.
+          mkdir -p res/system
+          for pack in PPSSPP Dolphin; do
+            if curl -fsSL --retry 3 -o "cores-dl/$pack.zip" "https://buildbot.libretro.com/assets/system/$pack.zip"; then 7z x -y -o"res/system" "cores-dl/$pack.zip" > /dev/null && echo "got system $pack"; else echo "no system pack $pack"; fi
+          done
+          ls res/system
           ls -la res/cores
       - name: Build installer
         env:

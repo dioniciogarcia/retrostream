@@ -121,7 +121,7 @@ function go(page, opts) { Object.assign(S, opts || {}); S.page = page; render();
 function hints() {
   if (!S.padSeen) return null;
   const items = S.page === 'library' ? [['A', t('Play')], ['Y', t('Options')], ['X', t('Favorite')], ['LB RB', t('Console')], ['B', t('Back')]]
-    : S.page === 'home' ? [['A', t('Open')], ['Y', t('Options')], ['X', t('Favorite')], ['B', t('Back')]] : [['A', t('Choose')], ['B', t('Back')]];
+    : S.page === 'home' ? [['A', t('Open')], ['Y', t('Options')], ['X', t('Favorite')], ['B / ⌂', t('Menu')]] : [['A', t('Choose')], ['B', t('Back')]];
   return h('footer', { class: 'hints' }, items.map(([k, v]) => h('span', {}, h('b', {}, k), v)));
 }
 function header() {
@@ -353,8 +353,11 @@ function settings() {
           if (!list.length) { toast(t('You have no hidden games.')); return; }
           choose(t('Hidden games'), list.map((g) => ({ label: g.title + ' · ' + byId[g.console].title, pick: () => { toggleIn('hidden', g.id); toast(t('Showing again:') + ' ' + g.title); render(); } })));
         })),
-      h('section', { class: 'group' }, h('h2', {}, t('Coming next')),
-        srow(t('PSP, PS2, GameCube and Wii'), t('Next update'), '#2F6DF6', () => {}),
+      h('section', { class: 'group' }, h('h2', {}, t('Games')),
+        srow(t('PS2 BIOS'), S.bios && S.bios.length ? S.bios.join(', ') : t('Add your own PS2 BIOS file (needed for PS2 games)'), '#4DB36B', async () => {
+          const r = await window.rs.bios('add'); if (!r) return; if (r.error) { toast(r.error); return; }
+          toast(t('BIOS added:') + ' ' + r.ok); S.bios = await window.rs.bios('list'); render();
+        }, 's_bios'),
         srow(t('PS3 and Switch'), t('RPCS3 and Eden setup · later update'), '#B23A3A', () => {})),
       h('section', { class: 'group' }, h('h2', {}, t('App')),
         srow(t('Updates'), 'RetroStream ' + S.version + ' · ' + t('open the downloads page'), '#7A4DFF', () => window.rs.open('https://github.com/dioniciogarcia/retrostream/releases/tag/windows-latest')),
@@ -473,7 +476,25 @@ function switchTab(step) {
     go('library', { console: ids[(cur + step + ids.length) % ids.length], query: '', selected: null });
   }
 }
-function goBack() { if (S.page === 'sources') go('settings'); else if (S.page !== 'home') go('home'); }
+/** Home button / Esc on the home screen: quick options for the whole app. */
+async function quickMenu() {
+  if (document.querySelector('#layer .shade')) return;
+  const full = await window.rs.win('isFull');
+  const d = S.drive;
+  choose('RetroStream', [
+    { label: full ? t('Leave full screen') : t('Full screen'), pick: () => window.rs.fullscreen() },
+    { label: t('Surprise me'), pick: surprise },
+    { label: t('Downloads'), pick: showDownloads },
+    ...(d.stage === 'ready' ? [
+      { label: t('Back up all saves now'), pick: async () => { toast(t('Backing up…')); const r = await window.rs.backups('all'); toast(r.error || (r.total ? r.ok + ' / ' + r.total + ' ' + t('backed up') : t('Everything is up to date.'))); } },
+      { label: t('Restore saves from Telegram'), pick: backupsMenu },
+      { label: t('Refresh catalog'), pick: () => { window.rs.drive('sync'); toast(t('Reading your channels…')); } }] : []),
+    { label: t('Settings'), pick: () => go('settings') },
+    { label: t('Minimize'), pick: () => window.rs.win('minimize') },
+    { label: t('Exit RetroStream'), pick: () => window.rs.quit() }
+  ]);
+}
+function goBack() { if (S.page === 'sources') go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
 const pad = { last: {}, at: {}, first: {} };
 function pollPads() {
   const gp = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(Boolean);
@@ -482,7 +503,7 @@ function pollPads() {
     const now = performance.now();
     if (gp.buttons.some((x) => x.pressed) || gp.axes.some((v) => Math.abs(v) > 0.6)) kbd(true);
     const st = { up: b(12) || gp.axes[1] < -0.6, down: b(13) || gp.axes[1] > 0.6, left: b(14) || gp.axes[0] < -0.6, right: b(15) || gp.axes[0] > 0.6,
-      a: b(0), b: b(1), x: b(2), y: b(3), lb: b(4), rb: b(5), lt: b(6), rt: b(7), view: b(8), menu: b(9) };
+      a: b(0), b: b(1), x: b(2), y: b(3), lb: b(4), rb: b(5), lt: b(6), rt: b(7), view: b(8), menu: b(9), home: b(16) };
     if (!document.querySelector('#app :focus') && !document.querySelector('#layer :focus') && Object.values(st).some(Boolean)) { const f = document.querySelector('#app [data-key="continue"], #app .card, #app button'); if (f) f.focus(); }
     // Held directions repeat: a short pause first, then quickly.
     for (const k of ['up', 'down', 'left', 'right']) {
@@ -494,6 +515,7 @@ function pollPads() {
     const layerOpen = document.querySelector('#layer .shade');
     if (press('a') && document.activeElement && document.activeElement !== document.body) document.activeElement.click();
     if (press('b')) { const top = document.querySelector('#layer .shade:last-child'); if (top) top.remove(); else goBack(); }
+    if (press('home')) { const top = document.querySelector('#layer .shade:last-child'); if (top) top.remove(); else quickMenu(); }
     if (!layerOpen) {
       if (press('x')) { const g = focusedGame(); if (g) { toggleIn('favorites', g.id); render(); toast(listPref('favorites').has(g.id) ? t('Added to favorites') : t('Removed from favorites')); } }
       if (press('y') || press('menu')) optionsForFocus();
@@ -536,6 +558,7 @@ function pollPads() {
   window.rs.on('kept', (k) => { S.prefs.kept = k; render(); });
   window.rs.on('toast', (text) => toast(text));
   window.rs.on('played', (i) => { S.prefs.playtime = i.playtime; if (i.error) dialog(t('The game closed'), i.error + (i.details ? '\n\n' + t('Details for support:') + '\n' + i.details : ''), []); render(); });
+  S.bios = await window.rs.bios('list');
   render();
   requestAnimationFrame(pollPads);
 })();
