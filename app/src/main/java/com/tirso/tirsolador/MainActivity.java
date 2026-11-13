@@ -394,7 +394,8 @@ public class MainActivity extends Activity {
     }
     private void connectScreen(){page="welcome";lastFocus="";drive.enterConnection();render();}
     private void welcome(){
-        heading(drive.stage==TirsoDrive.Stage.READY?T.t("Tu biblioteca, conectada"):T.t("Tu biblioteca retro, conectada"),drive.status);
+        if(drive.stage!=TirsoDrive.Stage.READY){signInCard();return;}
+        heading(T.t("Tu biblioteca, conectada"),drive.status);
         if(!drive.error.isEmpty())body.addView(label(drive.error,13,library.dark()?0xFFFFADB5:0xFFB0263D,false));
         if(drive.stage==TirsoDrive.Stage.READY){
             content=scrollContent();
@@ -416,36 +417,141 @@ public class MainActivity extends Activity {
                 .setMessage(T.t("Se quitará la biblioteca sincronizada de esta cuenta en la TV. Podrás volver a conectar."))
                 .setPositiveButton(T.t("Cerrar sesión"),(d,w)->drive.logout()).setNegativeButton(T.t("Cancelar"),null).show()));return;
         }
-        content=scrollContent();
-        LinearLayout columns=horizontal();columns.setGravity(Gravity.TOP);
-        LinearLayout instructions=vertical();instructions.setPadding(0,dp(10),dp(20),0);
-        instructions.addView(label(T.t("1  Conectar    2  Encontrar consolas    3  Biblioteca"),12,accent,true));
-        instructions.addView(label(T.t("Abre Telegram en tu teléfono y entra en Ajustes → Dispositivos → Vincular dispositivo."),17,text,false));
-        instructions.addView(label(T.t("Después buscaremos tus grupos TD - ROMs, incluidos los archivados, y asignaremos cada uno a su consola."),14,muted,false));
-        if(drive.stage==TirsoDrive.Stage.CONFIG){
-            instructions.addView(button(T.t("Configurar TirsoDrive"),"configure_credentials",this::configureCredentials));
-            instructions.addView(label(T.t("Configuración inicial de la aplicación. Tu sesión de Telegram se autoriza después con el QR."),12,muted,false));
-        }else if(drive.stage==TirsoDrive.Stage.PHONE){
-            instructions.addView(button(T.t("Introducir número de teléfono"),"auth_phone",this::phoneInput));
-            instructions.addView(button(T.t("Usar código QR"),"auth_qr",drive::useQr));
-            instructions.addView(label(T.t("Telegram enviará un código a tu app de Telegram. El QR solo sirve si tienes Telegram en otro teléfono."),12,muted,false));
-        }else if(drive.stage==TirsoDrive.Stage.PASSWORD)instructions.addView(button(T.t("Introducir contraseña"),"auth_password",()->authInput(true)));
-        else if(drive.stage==TirsoDrive.Stage.CODE)instructions.addView(button(T.t("Introducir código"),"auth_code",()->authInput(false)));
-        else instructions.addView(button(T.t("Reintentar conexión"),"retry_connection",drive::retry));
-        if(BuildConfig.PHONE&&drive.stage==TirsoDrive.Stage.QR)instructions.addView(button(T.t("Usar número de teléfono"),"auth_phone",this::phoneInput));
-        if(!drive.error.isEmpty()&&drive.stage!=TirsoDrive.Stage.CONFIG)instructions.addView(button(T.t("Revisar configuración"),"repair_credentials",this::configureCredentials));
-        instructions.addView(button(T.t("Continuar sin conexión"),"continue_offline",()->{drive.skip();route("home");}));
-        columns.addView(instructions,new LinearLayout.LayoutParams(0,-2,1));
-        if(drive.stage==TirsoDrive.Stage.QR&&!drive.qrLink.isEmpty()){
-            try{
-                if(!drive.qrLink.equals(renderedQr)){qrBitmap=QrCode.encode(drive.qrLink,480);renderedQr=drive.qrLink;}
-                ImageView qr=new ImageView(this);qr.setImageBitmap(qrBitmap);qr.setContentDescription(T.t("Código QR para vincular Telegram"));
-                qr.setScaleType(ImageView.ScaleType.FIT_CENTER);qr.setBackgroundColor(Color.WHITE);
-                columns.addView(qr,new LinearLayout.LayoutParams(dp(230),dp(230)));
-            }catch(Exception e){columns.addView(label(T.t("No se pudo dibujar el QR. Reintenta la conexión."),14,muted,false));}
-        }
-        content.addView(columns);
+        signInCard();
     }
+    // ------------------------------------------------------------------ sign in (QR code or phone number)
+    private String signTab="qr", phoneCc="", phoneDraft="", authDraft="";
+    private void signInCard(){
+        body.removeAllViews();
+        boolean phoneFlow=drive.stage==TirsoDrive.Stage.PHONE||drive.stage==TirsoDrive.Stage.CODE||drive.stage==TirsoDrive.Stage.PASSWORD;
+        if(phoneFlow)signTab="phone";
+        if(phoneCc.isEmpty())phoneCc=getSharedPreferences("ui",MODE_PRIVATE).getString("phone_cc","+1");
+        LinearLayout columns=horizontal();columns.setGravity(Gravity.CENTER_VERTICAL);columns.setPadding(px(40),0,px(40),0);
+        body.addView(columns,new LinearLayout.LayoutParams(-1,0,1));
+
+        // Left: what this is.
+        LinearLayout left=vertical();left.setPadding(0,0,px(70),0);
+        android.widget.FrameLayout badge=new android.widget.FrameLayout(this);badge.setBackground(round(accent,26));
+        IconView pad=new IconView(this,"gamepad",T.t("RetroStream"),onAccent());badge.addView(pad,new android.widget.FrameLayout.LayoutParams(px(64),px(64),Gravity.CENTER));
+        left.addView(badge,new LinearLayout.LayoutParams(px(104),px(104)));
+        TextView title=tv(T.t("Tu biblioteca retro, ahora en tu TV"),66,text,fHead);title.setPadding(0,px(30),0,0);title.setLineSpacing(0,1.05f);left.addView(title);
+        TextView sub=tv(T.t("Inicia sesión con la misma cuenta de Telegram que en tu teléfono y tu PC. Tus canales, favoritos y partidas vienen contigo."),27,muted,fBody);
+        sub.setPadding(0,px(22),0,px(30));sub.setLineSpacing(0,1.3f);left.addView(sub);
+        LinearLayout steps=horizontal();
+        String[] names={T.t("Conectar"),T.t("Encontrar consolas"),T.t("Biblioteca")};
+        for(int i=0;i<3;i++){
+            TextView st=tv((i+1)+"  "+names[i],22,i==0?onAccent():muted,fHead);st.setPadding(px(18),px(10),px(18),px(10));st.setBackground(round(i==0?accent:ov(0x14FFFFFF),30));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2);lp.rightMargin=px(12);steps.addView(st,lp);
+        }
+        left.addView(steps);
+        LinearLayout actions=horizontal();actions.setPadding(0,px(36),0,0);
+        actions.addView(button(T.t("Continuar sin conexión"),"continue_offline",()->{drive.skip();route("home");}));
+        if(!drive.error.isEmpty()&&drive.stage!=TirsoDrive.Stage.CONFIG)actions.addView(button(T.t("Revisar configuración"),"repair_credentials",this::configureCredentials));
+        left.addView(actions);
+        columns.addView(left,new LinearLayout.LayoutParams(0,-2,1));
+
+        // Right: the card with the two ways in.
+        LinearLayout card=vertical();card.setPadding(px(36),px(32),px(36),px(32));card.setBackground(round(surface,40));
+        columns.addView(card,new LinearLayout.LayoutParams(px(760),-2));
+        if(drive.stage==TirsoDrive.Stage.CONFIG){
+            card.addView(tv(T.t("Configuración inicial"),34,text,fHead));
+            TextView m=tv(T.t("Configuración inicial de la aplicación. Tu sesión de Telegram se autoriza después con el QR."),24,muted,fBody);m.setPadding(0,px(14),0,px(20));card.addView(m);
+            card.addView(primary(T.t("Configurar TirsoDrive"),"configure_credentials",this::configureCredentials));
+            return;
+        }
+        LinearLayout tabs=horizontal();tabs.setPadding(px(6),px(6),px(6),px(6));tabs.setBackground(round(ov(0x22000000),26));
+        String[][] tabList={{"qr",T.t("Código QR")},{"phone",T.t("Número de teléfono")}};
+        for(String[] tb:tabList){
+            boolean on=signTab.equals(tb[0]);
+            TextView b=tv(tb[1],26,on?onAccent():text,fHead);b.setGravity(Gravity.CENTER);b.setPadding(px(10),px(18),px(10),px(18));
+            final int ringColor=focusRing();
+            focusableWith(b,"tab_"+tb[0],f->{GradientDrawable g=round(on?accent:0,20);if(f)g.setStroke(px(5),ringColor);return g;},()->{
+                if(signTab.equals(tb[0]))return;signTab=tb[0];lastFocus="tab_"+tb[0];
+                if(tb[0].equals("qr")&&drive.stage!=TirsoDrive.Stage.QR)drive.useQr();
+                render();
+            });
+            tabs.addView(b,new LinearLayout.LayoutParams(0,-2,1));
+        }
+        card.addView(tabs);
+        LinearLayout pane=vertical();pane.setPadding(0,px(28),0,0);card.addView(pane);
+        if(signTab.equals("qr")){
+            LinearLayout row=horizontal();row.setGravity(Gravity.CENTER_VERTICAL);
+            android.widget.FrameLayout qrBox=new android.widget.FrameLayout(this);qrBox.setBackground(round(Color.WHITE,24));qrBox.setPadding(px(18),px(18),px(18),px(18));
+            if(drive.stage==TirsoDrive.Stage.QR&&!drive.qrLink.isEmpty()){
+                try{
+                    if(!drive.qrLink.equals(renderedQr)){qrBitmap=QrCode.encode(drive.qrLink,480);renderedQr=drive.qrLink;}
+                    ImageView qr=new ImageView(this);qr.setImageBitmap(qrBitmap);qr.setContentDescription(T.t("Código QR para vincular Telegram"));qr.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    qrBox.addView(qr,new android.widget.FrameLayout.LayoutParams(-1,-1));
+                }catch(Exception e){qrBox.addView(tv(T.t("No se pudo dibujar el QR. Reintenta la conexión."),22,0xFF333333,fBody));}
+            }else{TextView wait=tv(T.t("Preparando…"),24,0xFF555555,fBody);wait.setGravity(Gravity.CENTER);qrBox.addView(wait,new android.widget.FrameLayout.LayoutParams(-1,-1));}
+            row.addView(qrBox,new LinearLayout.LayoutParams(px(300),px(300)));
+            LinearLayout how=vertical();how.setPadding(px(30),0,0,0);
+            String[] lines={T.t("Abre Telegram en tu teléfono"),T.t("Ajustes › Dispositivos › Vincular dispositivo"),T.t("Apunta la cámara a este código")};
+            for(int i=0;i<3;i++){
+                LinearLayout l=horizontal();l.setGravity(Gravity.CENTER_VERTICAL);l.setPadding(0,px(10),0,px(10));
+                TextView n=tv(String.valueOf(i+1),22,onAccent(),fHead);n.setGravity(Gravity.CENTER);n.setBackground(round(accent,20));l.addView(n,new LinearLayout.LayoutParams(px(40),px(40)));
+                TextView tx=tv(lines[i],24,text,fBody);tx.setPadding(px(16),0,0,0);l.addView(tx,new LinearLayout.LayoutParams(0,-2,1));
+                how.addView(l);
+            }
+            row.addView(how,new LinearLayout.LayoutParams(0,-2,1));
+            pane.addView(row);
+            pane.addView(statusLine(drive.stage==TirsoDrive.Stage.QR?T.t("Esperando a Telegram… el código se renueva solo"):drive.status));
+            pane.addView(button(T.t("Reintentar conexión"),"retry_connection",drive::retry));
+        }else if(drive.stage==TirsoDrive.Stage.CODE||drive.stage==TirsoDrive.Stage.PASSWORD){
+            boolean pw=drive.stage==TirsoDrive.Stage.PASSWORD;
+            pane.addView(tv(pw?T.t("Verificación en dos pasos"):T.t("Escribe el código"),34,text,fHead));
+            TextView m=tv(pw?T.t("Tu cuenta tiene contraseña. Escríbela para terminar."):T.t("Telegram te envió un código. Búscalo en la app de Telegram de tu teléfono (un mensaje de «Telegram») o en tus SMS."),24,muted,fBody);
+            m.setPadding(0,px(12),0,px(22));m.setLineSpacing(0,1.25f);pane.addView(m);
+            EditText input=signField(pw?T.t("Contraseña"):"12345","auth_input",authDraft,pw?android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD:android.text.InputType.TYPE_CLASS_NUMBER,v->authDraft=v);
+            if(!pw){input.setTextSize(TypedValue.COMPLEX_UNIT_PX,px(48));input.setLetterSpacing(.4f);input.setGravity(Gravity.CENTER);}
+            pane.addView(input,new LinearLayout.LayoutParams(-1,px(110)));
+            Runnable go=()->{String v=input.getText().toString().trim();if(v.isEmpty())return;authDraft="";if(pw)drive.password(v);else drive.code(v);};
+            input.setOnEditorActionListener((x,a,e)->{go.run();return true;});
+            TextView send=primary(T.t("Continuar"),"auth_go",go);LinearLayout.LayoutParams sl=new LinearLayout.LayoutParams(-1,-2);sl.topMargin=px(20);pane.addView(send,sl);
+            pane.addView(button(T.t("Usar otro número"),"auth_restart",()->{authDraft="";drive.useQr();signTab="phone";lastFocus="phone_number";render();}));
+        }else{
+            pane.addView(tv(T.t("Tu número de Telegram"),34,text,fHead));
+            TextView m=tv(T.t("Telegram enviará un código a tu app de Telegram (o por SMS). Escribe el código de país y el número."),24,muted,fBody);m.setPadding(0,px(12),0,px(22));m.setLineSpacing(0,1.25f);pane.addView(m);
+            LinearLayout nums=horizontal();
+            EditText cc=signField("+1","phone_cc",phoneCc,android.text.InputType.TYPE_CLASS_PHONE,v->phoneCc=v);cc.setGravity(Gravity.CENTER);
+            nums.addView(cc,new LinearLayout.LayoutParams(px(150),px(100)));
+            EditText number=signField("809 555 0123","phone_number",phoneDraft,android.text.InputType.TYPE_CLASS_PHONE,v->phoneDraft=v);
+            LinearLayout.LayoutParams nl=new LinearLayout.LayoutParams(0,px(100),1);nl.leftMargin=px(14);nums.addView(number,nl);
+            pane.addView(nums);
+            Runnable go=()->{
+                String c=phoneCc.replaceAll("[^0-9]",""),n=phoneDraft.replaceAll("[^0-9]","");
+                if(n.length()<6){Toast.makeText(this,T.t("Escribe tu número completo."),Toast.LENGTH_SHORT).show();return;}
+                String full=phoneDraft.trim().startsWith("+")?"+"+n:"+"+(c.isEmpty()?"1":c)+n;
+                getSharedPreferences("ui",MODE_PRIVATE).edit().putString("phone_cc","+"+(c.isEmpty()?"1":c)).apply();
+                lastFocus="auth_input";drive.phoneNumber(full);
+            };
+            number.setOnEditorActionListener((x,a,e)->{go.run();return true;});
+            boolean sending=drive.stage==TirsoDrive.Stage.CONNECTING;
+            TextView send=primary(sending?T.t("Enviando el código…"):T.t("Enviar código"),"phone_go",go);LinearLayout.LayoutParams sl=new LinearLayout.LayoutParams(-1,-2);sl.topMargin=px(20);pane.addView(send,sl);
+            pane.addView(statusLine(T.t("Usa el control remoto: pulsa el campo para abrir el teclado.")));
+        }
+        if(!drive.error.isEmpty()){TextView err=tv(drive.error,24,library.dark()?0xFFFFADB5:0xFFB0263D,fBody);err.setPadding(0,px(18),0,0);err.setLineSpacing(0,1.2f);card.addView(err);}
+    }
+    private View statusLine(String s){
+        LinearLayout l=horizontal();l.setGravity(Gravity.CENTER_VERTICAL);l.setPadding(0,px(22),0,px(6));
+        View dot=new View(this);dot.setBackground(round(0xFFF0B455,8));l.addView(dot,new LinearLayout.LayoutParams(px(16),px(16)));
+        TextView t=tv(s,22,muted,fBody);t.setPadding(px(14),0,0,0);l.addView(t,new LinearLayout.LayoutParams(0,-2,1));return l;
+    }
+    /** A text box for the remote: focus ring like the buttons, keeps what was typed when the screen redraws. */
+    private EditText signField(String hint,String key,String value,int type,java.util.function.Consumer<String> keep){
+        EditText e=new EditText(this);e.setSingleLine(true);e.setInputType(type);e.setHint(hint);e.setText(value);e.setSelection(value.length());
+        e.setTextColor(text);e.setHintTextColor(muted);e.setTextSize(TypedValue.COMPLEX_UNIT_PX,px(34));e.setTypeface(fBody);e.setPadding(px(26),0,px(26),0);
+        e.setTag(key);e.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE|android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        final int ringColor=focusRing();
+        e.setBackground(fieldBg(false,ringColor));
+        e.setOnFocusChangeListener((x,has)->{x.setBackground(fieldBg(has,ringColor));if(has)lastFocus=key;});
+        e.addTextChangedListener(new android.text.TextWatcher(){
+            public void beforeTextChanged(CharSequence s,int a,int b,int c){} public void onTextChanged(CharSequence s,int a,int b,int c){}
+            public void afterTextChanged(android.text.Editable s){keep.accept(s.toString());}
+        });
+        return e;
+    }
+    private GradientDrawable fieldBg(boolean focused,int ring){GradientDrawable g=round(ov(0x26000000),20);g.setStroke(px(focused?5:2),focused?ring:ov(0x33FFFFFF));return g;}
     private void configureCredentials(){
         EditText hash=new EditText(this);hash.setSingleLine(true);hash.setHint(T.t("API hash de TirsoDrive"));
         hash.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);

@@ -88,6 +88,9 @@ final class IconView extends View {
             case "cheat":   // a magic wand with sparkles
                 canvas.drawLine(4,20,14.5f,9.5f,paint); canvas.drawLine(16,3,16,7,paint); canvas.drawLine(14,5,18,5,paint);
                 canvas.drawLine(20,9,20,12,paint); canvas.drawLine(18.5f,10.5f,21.5f,10.5f,paint); canvas.drawLine(9,4,9,6.5f,paint); canvas.drawLine(7.75f,5.25f,10.25f,5.25f,paint); break;
+            case "gamepad":
+                canvas.drawRoundRect(new RectF(2,7,22,18),5.5f,5.5f,paint); canvas.drawLine(7,10.5f,7,14.5f,paint); canvas.drawLine(5,12.5f,9,12.5f,paint);
+                canvas.drawCircle(15.5f,11.5f,1.1f,fill); canvas.drawCircle(18,13.8f,1.1f,fill); break;
             case "tv":
                 canvas.drawRoundRect(new RectF(2,4,22,17), 2, 2, paint); canvas.drawLine(8,21,16,21,paint); canvas.drawLine(12,17,12,21,paint); break;
             case "pc":

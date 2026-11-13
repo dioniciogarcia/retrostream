@@ -3,6 +3,22 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("Tu biblioteca retro, ahora en tu TV", "Your retro library, now on your TV");
+        m.put("Inicia sesión con la misma cuenta de Telegram que en tu teléfono y tu PC. Tus canales, favoritos y partidas vienen contigo.", "Sign in with the same Telegram account as your phone and PC. Your channels, favorites and saves come with you.");
+        m.put("Encontrar consolas", "Find consoles");
+        m.put("Configuración inicial", "First-time setup");
+        m.put("Preparando…", "Preparing…");
+        m.put("Abre Telegram en tu teléfono", "Open Telegram on your phone");
+        m.put("Ajustes › Dispositivos › Vincular dispositivo", "Settings › Devices › Link Desktop Device");
+        m.put("Apunta la cámara a este código", "Point the camera at this code");
+        m.put("Esperando a Telegram… el código se renueva solo", "Waiting for Telegram… the code refreshes by itself");
+        m.put("Escribe el código", "Type the code");
+        m.put("Tu cuenta tiene contraseña. Escríbela para terminar.", "Your account has a password. Type it to finish.");
+        m.put("Telegram te envió un código. Búscalo en la app de Telegram de tu teléfono (un mensaje de «Telegram») o en tus SMS.", "Telegram sent you a code. Look for it in the Telegram app on your phone (a message from “Telegram”) or in your SMS.");
+        m.put("Usar otro número", "Use another number");
+        m.put("Telegram enviará un código a tu app de Telegram (o por SMS). Escribe el código de país y el número.", "Telegram will send a code to your Telegram app (or by SMS). Type the country code and the number.");
+        m.put("Escribe tu número completo.", "Type your full number.");
+        m.put("Usa el control remoto: pulsa el campo para abrir el teclado.", "Use the remote: press a box to open the keyboard.");
         m.put("toca una para verla y compartirla", "tap one to view and share it");
         m.put("Ver más", "Show more");
         m.put("No se pudo abrir la captura.", "Couldn't open the screenshot.");
