@@ -62,7 +62,7 @@ static const char* tr(const char* en) {
     {"Screenshot saved (Pictures > RetroStream)", "Captura guardada (Imágenes > RetroStream)"}, {"Rewound", "Retrocedido"},
     {"Nothing to rewind yet", "Aún no hay nada que retroceder"}, {"Normal speed", "Velocidad normal"}, {"Sharp pixels", "Píxeles nítidos"},
     {"Smooth", "Suave"}, {"on", "sí"}, {"off", "no"}, {"paused", "en pausa"}, {"Esc or the Guide button opens this menu", "Esc o el botón central del mando abren este menú"},
-    {"Rewind isn't available for this console", "Retroceder no está disponible en esta consola"}, {"Restarted", "Reiniciado"}, {"Cheats", "Trucos"},
+    {"Rewind isn't available for this console", "Retroceder no está disponible en esta consola"}, {"Restarted", "Reiniciado"}, {"Cheats", "Trucos"}, {"No cheats found for this game", "No se encontraron trucos para este juego"},
     {"Tick the cheats you want. Codes marked (M) or Master must be on for the others to work. Save first: cheats can break a game.",
      "Marca los trucos que quieras. Los códigos (M) o Master deben estar activos para que funcionen los demás. Guarda antes: los trucos pueden romper un juego."},
     {"Controls: arrows, Z X A S, Q W, Enter, Right Shift · Tab fast forward · Backspace rewind · F5 save · F7 load · F12 screenshot",
@@ -481,7 +481,8 @@ static void drawMenu() {
     if (rewindable() && ImGui::Button(tr("Rewind 10 seconds"), full)) { rewindBack(20); toast(tr("Rewound")); closeMenu(); }
     if (ImGui::Button((std::string(tr("Fast forward")) + ": " + (ffToggle ? tr("on") : tr("off"))).c_str(), full)) { ffToggle = !ffToggle; closeMenu(); }
     if (ImGui::Button(tr("Take screenshot"), full)) { closeMenu(); screenshot(); }
-    if (!cheats.empty()) { int n = 0; for (auto& c : cheats) n += c.on; if (ImGui::Button((std::string(tr("Cheats")) + (n ? " (" + std::to_string(n) + " " + tr("on") + ")" : "")).c_str(), full)) { menuPage = "cheats"; focusFirst = true; } }
+    if (consoleId != "MAME") { int n = 0; for (auto& c : cheats) n += c.on; if (ImGui::Button((std::string(tr("Cheats")) + (n ? " (" + std::to_string(n) + " " + tr("on") + ")" : "")).c_str(), full)) {
+      if (cheats.empty()) toast(tr("No cheats found for this game")); else { menuPage = "cheats"; focusFirst = true; } } }
     if (ImGui::Button(tr("Walkthrough (YouTube)"), full)) walkthrough();
     if (ImGui::Button((std::string(tr("Screen filter")) + ": " + (smooth ? tr("Smooth") : tr("Sharp pixels"))).c_str(), full)) { smooth = !smooth; filterFor(useHw ? fboTex : tex); tellState(); }
     if (ImGui::Button((std::string(tr("Full screen")) + ": " + (fullscreen ? tr("on") : tr("off")) + "   (F11)").c_str(), full)) { fullscreen = !fullscreen; SDL_SetWindowFullscreen(window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0); }

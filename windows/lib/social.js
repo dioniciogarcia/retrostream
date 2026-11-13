@@ -80,7 +80,7 @@ class Friends extends EventEmitter {
   /** Sends a picture (a screenshot) to the friends group. */
   async sendPhoto(file, w, h, caption) {
     const chat = this.chat(); if (!chat) throw new Error(this.t('First create or join the friends group.'));
-    await this.drive.sendAndWait(chat, { _: 'inputMessagePhoto', photo: { _: 'inputFileLocal', path: file }, added_sticker_file_ids: [], width: w || 0, height: h || 0,
+    await this.drive.sendAndWait(chat, { _: 'inputMessagePhoto', photo: { _: 'inputPhoto', photo: { _: 'inputFileLocal', path: file }, added_sticker_file_ids: [], width: w || 0, height: h || 0 },
       caption: { _: 'formattedText', text: caption || '', entities: [] }, has_spoiler: false });
   }
   async tell(text) {

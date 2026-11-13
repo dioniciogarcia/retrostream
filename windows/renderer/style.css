@@ -89,7 +89,8 @@ body.kbd .ctile:focus,body.kbd .continue:focus{transform:scale(1.02);transition:
 .empty{color:var(--muted);padding:30px 6px;font-size:15px}
 
 /* settings */
-.settings{padding:22px 32px;display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:20px;align-items:start}
+.settings{padding:22px 32px;columns:3 380px;column-gap:20px}
+.settings>.group{break-inside:avoid;margin:0 0 20px;display:inline-block;width:100%}
 .group{background:var(--surface);border-radius:16px;padding:8px}
 .group h2{margin:8px 10px 6px;font-family:Inter;font-size:12px;letter-spacing:.14em;color:var(--muted);font-weight:600;text-transform:uppercase}
 .srow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px;border-radius:10px}

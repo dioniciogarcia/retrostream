@@ -83,7 +83,7 @@ class Cloud {
     const zip = await this.zip(e);
     try {
       const caption = `#RSSAVE\nsha:${e.sha}\ntitle:${e.title}\nconsole:${e.console}\nv:1`;
-      const m = await this.drive.sendAndWait(chat, { _: 'inputMessageDocument', document: { _: 'inputFileLocal', path: zip }, caption: { _: 'formattedText', text: caption, entities: [] }, disable_content_type_detection: true });
+      const m = await this.drive.sendAndWait(chat, { _: 'inputMessageDocument', document: { _: 'inputDocument', document: { _: 'inputFileLocal', path: zip }, disable_content_type_detection: true }, caption: { _: 'formattedText', text: caption, entities: [] } });
       this.mark(e.sha, { done: stamp, seen: m.id });
     } finally { try { fs.unlinkSync(zip); } catch (_) { /* ok */ } }
     if (prune) this.prune().catch(() => {});
@@ -144,7 +144,7 @@ class Cloud {
         let j = null; try { j = JSON.parse(fs.readFileSync(meta, 'utf8')); } catch (_) { /* bad */ }
         if (!j || !fs.existsSync(pic)) { try { fs.unlinkSync(meta); fs.unlinkSync(pic); } catch (_) { /* ok */ } continue; }
         const caption = `#RSSHOT\nid:${j.id}\ntitle:${j.title}\nconsole:${j.console}\nv:1`;
-        await this.drive.sendAndWait(chat, { _: 'inputMessagePhoto', photo: { _: 'inputFileLocal', path: pic }, added_sticker_file_ids: [], width: j.w || 0, height: j.h || 0, caption: { _: 'formattedText', text: caption, entities: [] }, has_spoiler: false });
+        await this.drive.sendAndWait(chat, { _: 'inputMessagePhoto', photo: { _: 'inputPhoto', photo: { _: 'inputFileLocal', path: pic }, added_sticker_file_ids: [], width: j.w || 0, height: j.h || 0 }, caption: { _: 'formattedText', text: caption, entities: [] }, has_spoiler: false });
         try { fs.unlinkSync(meta); fs.unlinkSync(pic); } catch (_) { /* ok */ }
       }
     } catch (_) { /* try again next time */ }
@@ -210,7 +210,7 @@ class Cloud {
     const c = catalog.BY_ID[game.console]; if (!c || game.console === 'MAME') return null;
     const dir = path.join(this.dir, 'cheats', 'db'); fs.mkdirSync(dir, { recursive: true });
     const key = game.id.replace(/[^A-Za-z0-9._-]/g, '_');
-    const file = path.join(dir, key + '.cht'), miss = path.join(dir, key + '.none');
+    const file = path.join(dir, key + '.cht'), miss = path.join(dir, key + '.none2');
     if (fs.existsSync(file)) return file;
     if (fs.existsSync(miss) && Date.now() - fs.statSync(miss).mtimeMs < 7 * 86400000) return null;
     const norm = (n) => n.split(' (')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -224,8 +224,13 @@ class Cloud {
       else if (fs.existsSync(idx)) names = fs.readFileSync(idx, 'utf8').split('\n').filter(Boolean);
     }
     if (!names.length) return null;
-    const title = catalog.stemOf(game.fileName) || game.title; const want = norm(title);
-    const same = names.filter((n) => norm(n.replace(/\.cht$/, '')) === want);
+    // File names like "Beyblade_V_Force_Ultimate_Blader_Jam_Europe_En,Fr,De" or "Zelda (USA) (Rev 1)": try the cleaned file name, the game's title and its database name.
+    const loose = (n) => norm(String(n || '').replace(/_/g, ' ').replace(/\b(usa|europe|japan|world|en|fr|de|es|it|nl|sv|rev ?\d+|v\d+(\.\d+)?)\b/gi, ' '));
+    const title = catalog.stemOf(game.fileName) || game.title;
+    const wants = [...new Set([norm(title), norm(game.title || ''), norm(game.base || ''), loose(title), loose(game.title)].filter((w) => w.length > 2))];
+    const key2 = (n) => norm(n.replace(/\.cht$/, ''));
+    let same = names.filter((n) => wants.includes(key2(n)));
+    if (!same.length) same = names.filter((n) => { const k = key2(n); return wants.some((w) => w.length > 6 && (k.startsWith(w) || w.startsWith(k)) && Math.min(k.length, w.length) / Math.max(k.length, w.length) > 0.8); });
     if (!same.length) { fs.writeFileSync(miss, title); return null; }
     const groups = {}; for (const n of same) (groups[region(n.replace(/\.cht$/, ''))] = groups[region(n.replace(/\.cht$/, ''))] || []).push(n);
     const pick = groups[region(title)] || groups.usa || groups.world || groups.eur || groups[''] || Object.values(groups)[0];

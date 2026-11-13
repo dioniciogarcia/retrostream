@@ -745,13 +745,30 @@ async function quickMenu() {
 function goBack() { if (S.page === 'media') go('home'); else if (S.page === 'sources' || S.page === 'engines' || PAGES[S.page]) go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
 const pad = { last: {}, at: {}, first: {} };
 function pollPads() {
-  const gp = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(Boolean);
-  if (gp) {
-    const b = (i) => gp.buttons[i] && gp.buttons[i].pressed;
+  // Every connected controller counts (a PS5 / PS4 controller is often not the first one Windows lists, e.g. next to a Steam or virtual pad).
+  const pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter((p) => p && p.connected);
+  if (pads.length) {
     const now = performance.now();
-    if (gp.buttons.some((x) => x.pressed) || gp.axes.some((v) => Math.abs(v) > 0.6)) kbd(true);
-    const st = { up: b(12) || gp.axes[1] < -0.6, down: b(13) || gp.axes[1] > 0.6, left: b(14) || gp.axes[0] < -0.6, right: b(15) || gp.axes[0] > 0.6,
-      a: b(pref('swapAB') ? 1 : 0), b: b(pref('swapAB') ? 0 : 1), x: b(pref('swapAB') ? 3 : 2), y: b(pref('swapAB') ? 2 : 3), lb: b(4), rb: b(5), lt: b(6), rt: b(7), view: b(8), menu: b(9), home: b(16) };
+    const st = { up: false, down: false, left: false, right: false, a: false, b: false, x: false, y: false, lb: false, rb: false, lt: false, rt: false, view: false, menu: false, home: false };
+    let any = false;
+    for (const gp of pads) {
+      const b = (i) => !!(gp.buttons[i] && (gp.buttons[i].pressed || gp.buttons[i].value > 0.5));
+      const ax = (i) => gp.axes[i] || 0;
+      let s;
+      if (gp.mapping === 'standard') {
+        s = { up: b(12) || ax(1) < -0.6, down: b(13) || ax(1) > 0.6, left: b(14) || ax(0) < -0.6, right: b(15) || ax(0) > 0.6,
+          a: b(0), b: b(1), x: b(2), y: b(3), lb: b(4), rb: b(5), lt: b(6), rt: b(7), view: b(8), menu: b(9), home: b(16) };
+      } else {
+        // PlayStation layout as Windows reports it without a driver: □ ✕ ○ △ = 0 1 2 3, PS = 12, the d-pad is one "hat" axis.
+        const hat = gp.axes.length > 9 ? ax(9) : 9; const dir = hat <= 1.01 ? Math.round((hat + 1) * 3.5) % 8 : -1;
+        s = { up: [7, 0, 1].includes(dir) || ax(1) < -0.6, right: [1, 2, 3].includes(dir) || ax(0) > 0.6, down: [3, 4, 5].includes(dir) || ax(1) > 0.6, left: [5, 6, 7].includes(dir) || ax(0) < -0.6,
+          a: b(1), b: b(2), x: b(0), y: b(3), lb: b(4), rb: b(5), lt: b(6), rt: b(7), view: b(8), menu: b(9), home: b(12) };
+      }
+      if (pref('swapAB')) { [s.a, s.b] = [s.b, s.a]; [s.x, s.y] = [s.y, s.x]; }
+      for (const k of Object.keys(st)) st[k] = st[k] || !!s[k];
+      if (gp.buttons.some((x) => x.pressed) || [0, 1].some((i) => Math.abs(ax(i)) > 0.6)) any = true;
+    }
+    if (any) kbd(true);
     if (!document.querySelector('#app :focus') && !document.querySelector('#layer :focus') && Object.values(st).some(Boolean)) { const f = document.querySelector('#app [data-key="cine_enter"]') || document.querySelector('#app [data-key="continue"], #app .card, #app button'); if (f) f.focus(); }
     // Held directions repeat: a short pause first, then quickly.
     for (const k of ['up', 'down', 'left', 'right']) {
