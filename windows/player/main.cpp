@@ -531,8 +531,50 @@ static void readOptions(const std::string& file) {
 }
 
 // ------------------------------------------------------------------ main
+/**
+ * "--pads 1": no game, no window. Reads every controller with SDL (PS5 / PS4 over Bluetooth, Switch Pro, Xbox…) and prints
+ * the buttons held as one JSON line whenever they change, so the app's menus work with any controller the games work with.
+ * Ends when the app closes (stdin closes).
+ */
+static int padHelper() {
+  SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+  if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) return 2;
+  std::thread([] { std::string line; while (std::getline(std::cin, line)) {} SDL_Event q; q.type = SDL_QUIT; SDL_PushEvent(&q); }).detach();
+  std::map<SDL_JoystickID, SDL_GameController*> pads;
+  for (int i = 0; i < SDL_NumJoysticks(); i++) if (SDL_IsGameController(i)) { auto* c = SDL_GameControllerOpen(i); if (c) pads[SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(c))] = c; }
+  std::string last;
+  printf("{\"pads\":%d}\n", (int)pads.size()); fflush(stdout);
+  for (bool on = true; on;) {
+    SDL_Event e;
+    if (SDL_WaitEventTimeout(&e, 50)) do {
+      if (e.type == SDL_QUIT) on = false;
+      else if (e.type == SDL_CONTROLLERDEVICEADDED) { auto* c = SDL_GameControllerOpen(e.cdevice.which); if (c) { pads[SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(c))] = c; printf("{\"pads\":%d}\n", (int)pads.size()); fflush(stdout); } }
+      else if (e.type == SDL_CONTROLLERDEVICEREMOVED) { auto it = pads.find(e.cdevice.which); if (it != pads.end()) { SDL_GameControllerClose(it->second); pads.erase(it); } }
+    } while (SDL_PollEvent(&e));
+    bool st[15] = {};
+    for (auto& kv : pads) {
+      auto* c = kv.second; auto B = [&](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(c, b) != 0; };
+      int x = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY);
+      st[0] |= B(SDL_CONTROLLER_BUTTON_DPAD_UP) || y < -20000; st[1] |= B(SDL_CONTROLLER_BUTTON_DPAD_DOWN) || y > 20000;
+      st[2] |= B(SDL_CONTROLLER_BUTTON_DPAD_LEFT) || x < -20000; st[3] |= B(SDL_CONTROLLER_BUTTON_DPAD_RIGHT) || x > 20000;
+      st[4] |= B(SDL_CONTROLLER_BUTTON_A); st[5] |= B(SDL_CONTROLLER_BUTTON_B); st[6] |= B(SDL_CONTROLLER_BUTTON_X); st[7] |= B(SDL_CONTROLLER_BUTTON_Y);
+      st[8] |= B(SDL_CONTROLLER_BUTTON_LEFTSHOULDER); st[9] |= B(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+      st[10] |= SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 16000; st[11] |= SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000;
+      st[12] |= B(SDL_CONTROLLER_BUTTON_BACK); st[13] |= B(SDL_CONTROLLER_BUTTON_START); st[14] |= B(SDL_CONTROLLER_BUTTON_GUIDE);
+    }
+    static const char* names[15] = {"up", "down", "left", "right", "a", "b", "x", "y", "lb", "rb", "lt", "rt", "view", "menu", "home"};
+    std::string now = "{\"held\":[";
+    bool first = true; for (int i = 0; i < 15; i++) if (st[i]) { now += std::string(first ? "" : ",") + "\"" + names[i] + "\""; first = false; }
+    now += "]}";
+    if (now != last) { printf("%s\n", now.c_str()); fflush(stdout); last = now; }
+  }
+  for (auto& kv : pads) SDL_GameControllerClose(kv.second);
+  SDL_Quit(); return 0;
+}
+
 int main(int argc, char* argv[]) {
   for (int i = 1; i + 1 < argc; i += 2) if (strncmp(argv[i], "--", 2) == 0) A[argv[i] + 2] = argv[i + 1];
+  if (arg("pads") == "1") return padHelper();
   ES = arg("lang") == "es"; title = arg("title", "RetroStream"); consoleId = arg("console"); gameId = arg("gameid");
   saveRoot = P(arg("saveroot")); shotsQueue = P(arg("shots")); picturesDir = P(arg("pictures"));
   systemDir = arg("system"); saveDir = (saveRoot / "saves").u8string();

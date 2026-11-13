@@ -747,7 +747,7 @@ const pad = { last: {}, at: {}, first: {} };
 function pollPads() {
   // Every connected controller counts (a PS5 / PS4 controller is often not the first one Windows lists, e.g. next to a Steam or virtual pad).
   const pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter((p) => p && p.connected);
-  if (pads.length) {
+  if (pads.length || S.sdlPad) {
     const now = performance.now();
     const st = { up: false, down: false, left: false, right: false, a: false, b: false, x: false, y: false, lb: false, rb: false, lt: false, rt: false, view: false, menu: false, home: false };
     let any = false;
@@ -768,6 +768,8 @@ function pollPads() {
       for (const k of Object.keys(st)) st[k] = st[k] || !!s[k];
       if (gp.buttons.some((x) => x.pressed) || [0, 1].some((i) => Math.abs(ax(i)) > 0.6)) any = true;
     }
+    // Buttons read by the app's controller helper (any controller the games understand, Bluetooth PS5 included).
+    if (S.sdlHeld && S.sdlHeld.length) { for (const k of S.sdlHeld) if (k in st) st[k] = true; any = true; }
     if (any) kbd(true);
     if (!document.querySelector('#app :focus') && !document.querySelector('#layer :focus') && Object.values(st).some(Boolean)) { const f = document.querySelector('#app [data-key="cine_enter"]') || document.querySelector('#app [data-key="continue"], #app .card, #app button'); if (f) f.focus(); }
     // Held directions repeat: a short pause first, then quickly.
@@ -824,6 +826,11 @@ function pollPads() {
   });
   window.rs.on('kept', (k) => { S.prefs.kept = k; render(); });
   window.rs.on('toast', (text) => toast(text));
+  window.rs.on('pad', (held) => {
+    let h = held || [];
+    if (pref('swapAB')) h = h.map((k) => ({ a: 'b', b: 'a', x: 'y', y: 'x' }[k] || k));
+    S.sdlHeld = h; S.sdlPad = true;
+  });
   window.rs.on('friends', (f) => { S.friends = f; if (S.page === 'friends' || (S.page === 'home' && homeTheme() === 'classic')) { if (!document.querySelector('#layer .shade')) render(); } });
   const launch = (x) => { const id = typeof x === 'string' ? x : x.id; const g = S.games.find((y) => y.id === id); if (g) { document.getElementById('layer').replaceChildren(); playGame(g, typeof x === 'object' && x.fresh); } else toast(t('That game is not in your library any more.')); };
   window.rs.on('remote', (r) => remoteCode(r && r.code));

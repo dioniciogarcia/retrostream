@@ -112,6 +112,32 @@ async function withParts(game, first) {
 const PREF_KEYS = new Set(['fullscreen', 'lang', 'theme', 'favorites', 'hidden', 'completed', 'collections', 'recent', 'plays', 'onboarded', 'skipped', 'sort', 'keep',
   'homeTheme', 'resolution', 'gameSettings', 'palette', 'dark', 'logoStyle', 'sections', 'shownConsoles', 'swapAB', 'playerWindowed', 'queue']);
 
+/**
+ * Controllers for the menus: rs-player.exe in "--pads 1" mode reads them with SDL (PS5 / PS4 over Bluetooth, Switch Pro…),
+ * which works where the browser's own controller support doesn't. Paused while a game runs (the game reads them itself).
+ */
+let padHelper = null, padRestarts = 0;
+function startPadHelper() {
+  if (process.platform !== 'win32' || padHelper) return;
+  const exe = path.join(process.resourcesPath || '', 'player', 'rs-player.exe');
+  if (!fs.existsSync(exe)) return;
+  try {
+    const child = require('child_process').spawn(exe, ['--pads', '1'], { cwd: path.dirname(exe), windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+    padHelper = child; let buf = '';
+    child.stdout.on('data', (d) => {
+      buf += d.toString(); let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.substring(0, nl).trim(); buf = buf.substring(nl + 1);
+        let m; try { m = JSON.parse(line); } catch (_) { continue; }
+        if (!m.held) continue;
+        const busy = (player && player.child) || (external && external.child) || !win || !win.isFocused();
+        send('pad', busy ? [] : m.held);
+      }
+    });
+    child.on('exit', () => { padHelper = null; if (padRestarts++ < 5 && !app.isQuitting) setTimeout(startPadHelper, 3000); });
+    child.on('error', () => { padHelper = null; });
+  } catch (_) { padHelper = null; }
+}
 /** Folder sizes for Settings > Space used. */
 async function dirSize(d) {
   let n = 0; let list; try { list = await fs.promises.readdir(d, { withFileTypes: true }); } catch (_) { return 0; }
@@ -180,6 +206,7 @@ app.whenReady().then(() => {
   local = new LocalGames({ dir, store });
   remote = new Remote({ store, version: app.getVersion() });
   remote.start();
+  startPadHelper();
   player.onState = (st) => { remote.state = st; };
   player.onShot = () => { cloud.uploadShots().catch(() => {}); };
   remote.on('code', (c) => send('remote', { code: c }));
@@ -525,6 +552,7 @@ app.on('second-instance', (_e, argv) => {
   const i = argv.indexOf('--play'); if (i > 0 && argv[i + 1]) send('launch', argv[i + 1]);
 });
 app.on('window-all-closed', async () => {
+  app.isQuitting = true; if (padHelper) { try { padHelper.kill(); } catch (_) { /* gone */ } }
   store && store.flush();
   if (remote) remote.close();
   if (friends) await Promise.race([friends.offline().catch(() => {}), new Promise((r) => setTimeout(r, 2500))]);
