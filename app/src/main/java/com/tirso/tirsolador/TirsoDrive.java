@@ -156,7 +156,7 @@ final class TirsoDrive {
         }else if(object instanceof TdApi.AuthorizationStateWaitPhoneNumber&&pendingPhone!=null){
             // The number was typed while the QR was showing: Telegram had to start over first, now it is sent.
             String n=pendingPhone;pendingPhone=null;qrRequested=true;phoneAttempt=true;stage=Stage.CONNECTING;status=T.t("Enviando el código…");
-            checked(new TdApi.SetAuthenticationPhoneNumber(n,null));
+            sendPhone(n);
         }else if(object instanceof TdApi.AuthorizationStateWaitPhoneNumber){
             // Phone app: you choose phone number or QR (a phone can't scan its own screen). TV: QR straight away.
             if(BuildConfig.PHONE&&!qrRequested){stage=Stage.PHONE;status=T.t("Inicia sesión con tu número de Telegram");return;}
@@ -188,11 +188,31 @@ final class TirsoDrive {
     /** Signs in with a phone number: Telegram then sends a code to your Telegram app. */
     private boolean phoneAttempt;
     private String pendingPhone;
+    private boolean phoneRestarted;
     void phoneNumber(String number){
         String n=number.replaceAll("[^0-9+]","");error="";phoneAttempt=true;stage=Stage.CONNECTING;status=T.t("Enviando el código…");publish(false);
-        // While a QR is waiting to be scanned Telegram doesn't take a number: start it again and send the number then.
-        if(qrRequested&&client!=null){pendingPhone=n;restartRequested=true;generation++;checked(new TdApi.Close());return;}
-        checked(new TdApi.SetAuthenticationPhoneNumber(n,null));
+        if(client==null){pendingPhone=n;phoneRestarted=false;start();return;}
+        // Telegram only takes a number in some steps: ask which step it is in first.
+        send(new TdApi.GetAuthorizationState(),st->{
+            if(st instanceof TdApi.AuthorizationStateWaitPhoneNumber||st instanceof TdApi.AuthorizationStateWaitCode||st instanceof TdApi.AuthorizationStateWaitPassword){
+                sendPhone(n);
+            }else if(st instanceof TdApi.AuthorizationStateWaitOtherDeviceConfirmation){
+                // A QR code is waiting to be scanned: Telegram has to start over, then the number is sent.
+                pendingPhone=n;phoneRestarted=true;restartRequested=true;generation++;checked(new TdApi.Close());
+            }else{
+                // Still connecting / starting: sent as soon as Telegram asks for a number.
+                pendingPhone=n;phoneRestarted=false;
+            }
+        });
+    }
+    private void sendPhone(String n){
+        send(new TdApi.SetAuthenticationPhoneNumber(n,null),r->{
+            if(!(r instanceof TdApi.Error))return;
+            TdApi.Error e=(TdApi.Error)r;
+            // Telegram wasn't ready for a number after all: start it over once and send it again.
+            if(e.message!=null&&e.message.contains("unexpected")&&!phoneRestarted&&client!=null){pendingPhone=n;phoneRestarted=true;restartRequested=true;generation++;checked(new TdApi.Close());return;}
+            fail(e);
+        });
     }
     /** Switches to the QR code (scan it from Telegram on another phone). */
     void useQr(){error="";qrRequested=true;stage=Stage.CONNECTING;status=T.t("Generando código QR…");publish(false);checked(new TdApi.RequestQrCodeAuthentication(new long[0]));}
