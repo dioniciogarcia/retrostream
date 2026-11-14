@@ -911,7 +911,8 @@ final class TirsoDrive {
         java.util.function.Consumer<TdApi.Chat> use=x->{if(friendsChat()==0){chats.put(x.id,x);friendsReady(x.id,"");}end.done(true,null);};
         searchExisting(FRIENDS_TITLE,a->{
             if(a!=null){use.accept(a);return;}
-            send(new TdApi.SearchChatsOnServer(FRIENDS_TITLE,50),r->{
+            TdApi.SearchChatsOnServer onServer=new TdApi.SearchChatsOnServer();onServer.query=FRIENDS_TITLE;onServer.limit=50;
+            send(onServer,r->{
                 long[] ids=r instanceof TdApi.Chats?((TdApi.Chats)r).chatIds:new long[0];
                 searchExistingAt(ids,0,FRIENDS_TITLE,b->{
                     if(b!=null){use.accept(b);return;}
