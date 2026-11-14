@@ -1660,6 +1660,10 @@ public class MainActivity extends Activity {
         drive.friendsListener(this::friendsRefreshSoon);
         sPage(T.t("Amigos"));
         if (!drive.ready()) { content.addView(tv(T.t("Conecta TirsoDrive para ver a tus amigos."), 28, muted, fBody)); return; }
+        if (drive.friendsChat() == 0 && (drive.friendsLooking || !drive.friendsLookedUp)) {
+            if (!drive.friendsLooking) drive.findFriends((ok, e) -> { if ("friends".equals(page) && !isFinishing()) render(); });
+            content.addView(tv(T.t("Buscando tu grupo de amigos…"), 28, muted, fBody)); return;
+        }
         if (drive.friendsChat() == 0) {
             LinearLayout hero = vertical(); hero.setGravity(Gravity.CENTER_HORIZONTAL); hero.setPadding(px(40), px(50), px(40), px(40));
             GradientDrawable hb = round(listSurface(), 34); if (th.equals("gba")) hb.setStroke(px(3), ink); hero.setBackground(hb);

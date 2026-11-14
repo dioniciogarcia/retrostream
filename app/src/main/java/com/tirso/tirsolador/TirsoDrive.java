@@ -618,7 +618,7 @@ final class TirsoDrive {
         return null;
     }
     private void friendsReady(long chatId,String link){
-        prefs.edit().putLong("friendsChat_"+accountId,chatId).putString("friendsLink_"+accountId,link==null?"":link).apply();
+        prefs.edit().remove("friendsLeft_"+accountId).putLong("friendsChat_"+accountId,chatId).putString("friendsLink_"+accountId,link==null?"":link).apply();
         friends.clear();myPresenceMsg=0;loadFriends();startHeartbeat();friendsChanged();
     }
     /** Creates the private friends group (or reuses the one that already exists) and its invite link. */
@@ -648,7 +648,7 @@ final class TirsoDrive {
             else cb.done(0L,errorText(r));
         });
     }
-    void friendsLeave(){prefs.edit().remove("friendsChat_"+accountId).remove("friendsLink_"+accountId).apply();friends.clear();myPresenceMsg=0;friendsChanged();}
+    void friendsLeave(){friendsLookedUp=true;prefs.edit().putBoolean("friendsLeft_"+accountId,true).remove("friendsChat_"+accountId).remove("friendsLink_"+accountId).apply();friends.clear();myPresenceMsg=0;friendsChanged();}
     private static String line(String text,String key){
         for(String l:text.split("\n")){int i=l.indexOf(':');if(i>0&&l.substring(0,i).equals(key))return l.substring(i+1).trim();}
         return "";
@@ -897,14 +897,36 @@ final class TirsoDrive {
 
     // ------------------------------------------------------------------ friends group found by its name
     /** Every device of the account finds the friends group by itself (no link needed on the second device). */
-    private void autoFriends(){
-        if(friendsChat()!=0||stage!=Stage.READY)return;int token=generation;
-        loadList(new TdApi.ChatListMain(),0,token,()->loadList(new TdApi.ChatListArchive(),0,token,()->{
-            if(friendsChat()!=0||token!=generation)return;
-            TdApi.Chat c=findFriendsChat();
-            if(c!=null){friendsReady(c.id,"");return;}
-            searchExisting(FRIENDS_TITLE,e->{if(e!=null&&friendsChat()==0){chats.put(e.id,e);friendsReady(e.id,"");}});
-        }));
+    private void autoFriends(){if(!prefs.getBoolean("friendsLeft_"+accountId,false))findFriends((ok,e)->{});}
+    boolean friendsLookedUp,friendsLooking;
+    /** Looks for the friends group by its name: loaded chats, Telegram's search, the server, then every chat in the lists. */
+    void findFriends(Done<Boolean> callback){
+        Done<Boolean> cb=once(callback,false);
+        if(friendsChat()!=0){cb.done(true,null);return;}
+        if(!ready()){cb.done(false,null);return;}
+        TdApi.Chat c=findFriendsChat();
+        if(c!=null){friendsReady(c.id,"");cb.done(true,null);return;}
+        friendsLooking=true;
+        Done<Boolean> end=(ok,e)->{friendsLooking=false;friendsLookedUp=true;cb.done(ok,e);};
+        java.util.function.Consumer<TdApi.Chat> use=x->{if(friendsChat()==0){chats.put(x.id,x);friendsReady(x.id,"");}end.done(true,null);};
+        searchExisting(FRIENDS_TITLE,a->{
+            if(a!=null){use.accept(a);return;}
+            send(new TdApi.SearchChatsOnServer(FRIENDS_TITLE,50),r->{
+                long[] ids=r instanceof TdApi.Chats?((TdApi.Chats)r).chatIds:new long[0];
+                searchExistingAt(ids,0,FRIENDS_TITLE,b->{
+                    if(b!=null){use.accept(b);return;}
+                    send(new TdApi.GetChats(new TdApi.ChatListMain(),3000),m->{
+                        send(new TdApi.GetChats(new TdApi.ChatListArchive(),3000),ar->{
+                            List<Long> all=new ArrayList<>();
+                            if(m instanceof TdApi.Chats)for(long id:((TdApi.Chats)m).chatIds)all.add(id);
+                            if(ar instanceof TdApi.Chats)for(long id:((TdApi.Chats)ar).chatIds)all.add(id);
+                            long[] every=new long[all.size()];for(int i=0;i<every.length;i++)every[i]=all.get(i);
+                            searchExistingAt(every,0,FRIENDS_TITLE,d->{if(d!=null)use.accept(d);else end.done(false,null);});
+                        });
+                    });
+                });
+            });
+        });
     }
 
     // ------------------------------------------------------------------ library sync (Telegram channel)

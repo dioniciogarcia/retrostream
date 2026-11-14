@@ -446,7 +446,7 @@ app.whenReady().then(() => {
         case 'join': await friends.join(arg); break;
         case 'leave': friends.leave(); break;
         case 'share': friends.setShare(!!arg); break;
-        case 'refresh': await friends.load(); break;
+        case 'refresh': await friends.discover().catch(() => {}); await friends.load(); break;
         case 'tell': await friends.tell(arg); break;
         default: break;
       }

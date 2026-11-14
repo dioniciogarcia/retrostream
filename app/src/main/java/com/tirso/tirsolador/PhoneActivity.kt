@@ -1856,6 +1856,11 @@ class PhoneActivity : Activity() {
     private fun friendsPage() = page(T.t("Amigos")) { col ->
         drive.loadFriends()
         if (!drive.ready()) { col.addView(tv(T.t("Conecta TirsoDrive para ver a tus amigos."), 14f, p.muted)); return@page }
+        if (drive.friendsChat() == 0L && (drive.friendsLooking || !drive.friendsLookedUp)) {
+            if (!drive.friendsLooking) drive.findFriends { _, _ -> if (page == "friends") render() }
+            col.addView(tv(T.t("Buscando tu grupo de amigos…"), 15f, p.muted).apply { setPadding(dp(4), dp(20), 0, 0) })
+            return@page
+        }
         if (drive.friendsChat() == 0L) {
             val hero = vertical(); hero.gravity = Gravity.CENTER_HORIZONTAL; hero.setPadding(dp(20), dp(28), dp(20), dp(20))
             hero.background = round(p.surface, 20f, if (p.outlined) dp(1.5f) else 0, p.outline)

@@ -15,7 +15,7 @@ class Friends extends EventEmitter {
       if (u._ === 'updateNewMessage') this.message(u.message);
       else if (u._ === 'updateMessageContent' && u.chat_id === this.chat()) this.drive.invoke({ _: 'getMessage', chat_id: u.chat_id, message_id: u.message_id }).then((m) => this.message(m)).catch(() => {});
     });
-    setInterval(() => { if (this.chat() && this.drive.stage === 'ready') { this.post(); this.load(); } }, 60000);
+    setInterval(() => { if (this.chat() && this.drive.stage === 'ready') { this.post(); this.load(); } else if (this.drive.stage === 'ready') this.discover().catch(() => {}); }, 60000);
   }
   mine() { return (this.store.get('friends') || {})[this.drive.account] || {}; }
   setMine(v) { const all = this.store.get('friends') || {}; all[this.drive.account] = v; this.store.set('friends', all); }
@@ -44,12 +44,19 @@ class Friends extends EventEmitter {
   }
   /** Every device of the account finds the friends group by its name (no link needed on the second device). */
   async discover() {
-    if (this.chat() || this.drive.stage !== 'ready') return;
-    const id = await this.drive.ownChannel(FRIENDS_TITLE, '', false);
+    if (this.chat() || this.drive.stage !== 'ready' || this.store.get('friendsLeft')) return;
+    let id = await this.drive.ownChannel(FRIENDS_TITLE, '', false);
+    if (!id) {
+      const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      try {
+        const r = await this.drive.invoke({ _: 'searchChatsOnServer', query: FRIENDS_TITLE, limit: 50 });
+        for (const cid of r.chat_ids) { const x = await this.drive.invoke({ _: 'getChat', chat_id: cid }); if (this.drive.isGroup(x) && norm(x.title) === norm(FRIENDS_TITLE)) { this.drive.chats.set(x.id, x); id = x.id; break; } }
+      } catch (_) { /* not found */ }
+    }
     if (id && !this.chat()) this.ready(id, '');
   }
-  leave() { this.setMine({}); this.list.clear(); this.myMsg = 0; this.emit('changed'); }
-  ready(chat, link) { this.setMine({ chat, link }); this.list.clear(); this.myMsg = 0; this.load(); this.post(); this.emit('changed'); }
+  leave() { this.store.set('friendsLeft', true); this.setMine({}); this.list.clear(); this.myMsg = 0; this.emit('changed'); }
+  ready(chat, link) { this.store.set('friendsLeft', false); this.setMine({ chat, link }); this.list.clear(); this.myMsg = 0; this.load(); this.post(); this.emit('changed'); }
   line(text, key) { for (const l of text.split('\n')) { const i = l.indexOf(':'); if (i > 0 && l.substring(0, i) === key) return l.substring(i + 1).trim(); } return ''; }
   message(m) {
     if (!m || m.chat_id !== this.chat() || !m.content || m.content._ !== 'messageText' || !m.sender_id || m.sender_id._ !== 'messageSenderUser') return;

@@ -3,6 +3,7 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("Buscando tu grupo de amigos…","Looking for your friends group…");
         m.put("Quitar de «Jugar después»","Remove from \"Play later\"");
         m.put("Jugar después","Play later");
         m.put("Guardado en «Jugar después»","Saved to \"Play later\"");
