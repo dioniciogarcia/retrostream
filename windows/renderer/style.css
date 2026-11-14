@@ -198,3 +198,8 @@ body.light.kbd :focus{outline-color:#161A24}
 .mediacell{background:var(--surface);border-radius:14px;padding:8px;text-align:left;display:flex;flex-direction:column;gap:4px}
 .mediacell img,.mediacell .noimg{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;background:#0F121A}
 .mediacell b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mediacell small{color:var(--muted);font-size:11px}
+/* Home: the Continue card stays in place (its height fits the window); only the rows beside it scroll. */
+@media (min-width:1120px){
+  .home{align-items:flex-start}
+  .continue{position:sticky;top:22px;height:calc(100vh - 140px);min-height:420px}
+}
