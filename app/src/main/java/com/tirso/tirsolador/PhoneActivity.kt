@@ -80,6 +80,7 @@ class PhoneActivity : Activity() {
     private var query = ""
     private var selected: Game? = null
     private var freshStart = false        // "Play from the start": don't load where you left off
+    private var assistPlay: Pair<String, String?>? = null   // Friend assist: game id + separate save folder (null = your own, no Telegram check)
     private var downloadedOnly = false
     private var collectionName = ""     // source "col": the library shows this collection
     private var lastFocus = ""
@@ -963,11 +964,13 @@ class PhoneActivity : Activity() {
             .putExtra("gameid", g.id).putExtra("meta", GameMeta.info(this, g).toString()).putExtra("fileId", g.fileId).putExtra("account", g.telegramAccount)
         if (parts != null) intent.putExtra("parts", parts)
         if (freshStart) { intent.putExtra("fresh", true); freshStart = false }
+        val assist = assistPlay?.takeIf { it.first == g.id }; assistPlay = null
+        assist?.second?.let { intent.putExtra("saveroot", it) }
         drive.playing(g)
         page = if (landscape || console != null) "library" else "detail"
         lastFocus = "game_${g.id}"; render()
         val sha = SaveBackups.shaOf(this, g.id)
-        if (sha == null || !drive.ready()) { startActivity(intent); return }
+        if (sha == null || !drive.ready() || assist != null) { startActivity(intent); return }
         val state = booleanArrayOf(false, false)
         val go = Runnable { if (!state[0]) { state[0] = true; startActivity(intent) } }
         root.postDelayed({ if (!state[1]) go.run() }, 7000)
@@ -1853,6 +1856,50 @@ class PhoneActivity : Activity() {
             FrameLayout.LayoutParams(dp(size / 3), dp(size / 3), Gravity.BOTTOM or Gravity.END))
         return box
     }
+    /** Friend assist: plays [g] with a friend's save in [root] (or, root null, your own save without checking Telegram first). */
+    private fun playAssist(g: Game, root: String?) { assistPlay = g.id to root; freshStart = false; play(g) }
+    /** "Friends need help" and your own requests. */
+    private fun assistSection(col: LinearLayout) {
+        FriendAssist.cleanup(this, drive)
+        val list = drive.assistList()
+        val others = list.filter { it.from != drive.accountId && (it.takenBy == 0L || it.takenBy == drive.accountId) }
+        val mine = list.filter { it.from == drive.accountId }
+        if (others.isEmpty() && mine.isEmpty()) return
+        col.addView(section(T.t("Amigos que necesitan ayuda")))
+        fun card(x: TirsoDrive.Assist, line1: String, line2: String, color: Int, actions: List<Pair<String, () -> Unit>>) {
+            val c = runCatching { Console.valueOf(x.console) }.getOrNull()
+            val r = vertical(); r.setPadding(dp(14), dp(12), dp(14), dp(12))
+            r.addView(tv(line1, 15f, p.text, bold = true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
+            r.addView(tv((c?.title ?: x.console) + " · " + line2, 12f, color).apply { setPadding(0, dp(2), 0, dp(8)) })
+            val btns = horizontal()
+            actions.forEachIndexed { i, (label, f) -> btns.addView(button(label, "as_${x.req}_$i", i == 0) { f() }, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i > 0) marginStart = dp(8) }) }
+            r.addView(btns)
+            r.background = round(p.surface, 16f, if (p.outlined) dp(1.5f) else 0, p.outline)
+            col.addView(r, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+        }
+        for (x in others) {
+            val who = x.fromName.ifEmpty { T.t("Un amigo") }
+            when {
+                x.takenBy == 0L -> card(x, who + T.t(" necesita ayuda con ") + x.title, T.t("Nadie está ayudando aún"), 0xFFF59E0B.toInt(),
+                    listOf(T.t("Ayudar") to { FriendAssist.help(this, drive, library, x) { g, root -> playAssist(g, root) } }))
+                x.doneBy == drive.accountId -> card(x, T.t("Ayudaste a ") + who + T.t(" con ") + x.title, T.t("Enviada · esperando a que continúe"), 0xFF22C55E.toInt(),
+                    listOf(T.t("Jugar otra vez") to { FriendAssist.help(this, drive, library, x) { g, root -> playAssist(g, root) } }, T.t("Enviar de nuevo") to { FriendAssist.sendBack(this, drive, x) { render() } }))
+                else -> card(x, T.t("Estás ayudando a ") + who + T.t(" con ") + x.title, T.t("Cuando termines, toca Enviar"), 0xFF3B82F6.toInt(),
+                    listOf(T.t("Enviar") to { FriendAssist.sendBack(this, drive, x) { render() } }, T.t("Jugar") to { FriendAssist.help(this, drive, library, x) { g, root -> playAssist(g, root) } }))
+            }
+        }
+        for (x in mine) {
+            val helper = x.helperName.ifEmpty { T.t("Un amigo") }
+            when {
+                x.doneMsg != 0L -> card(x, helper + T.t(" terminó de ayudarte con ") + x.title, T.t("Tu partida actual se guarda como copia antes"), 0xFF22C55E.toInt(),
+                    listOf(T.t("Continuar") to { FriendAssist.continueAssist(this, drive, library, x) { g -> playAssist(g, null) } }, T.t("Descartar") to { drive.closeAssist(x); render() }))
+                x.takenBy != 0L -> card(x, helper + T.t(" te está ayudando con ") + x.title, T.t("Te avisaremos cuando termine"), 0xFF3B82F6.toInt(),
+                    listOf(T.t("Cancelar pedido") to { drive.closeAssist(x); render() }))
+                else -> card(x, T.t("Pediste ayuda con ") + x.title, T.t("Esperando a un amigo"), p.muted,
+                    listOf(T.t("Cancelar pedido") to { drive.closeAssist(x); render() }))
+            }
+        }
+    }
     private fun friendGrid(col: LinearLayout, list: List<TirsoDrive.Friend>) {
         val cols = if (landscape) 5 else 3
         var row: LinearLayout? = null
@@ -1938,6 +1985,7 @@ class PhoneActivity : Activity() {
             }
             friendGrid(col, online)
         }
+        assistSection(col)
         // Recommended for you: one tap from a friend, newest first
         val recs = drive.recs.values.filter { it.from != drive.accountId }.sortedByDescending { it.ts }.distinctBy { it.console + "|" + it.title.lowercase() }.take(20)
         if (recs.isNotEmpty()) {

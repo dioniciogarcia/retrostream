@@ -944,6 +944,8 @@ public class MainActivity extends Activity {
     }
     // ------------------------------------------------------------------ more options: screenshots, home screen shortcut
     private boolean freshStart;   // "Play from the start": don't load where you left off
+    private String assistGame = "", assistRoot = null;   // Friend assist: game id + separate save folder (null = your own, no Telegram check)
+    private void playAssist(Game g, String root) { assistGame = g.id; assistRoot = root; freshStart = false; startPlay(g); }
     private final GameMenu.Host menuHost = new GameMenu.Host() {
         @Override public void refresh() { if (isFinishing()) return; rememberLibrary(); library = new Library(MainActivity.this); render(); }
         @Override public void play(Game g, boolean fresh) { freshStart = fresh; startPlay(g); }
@@ -1159,7 +1161,10 @@ public class MainActivity extends Activity {
         Intent intent=new Intent(this,Console.ownProcess(selected.console)?GameActivityN64.class:GameActivity.class).putExtra("rom",path).putExtra("filename",selected.fileName).putExtra("title",selected.title).putExtra("description",selected.description).putExtra("console",selected.console.name()).putExtra("cover",selected.coverName).putExtra("gameid",selected.id).putExtra("meta",GameMeta.info(this,selected).toString()).putExtra("fileId",selected.fileId).putExtra("account",selected.telegramAccount);
         if(parts!=null)intent.putExtra("parts",parts);
         if(freshStart){intent.putExtra("fresh",true);freshStart=false;}
+        boolean assist=assistGame.equals(selected.id);String aRoot=assistRoot;assistGame="";assistRoot=null;
+        if(assist&&aRoot!=null)intent.putExtra("saveroot",aRoot);
         drive.playing(selected);
+        if(assist){startActivity(intent);return;}
         launchWithNewestSave(intent,selected);
     }
     /** Before a game starts: if Telegram has a newer save of it (from the TV or another phone), it is restored first. */
@@ -1696,6 +1701,7 @@ public class MainActivity extends Activity {
             for (TirsoDrive.Friend f : playing) { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = px(14); content.addView(playingCard(f), lp); }
             friendTiles(online);
         }
+        assistSectionTv();
         // Recommended for you
         java.util.List<TirsoDrive.Rec> recs = new java.util.ArrayList<>(); java.util.Set<String> seenRec = new java.util.HashSet<>();
         java.util.List<TirsoDrive.Rec> allRecs = new java.util.ArrayList<>(drive.recs.values()); allRecs.sort((a, b) -> Long.compare(b.ts, a.ts));
@@ -1738,6 +1744,35 @@ public class MainActivity extends Activity {
         sItem(o, T.t("Salir del grupo"), null, "friends_leave", 0xFFFF4D73, null, () -> new AlertDialog.Builder(this).setTitle(T.t("Salir de amigos"))
             .setMessage(T.t("Dejarás de ver y de mostrar actividad. Puedes volver a unirte con el enlace."))
             .setPositiveButton(T.t("Salir"), (d, w) -> { drive.friendsLeave(); render(); }).setNegativeButton(T.t("Cancelar"), null).show());
+    }
+    /** "Friends need help" and your own requests: tap one for its actions. */
+    private void assistSectionTv() {
+        FriendAssist.cleanup(this, drive);
+        java.util.List<TirsoDrive.Assist> list = drive.assistList(); java.util.List<TirsoDrive.Assist> shown = new java.util.ArrayList<>();
+        for (TirsoDrive.Assist x : list) if (x.from == drive.accountId || x.takenBy == 0 || x.takenBy == drive.accountId) shown.add(x);
+        if (shown.isEmpty()) return;
+        LinearLayout g = sGroup(T.t("Amigos que necesitan ayuda"));
+        for (TirsoDrive.Assist x : shown) {
+            String who = x.fromName.isEmpty() ? T.t("Un amigo") : x.fromName, helper = x.helperName.isEmpty() ? T.t("Un amigo") : x.helperName;
+            String title, sub; int color; java.util.List<String> labels = new java.util.ArrayList<>(); java.util.List<Runnable> acts = new java.util.ArrayList<>();
+            Runnable help = () -> FriendAssist.help(this, drive, library, x, (game, root) -> { playAssist(game, root); return kotlin.Unit.INSTANCE; });
+            Runnable send = () -> FriendAssist.sendBack(this, drive, x, () -> { render(); return kotlin.Unit.INSTANCE; });
+            Runnable close = () -> { drive.closeAssist(x); render(); };
+            if (x.from != drive.accountId) {
+                if (x.takenBy == 0) { title = who + T.t(" necesita ayuda con ") + x.title; sub = T.t("Nadie está ayudando aún"); color = 0xFFF59E0B; labels.add(T.t("Ayudar")); acts.add(help); }
+                else if (x.doneBy == drive.accountId) { title = T.t("Ayudaste a ") + who + T.t(" con ") + x.title; sub = T.t("Enviada · esperando a que continúe"); color = 0xFF22C55E; labels.add(T.t("Jugar otra vez")); acts.add(help); labels.add(T.t("Enviar de nuevo")); acts.add(send); }
+                else { title = T.t("Estás ayudando a ") + who + T.t(" con ") + x.title; sub = T.t("Cuando termines, toca Enviar"); color = 0xFF3B82F6; labels.add(T.t("Enviar")); acts.add(send); labels.add(T.t("Jugar")); acts.add(help); }
+            } else {
+                if (x.doneMsg != 0) { title = helper + T.t(" terminó de ayudarte con ") + x.title; sub = T.t("Tu partida actual se guarda como copia antes"); color = 0xFF22C55E;
+                    labels.add(T.t("Continuar")); acts.add(() -> FriendAssist.continueAssist(this, drive, library, x, game -> { playAssist(game, null); return kotlin.Unit.INSTANCE; })); labels.add(T.t("Descartar")); acts.add(close); }
+                else if (x.takenBy != 0) { title = helper + T.t(" te está ayudando con ") + x.title; sub = T.t("Te avisaremos cuando termine"); color = 0xFF3B82F6; labels.add(T.t("Cancelar pedido")); acts.add(close); }
+                else { title = T.t("Pediste ayuda con ") + x.title; sub = T.t("Esperando a un amigo"); color = 0xFF8C95AA; labels.add(T.t("Cancelar pedido")); acts.add(close); }
+            }
+            sItem(g, title, sub, "as_" + x.req, color, null, () -> {
+                if (acts.size() == 1 && !labels.get(0).equals(T.t("Cancelar pedido"))) { acts.get(0).run(); return; }
+                new AlertDialog.Builder(this).setTitle(title).setItems(labels.toArray(new String[0]), (d, w) -> acts.get(w).run()).setNegativeButton(T.t("Cancelar"), null).show();
+            });
+        }
     }
     private void friendTiles(java.util.List<TirsoDrive.Friend> list) {
         LinearLayout row = null; int i = 0;

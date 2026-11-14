@@ -339,14 +339,16 @@ function renderPanel(g) {
 // ------------------------------------------------------------------ playing and downloading
 function pct(i) { return i && i.size ? Math.min(100, Math.round(i.have * 100 / i.size)) : 0; }
 function activeDownloads() { return S.games.filter((g) => (S.files[g.fileId] || {}).state === 'downloading'); }
-async function playGame(g, fresh) {
+async function playGame(g, fresh, extra) {
+  if (extra) S.playExtra = { id: g.id, extra };
   if (!kept(g)) {
     if (S.drive.stage !== 'ready') { toast(t('Connect Telegram first (Settings > TirsoDrive).')); return; }
     const i = await window.rs.game('download', g); if (i) S.files[g.fileId] = i;
     toast(t('Downloading') + ' ' + g.title + '…'); S.pendingPlay = g.id; render(); return;
   }
   toast(t('Starting') + ' ' + g.title + '…');
-  const r = await window.rs.play(g, { fresh: !!fresh });
+  const more = S.playExtra && S.playExtra.id === g.id ? S.playExtra.extra : {}; S.playExtra = null;
+  const r = await window.rs.play(g, Object.assign({ fresh: !!fresh }, more));
   if (r && r.error) { toast(r.error); return; }
   const p = (pref('plays') || []).filter((x) => Date.now() - x.at < 400 * 86400000); p.unshift({ id: g.id, at: Date.now() }); setPref('plays', p.slice(0, 300));
 }
@@ -388,6 +390,7 @@ function gameMenu(g, e, recentMenu) {
   items.push([t('Rename'), '', () => ask(t('Rename'), g.title, async (v) => { await window.rs.meta('rename', g, v); toast(t('Name changed')); })]);
   items.push([t('Reset game info'), '', () => confirmBox(g.title, t('The name, cover and description you chose are removed and looked up again.'), t('Reset'), async () => { await window.rs.meta('reset', g); toast(t('Looking it up again…')); })]);
   items.push([listPref('favorites').has(g.id) ? t('Remove from favorites') : t('Add to favorites'), 'F', () => { toggleIn('favorites', g.id); render(); }]);
+  if (S.friends && S.friends.chat && g.console !== 'MAME') items.push([t('Ask a friend for help'), '', async () => { toast(t('Sending your save to your friends…')); const r = await window.rs.friends('ask', g); toast(r && r.error ? r.error : t("You asked your friends for help. You'll get a notice when they finish.")); if (r && !r.error) S.friends = r; }]);
   if (S.friends && S.friends.chat) items.push([t('Recommend to friends'), '', async () => { const r = await window.rs.friends('recommend', g); toast(r && r.error ? r.error : t('Recommended to your friends')); }]);
   items.push([listPref('later').has(g.id) ? t('Remove from "Play later"') : t('Play later'), '', () => { toast(toggleIn('later', g.id) ? t('Saved to "Play later"') : t('Removed from "Play later"')); render(); }]);
   items.push([t('Add to a collection'), '', () => collectionPicker(g)]);

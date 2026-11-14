@@ -196,7 +196,8 @@ open class GameActivity : AppCompatActivity() {
         }
         romSha = digest
         val system = File(filesDir, "bios").apply { mkdirs() }
-        saves = SaveManager(File(filesDir, "saves/${Presets.key(console)}/$digest"), system)
+        // Helping a friend: their save in a separate folder, so your own saves of this game are never touched.
+        saves = SaveManager(intent.getStringExtra("saveroot")?.let { File(it) } ?: File(filesDir, "saves/${Presets.key(console)}/$digest"), system)
         SaveBackups.writeMeta(saves.root, gameTitle, console)
         installSystemFiles(system)
         if (console == Console.MAME) {
@@ -899,7 +900,7 @@ open class GameActivity : AppCompatActivity() {
             "reset" -> { if (isDolphin) view?.reset(useEmulationThread = true) else view?.reset(useEmulationThread = false); toast("Restarted") }
             "exit" -> { menuOpen = false; exitGame() }
             "backup" -> {
-                if (isolated) { runCatching { persist() }; tellPhone("done", false, "after_exit"); return }
+                if (isolated || assisting) { runCatching { persist() }; tellPhone("done", false, "after_exit"); return }
                 val drive = TirsoDrive.get(this)
                 if (!drive.ready()) { tellPhone("done", false, "no telegram"); return }
                 runCatching { persist() }
@@ -1495,7 +1496,7 @@ open class GameActivity : AppCompatActivity() {
 
     /** Sends the saves to the Telegram backup channel on its own when they changed (when TirsoDrive is connected). */
     private fun autoBackup() {
-        if (romSha.isEmpty() || isolated) return  // the app uploads changed saves itself when you come back to it
+        if (romSha.isEmpty() || isolated || assisting) return  // the app uploads changed saves itself when you come back to it
         val drive = TirsoDrive.get(this)
         if (!drive.ready() || !SaveBackups.changed(this, entry())) return
         val app = applicationContext
@@ -1506,7 +1507,10 @@ open class GameActivity : AppCompatActivity() {
         }
     }
 
+    /** Playing a friend's save (Friend assist): it is never sent to your backups. */
+    private val assisting get() = intent.getStringExtra("saveroot") != null
     private fun backUpToTelegram() {
+        if (assisting) { runCatching { persist() }; closeMenu(); toast("Helping a friend: this save is kept apart from yours"); return }
         if (isolated) {
             runCatching { persist() }; closeMenu()
             toast("Saves will be backed up to Telegram when you leave the game")
@@ -1521,6 +1525,7 @@ open class GameActivity : AppCompatActivity() {
     }
 
     private fun restoreFromTelegram() {
+        if (assisting) { closeMenu(); toast("Helping a friend: this save is kept apart from yours"); return }
         if (isolated) {
             toast("To restore from Telegram, leave the game and use Settings > Save backups")
             closeMenu()

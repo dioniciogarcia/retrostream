@@ -2,6 +2,7 @@ package com.tirso.tirsolador
 
 /** The player's texts are written in English (as in Tirso Compiler's player); Spanish is looked up here. */
 private val ES = mapOf(
+    "Helping a friend: this save is kept apart from yours" to "Ayudando a un amigo: esta partida se guarda aparte de las tuyas",
     "Microphone allowed. Close and reopen the game to use it." to "Micrófono permitido. Cierra y abre el juego para usarlo.",
     "Microphone not allowed. You can allow it in the phone's Settings > Apps." to "Micrófono no permitido. Puedes permitirlo en Ajustes > Aplicaciones.",
     "Microphone on" to "Micrófono activado", "Microphone off" to "Micrófono desactivado",

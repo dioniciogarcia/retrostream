@@ -8,16 +8,25 @@ const TAG = '#RSPRESENCE';
 const ONLINE = 150000;
 const REC = '#RSREC';
 const COL = '#RSCOL';
+const ASSIST = '#RSASSIST';
+const TAKE = '#RSTAKE';
+const DONE = '#RSDONE';
 const clip = (x) => String(x || '').replace(/\n/g, ' ').replace(/\|/g, '/').trim();
 
 class Friends extends EventEmitter {
   constructor({ drive, store, t }) {
     super(); Object.assign(this, { drive, store, t });
-    this.list = new Map(); this.names = new Map(); this.recs = new Map(); this.cols = new Map(); this.myMsg = 0; this.state = 'menu'; this.game = ''; this.console = ''; this.since = Date.now();
+    this.list = new Map(); this.names = new Map(); this.recs = new Map(); this.cols = new Map(); this.assists = new Map(); this.gone = new Set(); this.myMsg = 0; this.state = 'menu'; this.game = ''; this.console = ''; this.since = Date.now();
     drive.on('td', (u) => {
       if (u._ === 'updateNewMessage') { this.message(u.message); this.social(u.message); }
       else if (u._ === 'updateMessageContent' && u.chat_id === this.chat()) this.drive.invoke({ _: 'getMessage', chat_id: u.chat_id, message_id: u.message_id }).then((m) => { this.message(m); this.social(m); }).catch(() => {});
-      else if (u._ === 'updateDeleteMessages' && u.is_permanent && u.chat_id === this.chat()) { for (const id of u.message_ids) { this.recs.delete(id); this.cols.delete(id); } this.emit('changed'); }
+      else if (u._ === 'updateDeleteMessages' && u.is_permanent && u.chat_id === this.chat()) { for (const id of u.message_ids) { this.recs.delete(id); this.cols.delete(id); } this.assistDeleted(u.message_ids); this.emit('changed'); }
+    });
+    // Messages sent from here get their final number from Telegram.
+    drive.on('sent', (u) => {
+      if (u._ !== 'updateMessageSendSucceeded') return; const o = u.old_message_id; const n = u.message.id;
+      for (const a of this.assists.values()) { if (a.msgId === o) a.msgId = n; if (a.takeMsg === o) a.takeMsg = n; if (a.doneMsg === o) a.doneMsg = n; }
+      for (const map of [this.recs, this.cols]) if (map.has(o)) { const x = map.get(o); map.delete(o); x.msgId = n; map.set(n, x); }
     });
     setInterval(() => { if (this.chat() && this.drive.stage === 'ready') { this.post(); this.load(); } else if (this.drive.stage === 'ready') this.discover().catch(() => {}); }, 60000);
   }
@@ -32,7 +41,8 @@ class Friends extends EventEmitter {
     return { chat: this.chat(), link: this.link(), share: this.share(), me: this.drive.account,
       friends: [...this.list.values()].map((f) => Object.assign({}, f, { online: f.state !== 'offline' && now - f.ts < ONLINE, playing: f.state === 'playing' && !!f.game && now - f.ts < ONLINE })),
       recs: [...this.recs.values()].map((r) => Object.assign({}, r, { fromName: this.names.get(r.from) || '' })),
-      cols: [...this.cols.values()].map((c) => Object.assign({}, c, { ownerName: this.names.get(c.owner) || '' })) };
+      cols: [...this.cols.values()].map((c) => Object.assign({}, c, { ownerName: this.names.get(c.owner) || '' })),
+      assists: [...this.assists.values()].filter((a) => a.msgId).sort((a, b) => b.ts - a.ts).map((a) => Object.assign({}, a, { fromName: this.names.get(a.from) || '', helperName: this.names.get(a.doneBy || a.takenBy) || '' })) };
   }
   async create() {
     if (this.drive.stage !== 'ready') throw new Error(this.t('Connect Telegram first (Settings > TirsoDrive).'));
@@ -61,7 +71,7 @@ class Friends extends EventEmitter {
     }
     if (id && !this.chat()) this.ready(id, '');
   }
-  leave() { this.store.set('friendsLeft', true); this.setMine({}); this.recs.clear(); this.cols.clear(); this.list.clear(); this.myMsg = 0; this.emit('changed'); }
+  leave() { this.store.set('friendsLeft', true); this.setMine({}); this.recs.clear(); this.cols.clear(); this.assists.clear(); this.list.clear(); this.myMsg = 0; this.emit('changed'); }
   ready(chat, link) { this.store.set('friendsLeft', false); this.setMine({ chat, link }); this.list.clear(); this.myMsg = 0; this.load(); this.post(); this.emit('changed'); }
   line(text, key) { for (const l of text.split('\n')) { const i = l.indexOf(':'); if (i > 0 && l.substring(0, i) === key) return l.substring(i + 1).trim(); } return ''; }
   message(m) {
@@ -83,7 +93,77 @@ class Friends extends EventEmitter {
     return '';
   }
   /** Recommendations (#RSREC) and shared collections (#RSCOL), same format as the Android app. */
+  // ------------------------------------------------------------------ friend assist (same messages as the Android app)
+  assistFor(req) { let a = this.assists.get(req); if (!a) { a = { req, msgId: 0, from: 0, ts: 0, takenBy: 0, takeMsg: 0, doneMsg: 0, doneBy: 0, doneTs: 0, fileId: 0, doneFileId: 0, gameId: '', title: '', console: '', cover: '' }; this.assists.set(req, a); } return a; }
+  assistMessage(m) {
+    if (!m || m.chat_id !== this.chat() || !m.content || !m.sender_id || m.sender_id._ !== 'messageSenderUser') return;
+    let text = ''; let fileId = 0;
+    if (m.content._ === 'messageText') text = m.content.text.text;
+    else if (m.content._ === 'messageDocument') { text = (m.content.caption && m.content.caption.text) || ''; fileId = m.content.document && m.content.document.document ? m.content.document.document.id : 0; }
+    else return;
+    const req = this.line(text, 'req'); if (!req) return;
+    const user = m.sender_id.user_id; const ts = Number(this.line(text, 'ts')) || m.date * 1000;
+    if (text.startsWith(ASSIST) && fileId) {
+      if (Date.now() - ts > 7 * 86400000) return;
+      Object.assign(this.assistFor(req), { msgId: m.id, from: user, fileId, ts, gameId: this.line(text, 'id'), title: this.line(text, 'title'), console: this.line(text, 'console'), cover: this.line(text, 'cover') });
+    } else if (text.startsWith(TAKE)) { const a = this.assistFor(req); if (!a.takeMsg || m.id < a.takeMsg) Object.assign(a, { takeMsg: m.id, takenBy: user }); }
+    else if (text.startsWith(DONE) && fileId) { const a = this.assistFor(req); if (m.id > a.doneMsg) Object.assign(a, { doneMsg: m.id, doneBy: user, doneFileId: fileId, doneTs: ts }); }
+    else return;
+    this.nameOf(user); this.assistNotify(this.assists.get(req));
+  }
+  assistNotify(a) {
+    if (!a || !a.msgId) return;
+    const seen = new Set(this.store.get('assistNotified') || []); let key = ''; let text = '';
+    if (a.from === this.drive.account && a.doneMsg && Date.now() - a.doneTs < 86400000) { key = 'd' + a.req; text = (this.names.get(a.doneBy) || this.t('Your friend')) + ' ' + this.t('finished helping you with') + ' ' + a.title + '. ' + this.t('Open Friends and tap Continue.'); }
+    else if (a.from !== this.drive.account && !a.takenBy && Date.now() - a.ts < 15 * 60000) { key = 'r' + a.req; text = (this.names.get(a.from) || this.t('A friend')) + ' ' + this.t('needs help with') + ' ' + a.title; }
+    if (!key || seen.has(key)) return;
+    seen.add(key); this.store.set('assistNotified', [...seen].slice(-200)); this.emit('toast', text);
+  }
+  assistDeleted(ids) {
+    for (const id of ids) for (const a of [...this.assists.values()]) {
+      if (a.msgId === id) {
+        this.assists.delete(a.req); this.gone.add(a.req);
+        const mine = []; if (a.takenBy === this.drive.account && a.takeMsg) mine.push(a.takeMsg); if (a.doneBy === this.drive.account && a.doneMsg) mine.push(a.doneMsg);
+        if (mine.length) this.drive.invoke({ _: 'deleteMessages', chat_id: this.chat(), message_ids: mine, revoke: true }).catch(() => {});
+      } else if (a.takeMsg === id) Object.assign(a, { takeMsg: 0, takenBy: 0 });
+      else if (a.doneMsg === id) Object.assign(a, { doneMsg: 0, doneFileId: 0, doneBy: 0 });
+    }
+  }
+  doc(chat, file, caption) {
+    return this.drive.sendAndWait(chat, { _: 'inputMessageDocument', document: { _: 'inputDocument', document: { _: 'inputFileLocal', path: file }, disable_content_type_detection: true }, caption: { _: 'formattedText', text: caption, entities: [] } });
+  }
+  async askHelp(g, zip) {
+    const chat = this.chat(); if (!chat) throw new Error(this.t('First create or join the friends group.'));
+    const req = Date.now().toString(36) + (this.drive.account % 1296).toString(36);
+    const m = await this.doc(chat, zip, ASSIST + '\nreq:' + req + '\nid:' + g.id + '\ntitle:' + clip(g.title) + '\nconsole:' + g.console + '\ncover:' + clip(g.cover || g.title) + '\nts:' + Date.now());
+    this.assistMessage(m); this.emit('changed');
+  }
+  async takeAssist(req) {
+    const a = this.assists.get(req); if (!a) throw new Error(this.t('That request is no longer there.'));
+    if (a.takenBy !== this.drive.account) {
+      const m = await this.drive.sendAndWait(this.chat(), { _: 'inputMessageText', text: { _: 'formattedText', text: TAKE + '\nreq:' + req + '\nts:' + Date.now(), entities: [] }, clear_draft: false });
+      Object.assign(a, { takenBy: this.drive.account, takeMsg: m.id }); this.emit('changed');
+    }
+    const file = await this.drive.downloadNow(a.fileId); if (!file) throw new Error(this.t('Could not download'));
+    return { a, file };
+  }
+  async sendBack(req, zip) {
+    const a = this.assists.get(req); if (!a) throw new Error(this.t('That request is no longer there.'));
+    const m = await this.doc(this.chat(), zip, DONE + '\nreq:' + req + '\nts:' + Date.now());
+    Object.assign(a, { doneBy: this.drive.account, doneMsg: m.id, doneFileId: 0, doneTs: Date.now() }); this.emit('changed');
+  }
+  async assistResult(req) {
+    const a = this.assists.get(req); if (!a || !a.doneFileId) throw new Error(this.t('That request is no longer there.'));
+    const file = await this.drive.downloadNow(a.doneFileId); if (!file) throw new Error(this.t('Could not download'));
+    return { a, file };
+  }
+  closeAssist(req) {
+    const a = this.assists.get(req); if (!a || a.from !== this.drive.account) return;
+    this.assists.delete(req); this.gone.add(req); this.emit('changed');
+    this.drive.invoke({ _: 'deleteMessages', chat_id: this.chat(), message_ids: [a.msgId], revoke: true }).catch(() => {});
+  }
   social(m) {
+    this.assistMessage(m);
     if (!m || m.chat_id !== this.chat() || !m.content || m.content._ !== 'messageText' || !m.sender_id || m.sender_id._ !== 'messageSenderUser') return;
     const text = m.content.text.text; const user = m.sender_id.user_id; const ts = Number(this.line(text, 'ts')) || m.date * 1000;
     if (text.startsWith(REC)) {

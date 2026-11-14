@@ -106,6 +106,18 @@ class Cloud {
     if (old.length) await this.drive.invoke({ _: 'deleteMessages', chat_id: chat, message_ids: old, revoke: true });
   }
   rootFor(consoleId, sha) { return path.join(this.dir, 'saves', consoleId === 'GB' || consoleId === 'GBC' ? 'gb' : consoleId.toLowerCase(), sha); }
+  /** A zip of any save folder (Friend assist), same format as the backups. */
+  async zipRoot(root, title, consoleId, sha) { return this.zip({ root, title, console: consoleId, sha: sha || '' }); }
+  /** Puts the saves from a backup-format zip into a save folder (Friend assist). */
+  async extractTo(file, root) {
+    const tmp = path.join(this.dir, 'restore-tmp', String(Date.now()));
+    try {
+      await run7(['x', '-y', '-o' + tmp, file]);
+      if (!fs.existsSync(path.join(tmp, 'tirso-saves.txt'))) throw new Error(this.t('That file is not a valid save backup.'));
+      fs.mkdirSync(root, { recursive: true });
+      for (const d of ['saves', 'states']) if (fs.existsSync(path.join(tmp, d))) fs.cpSync(path.join(tmp, d), path.join(root, d), { recursive: true, force: true });
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
   /** Downloads a backup and puts its saves back where the game keeps them. */
   async restore(b) {
     const file = await this.drive.downloadNow(b.fileId);

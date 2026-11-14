@@ -138,6 +138,9 @@ final class TirsoDrive {
         else if(object instanceof TdApi.UpdateMessageSendSucceeded){
             TdApi.UpdateMessageSendSucceeded u=(TdApi.UpdateMessageSendSucceeded)object;
             if(u.oldMessageId==presenceTemp&&presenceTemp!=0){presenceTemp=0;myPresenceMsg=u.message.id;}
+            for(Assist a:assists.values()){if(a.msgId==u.oldMessageId)a.msgId=u.message.id;if(a.takeMsg==u.oldMessageId)a.takeMsg=u.message.id;if(a.doneMsg==u.oldMessageId)a.doneMsg=u.message.id;}
+            Rec rc=recs.remove(u.oldMessageId);if(rc!=null){rc.msgId=u.message.id;recs.put(rc.msgId,rc);}
+            SharedCol sc=sharedCols.remove(u.oldMessageId);if(sc!=null){sc.msgId=u.message.id;sharedCols.put(sc.msgId,sc);}
             Done<Long> d=pendingUploads.remove(u.oldMessageId);if(d!=null)d.done(u.message.id,null);
         }else if(object instanceof TdApi.UpdateMessageSendFailed){
             TdApi.UpdateMessageSendFailed u=(TdApi.UpdateMessageSendFailed)object;if(u.oldMessageId==presenceTemp)presenceTemp=0;Done<Long> d=pendingUploads.remove(u.oldMessageId);if(d!=null)d.done(0L,errorText(u.error));
@@ -721,6 +724,7 @@ final class TirsoDrive {
         return "";
     }
     private void socialMessage(TdApi.Message m){
+        assistMessage(m);
         if(m==null||m.chatId!=friendsChat()||!(m.content instanceof TdApi.MessageText)||!(m.senderId instanceof TdApi.MessageSenderUser))return;
         String text=((TdApi.MessageText)m.content).text.text;long user=((TdApi.MessageSenderUser)m.senderId).userId;
         long ts;try{ts=Long.parseLong(line(text,"ts"));}catch(NumberFormatException e){ts=(long)m.date*1000;}
@@ -733,7 +737,104 @@ final class TirsoDrive {
             if(!c.name.isEmpty()){for(java.util.Iterator<SharedCol> it=sharedCols.values().iterator();it.hasNext();){SharedCol o=it.next();if(o.owner==user&&o.name.equals(c.name)&&o.msgId!=m.id){if(o.msgId>m.id)return;it.remove();}}sharedCols.put(m.id,c);}
         }
     }
-    private void socialDeleted(long[] ids){for(long id:ids){recs.remove(id);sharedCols.remove(id);}}
+    private void socialDeleted(long[] ids){for(long id:ids){recs.remove(id);sharedCols.remove(id);}assistDeleted(ids);}
+
+    // ------------------------------------------------------------------ friend assist (friends group, "Assist" messages)
+    // #RSASSIST (zip of the save, from the one asking) · #RSTAKE (a friend is helping) · #RSDONE (zip of the save after helping)
+    // When the one asking continues (or cancels), their request is deleted; then each device deletes its own messages for it.
+    static final String ASSIST_TAG="#RSASSIST",TAKE_TAG="#RSTAKE",DONE_TAG="#RSDONE";
+    static final class Assist{String req="",gameId="",title="",console="",cover="";long msgId,from,ts,takenBy,takeMsg,doneMsg,doneBy,doneTs;int fileId,doneFileId;String fromName="",helperName="";
+        boolean open(){return msgId!=0&&takenBy==0;}}
+    final Map<String,Assist> assists=new HashMap<>();
+    /** Requests that ended on this run (their local folders can be removed). */
+    final Set<String> assistGone=new HashSet<>();
+    private Assist assistFor(String req){Assist a=assists.get(req);if(a==null){a=new Assist();a.req=req;assists.put(req,a);}return a;}
+    private void assistMessage(TdApi.Message m){
+        if(m==null||m.chatId!=friendsChat()||m.chatId==0||!(m.senderId instanceof TdApi.MessageSenderUser))return;
+        long user=((TdApi.MessageSenderUser)m.senderId).userId;String text;int fileId=0;
+        if(m.content instanceof TdApi.MessageText)text=((TdApi.MessageText)m.content).text.text;
+        else if(m.content instanceof TdApi.MessageDocument){TdApi.MessageDocument d=(TdApi.MessageDocument)m.content;text=d.caption==null?"":d.caption.text;if(d.document!=null&&d.document.document!=null)fileId=d.document.document.id;}
+        else return;
+        String req=line(text,"req");if(req.isEmpty())return;
+        long ts;try{ts=Long.parseLong(line(text,"ts"));}catch(NumberFormatException e){ts=(long)m.date*1000;}
+        if(text.startsWith(ASSIST_TAG)&&fileId!=0){
+            if(System.currentTimeMillis()-ts>7L*86_400_000L)return;
+            Assist a=assistFor(req);a.msgId=m.id;a.from=user;a.fromName=nameOf(user);a.fileId=fileId;a.ts=ts;
+            a.gameId=line(text,"id");a.title=line(text,"title");a.console=line(text,"console");a.cover=line(text,"cover");
+        }else if(text.startsWith(TAKE_TAG)){
+            Assist a=assistFor(req);if(a.takeMsg==0||m.id<a.takeMsg){a.takeMsg=m.id;a.takenBy=user;a.helperName=nameOf(user);}
+        }else if(text.startsWith(DONE_TAG)&&fileId!=0){
+            Assist a=assistFor(req);if(m.id>a.doneMsg){a.doneMsg=m.id;a.doneBy=user;a.doneFileId=fileId;a.doneTs=ts;a.helperName=nameOf(user);}
+        }
+        assistNotify(assists.get(req));
+    }
+    /** A short notice, once: a friend needs help (recent requests only), or a friend finished helping you. */
+    private void assistNotify(Assist a){
+        if(a==null||a.msgId==0)return;
+        Set<String> seen=new HashSet<>(prefs.getStringSet("assistNotified",new HashSet<>()));
+        String key;String text;
+        if(a.from==accountId&&a.doneMsg!=0&&System.currentTimeMillis()-a.doneTs<86_400_000L){key="d"+a.req;text=(a.helperName.isEmpty()?T.t("Tu amigo"):a.helperName)+T.t(" terminó de ayudarte con ")+a.title+T.t(". Abre Amigos y toca Continuar.");}
+        else if(a.from!=accountId&&a.takenBy==0&&System.currentTimeMillis()-a.ts<15*60_000L){key="r"+a.req;text=(a.fromName.isEmpty()?T.t("Un amigo"):a.fromName)+T.t(" necesita ayuda con ")+a.title;}
+        else return;
+        if(!seen.add(key))return;
+        if(seen.size()>200)seen.clear();
+        prefs.edit().putStringSet("assistNotified",seen).apply();
+        android.widget.Toast.makeText(context,text,android.widget.Toast.LENGTH_LONG).show();
+    }
+    private void assistDeleted(long[] ids){
+        for(long id:ids)for(Assist a:new ArrayList<>(assists.values())){
+            if(a.msgId==id){assists.remove(a.req);assistGone.add(a.req);
+                // The request is over: my own "helping" and "done" messages for it go too.
+                List<Long> mine=new ArrayList<>();if(a.takenBy==accountId&&a.takeMsg!=0)mine.add(a.takeMsg);if(a.doneBy==accountId&&a.doneMsg!=0)mine.add(a.doneMsg);
+                if(!mine.isEmpty()){long[] l=new long[mine.size()];for(int i=0;i<l.length;i++)l[i]=mine.get(i);checked(new TdApi.DeleteMessages(friendsChat(),l,true));}
+            }else if(a.takeMsg==id){a.takeMsg=0;a.takenBy=0;}
+            else if(a.doneMsg==id){a.doneMsg=0;a.doneFileId=0;a.doneBy=0;}
+        }
+    }
+    /** Requests that can be shown: the request message is there (not just a "helping" message). */
+    List<Assist> assistList(){List<Assist> out=new ArrayList<>();for(Assist a:assists.values())if(a.msgId!=0)out.add(a);out.sort((x,y)->Long.compare(y.ts,x.ts));return out;}
+    private void sendDoc(long chat,File zip,String caption,Done<Long> cb){
+        TdApi.InputMessageDocument content=new TdApi.InputMessageDocument(new TdApi.InputDocument(new TdApi.InputFileLocal(zip.getAbsolutePath()),null,true),new TdApi.FormattedText(caption,new TdApi.TextEntity[0]));
+        send(new TdApi.SendMessage(chat,null,null,null,null,content),r->{if(r instanceof TdApi.Message)pendingUploads.put(((TdApi.Message)r).id,cb);else cb.done(0L,errorText(r));});
+    }
+    /** "Ask a friend for help": the zip of my save goes to the friends group. */
+    void askHelp(Game g,File zip,Done<Boolean> callback){
+        Done<Boolean> cb=once(callback,false);long chat=friendsChat();
+        if(chat==0||!ready()){cb.done(false,T.t("Primero crea o únete al grupo de amigos."));return;}
+        String req=Long.toString(System.currentTimeMillis(),36)+Long.toString(accountId%1296,36);
+        String caption=ASSIST_TAG+"\nreq:"+req+"\nid:"+g.id+"\ntitle:"+clip(g.title)+"\nconsole:"+g.console.name()+"\ncover:"+clip(g.coverName)+"\nts:"+System.currentTimeMillis();
+        sendDoc(chat,zip,caption,(id,e)->cb.done(id!=null&&id>0,e));
+    }
+    /** "Help": tells everyone I'm on it, then downloads their save. */
+    void takeAssist(Assist a,Done<File> callback){
+        Done<File> cb=once(callback,null);long chat=friendsChat();
+        if(chat==0||!ready()){cb.done(null,T.t("Conecta TirsoDrive primero."));return;}
+        Runnable download=()->send(new TdApi.DownloadFile(a.fileId,32,0,0,true),r->{
+            if(r instanceof TdApi.File&&((TdApi.File)r).local.isDownloadingCompleted)cb.done(new File(((TdApi.File)r).local.path),null);else cb.done(null,errorText(r));});
+        if(a.takenBy==accountId){download.run();return;}
+        String text=TAKE_TAG+"\nreq:"+a.req+"\nts:"+System.currentTimeMillis();
+        send(new TdApi.SendMessage(chat,null,null,null,null,new TdApi.InputMessageText(new TdApi.FormattedText(text,new TdApi.TextEntity[0]),null,false)),r->{
+            if(r instanceof TdApi.Message){a.takenBy=accountId;a.takeMsg=((TdApi.Message)r).id;friendsChanged();download.run();}else cb.done(null,errorText(r));
+        });
+    }
+    /** "Send back": the save after helping goes to the friends group. */
+    void sendBack(Assist a,File zip,Done<Boolean> callback){
+        Done<Boolean> cb=once(callback,false);long chat=friendsChat();
+        if(chat==0||!ready()){cb.done(false,T.t("Conecta TirsoDrive primero."));return;}
+        sendDoc(chat,zip,DONE_TAG+"\nreq:"+a.req+"\nts:"+System.currentTimeMillis(),(id,e)->{if(id!=null&&id>0){a.doneBy=accountId;a.doneMsg=id;friendsChanged();}cb.done(id!=null&&id>0,e);});
+    }
+    void downloadAssistResult(Assist a,Done<File> callback){
+        Done<File> cb=once(callback,null);
+        send(new TdApi.DownloadFile(a.doneFileId,32,0,0,true),r->{
+            if(r instanceof TdApi.File&&((TdApi.File)r).local.isDownloadingCompleted)cb.done(new File(((TdApi.File)r).local.path),null);else cb.done(null,errorText(r));});
+    }
+    /** The one asking: done (or cancelled). Deleting the request tells the helpers' devices to clean up. */
+    void closeAssist(Assist a){
+        if(a.from!=accountId||a.msgId==0)return;
+        List<Long> ids=new ArrayList<>();ids.add(a.msgId);
+        long[] l=new long[ids.size()];for(int i=0;i<l.length;i++)l[i]=ids.get(i);
+        assists.remove(a.req);assistGone.add(a.req);checked(new TdApi.DeleteMessages(friendsChat(),l,true));friendsChanged();
+    }
     /** Everyone in the friends group (so friends who never opened RetroStream yet also show, as offline). */
     private void loadMembers(long chat){
         TdApi.Chat c=chats.get(chat);

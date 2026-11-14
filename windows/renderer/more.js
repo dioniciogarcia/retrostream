@@ -213,14 +213,17 @@ function friendsPage() {
   const cols = (f.cols || []).slice().sort((a, b) => ((a.owner === f.me) - (b.owner === f.me)) || a.name.localeCompare(b.name));
   if (!friendsPage.refreshed) { friendsPage.refreshed = true; window.rs.friends('refreshShared').then((r) => { if (r && !r.error) { S.friends = r; } }).catch(() => {}); }
   const mineCols = Object.keys(pref('collections') || {}); const notShared = mineCols.filter((n) => !cols.some((c) => c.owner === f.me && c.name === n));
-  return page(t('Friends'),
-    recs.length ? h('div', { style: 'padding:0 32px' }, h('div', { class: 'rowhead' }, h('h2', {}, t('Recommended for you'))),
+  const recStrip = recs.length ? h('div', { style: 'padding:0 32px' }, h('div', { class: 'rowhead' }, h('h2', {}, t('Recommended for you'))),
       h('div', { class: 'strip' }, recs.map((r) => { const mine = matchGame(r.gameId, r.title, r.console); const shown = mine || { id: 'rec:' + r.msgId, title: r.title, console: r.console, cover: r.cover };
         return h('button', { class: 'mini', 'data-key': 'rec_' + r.msgId, onClick: () => mine ? openGame(mine) : toast(t('Not in your library') + ': ' + r.title) },
-          cover(shown, 150, 200), h('div', { class: 't' }, r.title), h('div', { class: 's' }, t('from') + ' ' + (r.fromName || '…') + (mine ? '' : ' · ' + t('Not in your library')))); }))) : null,
+          cover(shown, 150, 200), h('div', { class: 't' }, r.title), h('div', { class: 's' }, t('from') + ' ' + (r.fromName || '…') + (mine ? '' : ' · ' + t('Not in your library')))); }))) : null;
+  return page(t('Friends'),
     h('div', { class: 'settings' },
     h('section', { class: 'group' }, h('h2', {}, t('Online now') + ' · ' + online.length),
       online.length ? online.map(row) : h('p', { style: 'padding:6px 10px;color:var(--muted)' }, people.length ? t('Nobody is online right now.') : t('Nobody else is in the group yet. Send them the invite link.'))),
+    assistGroup(f, act)),
+    recStrip,
+    h('div', { class: 'settings' },
     h('section', { class: 'group' }, h('h2', {}, t('Shared collections')),
       cols.map((c) => { const mine = c.owner === f.me; const have = c.games.filter((g) => matchGame(g.id, g.title, g.console)).length;
         return srow(c.name, (mine ? t('Yours') : t('from') + ' ' + (c.ownerName || '…')) + ' · ' + c.games.length + ' ' + t('games') + (mine ? '' : ' · ' + have + ' ' + t('in your library')), '#7A4DFF', () => sharedCollection(c, mine, act), 'col_' + c.msgId); }),
@@ -276,6 +279,38 @@ function screenshots(g) {
         h('img', { src: s.url, alt: t('Screenshot') + ' ' + new Date(s.date * 1000).toLocaleString() }))));
     });
   });
+}
+/** "Friends need help" and your own requests (Friend assist): one tap, nothing to type. */
+function assistGroup(f, act) {
+  const list = (f.assists || []).filter((a) => a.from === f.me || !a.takenBy || a.takenBy === f.me);
+  if (!list.length) return null;
+  const help = async (a) => {
+    const g = matchGame(a.gameId, a.title, a.console); if (!g) { toast(t('To help, you need this game in your library:') + ' ' + a.title); return; }
+    toast(t('Downloading the save from') + ' ' + (a.fromName || t('your friend')) + '…');
+    const r = await window.rs.friends('help', { req: a.req, game: g });
+    if (r && r.error) { toast(r.error); return; } S.friends = r; playGame(g, false, { assistRoot: r.root });
+  };
+  const send = () => (a) => act('sendBack', a.req, t('Save sent to') + ' ' + (a.fromName || t('your friend')));
+  const cont = async (a) => {
+    const g = S.games.find((x) => x.id === a.gameId) || matchGame(a.gameId, a.title, a.console); if (!g) { toast(t('That game is no longer in your library.')); return; }
+    toast(t('Downloading the save from') + ' ' + (a.helperName || t('your friend')) + '…');
+    const r = await window.rs.friends('continue', { req: a.req, game: g });
+    if (r && r.error) { toast(r.error); return; } S.friends = r; toast(t('Done. Your previous save was kept as a backup.')); playGame(g, false, { noPull: true });
+  };
+  const close = (a) => act('closeAssist', a.req);
+  const rows = list.map((a) => {
+    const who = a.fromName || t('A friend'); const helper = a.helperName || t('A friend'); const c = (byId[a.console] || {}).title || a.console;
+    let title; let sub; let color; let opts;
+    if (a.from !== f.me) {
+      if (!a.takenBy) { title = who + ' ' + t('needs help with') + ' ' + a.title; sub = c + ' · ' + t('Nobody is helping yet'); color = '#F59E0B'; opts = [[t('Help'), help]]; }
+      else if (a.doneBy === f.me) { title = t('You helped') + ' ' + who + ' ' + t('with') + ' ' + a.title; sub = c + ' · ' + t('Sent · waiting for them to continue'); color = '#22C55E'; opts = [[t('Play again'), help], [t('Send again'), send()]]; }
+      else { title = t("You're helping") + ' ' + who + ' ' + t('with') + ' ' + a.title; sub = c + ' · ' + t("When you're done, tap Send"); color = '#3B82F6'; opts = [[t('Send'), send()], [t('Play'), help]]; }
+    } else if (a.doneMsg) { title = helper + ' ' + t('finished helping you with') + ' ' + a.title; sub = c + ' · ' + t('Your current save is backed up first'); color = '#22C55E'; opts = [[t('Continue'), cont], [t('Dismiss'), close]]; }
+    else if (a.takenBy) { title = helper + ' ' + t('is helping you with') + ' ' + a.title; sub = c + ' · ' + t("You'll get a notice when they finish"); color = '#3B82F6'; opts = [[t('Cancel request'), close]]; }
+    else { title = t('You asked for help with') + ' ' + a.title; sub = c + ' · ' + t('Waiting for a friend'); color = '#8C95AA'; opts = [[t('Cancel request'), close]]; }
+    return srow(title, sub, color, () => (opts.length === 1 && a.from !== f.me) ? opts[0][1](a) : choose(title, opts.map(([label, fn]) => ({ label, pick: () => fn(a) }))), 'as_' + a.req);
+  });
+  return h('section', { class: 'group' }, h('h2', {}, t('Friends need help')), rows);
 }
 function matchGame(id, title, consoleId) {
   if (id) { const g = S.games.find((x) => x.id === id); if (g) return g; }

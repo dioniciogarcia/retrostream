@@ -26,6 +26,7 @@ let librarySync = null, remote = null, win = null, store = null, drive = null, p
 /** Telegram games plus the ones found in the PC folders the user chose. */
 function allGames() { return store.games().concat(local ? local.games() : []); }
 /** The games as the screens show them (names, covers and descriptions from the lookup). */
+function assistDir(req) { return path.join(app.getPath('userData'), 'assist', String(req).replace(/[^A-Za-z0-9]/g, '_')); }
 function shownGames() { return allGames().map((g) => meta.apply(g)); }
 let metaTimer = null;
 /** A desktop shortcut starts RetroStream with "--play <game id>". */
@@ -266,7 +267,11 @@ app.whenReady().then(() => {
     done({ error: 'unknown action' });
   });
   friends = new Friends({ drive, store, t: (s) => t(s) });
-  friends.on('changed', () => send('friends', friends.snapshot()));
+  friends.on('changed', () => {
+    for (const req of friends.gone) fs.rmSync(assistDir(req), { recursive: true, force: true });
+    send('friends', friends.snapshot());
+  });
+  friends.on('toast', (text) => toast(text));
   librarySync = new LibrarySync({ dir: app.getPath('userData'), drive, store, meta, onChange: (p) => send('prefs', p), onGames: () => send('state', { drive: drive.snapshot(), games: shownGames() }) });
   let wasReady = false;
   drive.on('state', () => { if (drive.stage === 'ready' && !wasReady) { wasReady = true; setTimeout(() => { friends.discover().catch(() => {}).then(() => { friends.load(); friends.inMenu(); }); librarySync.soon(2000); }, 4000); } });
@@ -327,13 +332,15 @@ app.whenReady().then(() => {
       if (/\.(7z|zip)\.0*1$/i.test(file)) file = await withParts(game, file);
       if (ext && (game.console === 'PS3' || game.console === 'SWITCH')) toast(t('Preparing the game… (big games take a while the first time)'));
       const prep = await player.prepare(game, file, !!ext);
+      // Friend assist: the friend's save in its own folder (never backed up as yours), or your save just put back (no Telegram check).
+      if (opts && opts.assistRoot) { if (ext || !prep.root) return { error: t('Helping with this console works on the phone and TV for now.') }; prep.root = opts.assistRoot; prep.entry = null; }
       const entry = prep.entry || (ext ? external.sharedEntry(game.console) : null);
-      if (drive.stage === 'ready' && entry) {
+      if (drive.stage === 'ready' && entry && !(opts && (opts.assistRoot || opts.noPull))) {
         // The newest save from the phone, TV or another PC first (but never wait more than ~8 seconds for it).
         const pulled = await Promise.race([cloud.pullNewest(entry).catch(() => ''), new Promise((r) => setTimeout(() => r(''), 8000))]);
         if (pulled) toast(pulled);
       }
-      if (entry) { const m = store.get('saveOf') || {}; m[game.id] = entry; store.set('saveOf', m); }
+      if (entry && !(opts && opts.assistRoot)) { const m = store.get('saveOf') || {}; m[game.id] = entry; store.set('saveOf', m); }
       friends.playing(game);
       remote.playing(game, ext ? ['exit'] : ['pause', 'resume', 'save', 'load', 'shot', 'ff', 'reset', 'backup', 'exit', 'frame', 'res', 'filter'].concat(game.console === 'MAME' ? [] : ['cheats']), remoteSettings(game, !!ext));
       if (ext) { await external.launch(prep, Object.assign({}, store.prefs.data, opts || {}), afterGame); return { ok: true }; }
@@ -452,6 +459,45 @@ app.whenReady().then(() => {
         case 'recommend': await friends.recommend(meta.apply(arg)); break;
         case 'shareCol': { const ids = (store.get('collections') || {})[arg] || []; await friends.shareCollection(arg, shownGames().filter((g) => ids.includes(g.id))); break; }
         case 'unshareCol': await friends.unshareCollection(arg); break;
+        case 'ask': {
+          const entry = (store.get('saveOf') || {})[arg.id];
+          if (!entry || !fs.existsSync(entry.root)) return { error: t('Play the game once before asking for help.'), friends: friends.snapshot() };
+          const zip = await cloud.zipRoot(entry.root, arg.title, arg.console, entry.sha);
+          try { await friends.askHelp(arg, zip); } finally { try { fs.unlinkSync(zip); } catch (_) { /* ok */ } }
+          break;
+        }
+        case 'help': {
+          const a = friends.assists.get(arg.req); if (!a) return { error: t('That request is no longer there.'), friends: friends.snapshot() };
+          if (external.engineFor(arg.game.console)) return { error: t('Helping with this console works on the phone and TV for now.'), friends: friends.snapshot() };
+          const dir = assistDir(arg.req);
+          const ready = a.takenBy === drive.account && fs.existsSync(dir) && fs.readdirSync(dir).length > 0;
+          if (!ready) { const { file } = await friends.takeAssist(arg.req); await cloud.extractTo(file, dir); }
+          return Object.assign(friends.snapshot(), { root: dir });
+        }
+        case 'sendBack': {
+          const a = friends.assists.get(arg); const dir = assistDir(arg);
+          if (!a || !fs.existsSync(dir)) return { error: t('Play first to help.'), friends: friends.snapshot() };
+          const zip = await cloud.zipRoot(dir, a.title, a.console, '');
+          try { await friends.sendBack(arg, zip); } finally { try { fs.unlinkSync(zip); } catch (_) { /* ok */ } }
+          break;
+        }
+        case 'continue': {
+          const entry = (store.get('saveOf') || {})[arg.game.id];
+          if (!entry) return { error: t('Play the game once before asking for help.'), friends: friends.snapshot() };
+          // Your save as it was: to your backups channel and a copy on this PC, before the one your friend sent back goes in.
+          try { await cloud.upload(entry, false); } catch (_) { /* the local copy below still keeps it */ }
+          try {
+            const keep = path.join(app.getPath('userData'), 'assist_backups'); fs.mkdirSync(keep, { recursive: true });
+            const z = await cloud.zipRoot(entry.root, entry.title, entry.console, entry.sha);
+            fs.renameSync(z, path.join(keep, path.basename(z).replace(' - saves ', ' - before help ')));
+            for (const f of fs.readdirSync(keep).map((n) => path.join(keep, n)).sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs).slice(10)) fs.unlinkSync(f);
+          } catch (_) { /* best effort */ }
+          const { file } = await friends.assistResult(arg.req);
+          await cloud.extractTo(file, entry.root);
+          friends.closeAssist(arg.req);
+          break;
+        }
+        case 'closeAssist': friends.closeAssist(arg); break;
         case 'refreshShared': await friends.refreshShared(store.get('collections') || {}, shownGames()); break;
         default: break;
       }
