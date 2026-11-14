@@ -503,7 +503,24 @@ const EMU = {
         ['backend', 'Graphics engine', [[1, 'Vulkan (recommended)'], [0, 'OpenGL']]],
         ['accuracy', 'GPU accuracy', [[0, 'Normal (fastest)'], [1, 'High'], [2, 'Extreme (slowest)']]],
         ['asyncShaders', 'Asynchronous shaders', 'Less stutter while new effects load'],
-        ['multiCore', 'Multi-core', 'Much faster; leave on']]]] }
+        ['multiCore', 'Multi-core', 'Much faster; leave on']]]] },
+  rpcs3: { title: 'RPCS3 · PlayStation 3', color: '#3A404E', defaults: { renderer: 'Vulkan', scale: 100, aspect: '16:9', frameLimit: 'Auto', aniso: 0, msaa: 'Auto', scaling: 'Bilinear', shaders: 'Async Shader Recompiler', vsync: false, stretch: false, fps: false, spuBlock: 'Safe', colorBuffers: false },
+    groups: [
+      ['Picture', [
+        ['scale', 'Resolution', [[50, '50% (360p)'], [75, '75% (540p)'], [100, '100% (720p) · native'], [150, '150% (1080p)'], [200, '200% (1440p)'], [300, '300% (4K)']]],
+        ['aspect', 'Aspect ratio', [['16:9', '16:9 (default)'], ['4:3', '4:3']]],
+        ['stretch', 'Stretch to the screen', 'Fills the whole screen, ignoring the aspect ratio'],
+        ['scaling', 'Scaling filter', [['Bilinear', 'Bilinear (default)'], ['Nearest', 'Nearest (sharp pixels)'], ['FidelityFX Super Resolution', 'AMD FSR']]],
+        ['msaa', 'Anti-aliasing', [['Auto', 'Automatic'], ['Disabled', 'Off']]],
+        ['aniso', 'Texture filtering', [[0, 'Automatic'], [2, '2x'], [4, '4x'], [8, '8x'], [16, '16x']]],
+        ['vsync', 'V-Sync', 'Removes tearing (may add a little delay)'],
+        ['fps', 'Show FPS', 'Frames per second in a corner']]],
+      ['Performance', [
+        ['renderer', 'Graphics engine', [['Vulkan', 'Vulkan (recommended)'], ['OpenGL', 'OpenGL']]],
+        ['frameLimit', 'Frame limit', [['Auto', 'Automatic (default)'], ['Off', 'Off (fastest)'], ['30', '30 FPS'], ['60', '60 FPS']]],
+        ['shaders', 'Shader compilation', [['Async Shader Recompiler', 'Asynchronous (recommended)'], ['Async with Shader Interpreter', 'Asynchronous with interpreter (less stutter, slower)'], ['Shader Interpreter only', 'Interpreter only (slowest)'], ['Legacy (single threaded)', 'Legacy (single thread)']]],
+        ['spuBlock', 'SPU block size', [['Safe', 'Safe (default)'], ['Mega', 'Mega (faster)'], ['Giga', 'Giga (fastest, some games break)']]],
+        ['colorBuffers', 'Write color buffers', 'Fixes missing effects in some games (slower)']]]] }
 };
 function emuPage(name) {
   const e = EMU[name]; const all = pref('emuSettings') || {}; const cur = Object.assign({}, e.defaults, all[name] || {});
@@ -518,4 +535,4 @@ function emuPage(name) {
     h('div', { class: 'settings' }, ...groups,
       h('section', { class: 'group' }, h('h2', {}, t('Reset')), srow(t('Back to the recommended settings'), '', '#8C95AA', () => confirmBox(t('Reset'), t('All the settings on this page go back to the recommended ones.'), t('Reset'), () => { delete all[name]; setPref('emuSettings', all); render(); }), 'emu_reset'))));
 }
-const PAGES = { resolution: resolutionPage, consoles: consolesPage, homeLayout: homePage, pc: pcPage, history: historyPage, missing: missingPage, space: spacePage, controllers: controllersPage, friends: friendsPage, remote: remotePage, media: mediaPage, emuDolphin: () => emuPage('dolphin'), emuEden: () => emuPage('eden') };
+const PAGES = { resolution: resolutionPage, consoles: consolesPage, homeLayout: homePage, pc: pcPage, history: historyPage, missing: missingPage, space: spacePage, controllers: controllersPage, friends: friendsPage, remote: remotePage, media: mediaPage, emuDolphin: () => emuPage('dolphin'), emuEden: () => emuPage('eden'), emuRpcs3: () => emuPage('rpcs3') };

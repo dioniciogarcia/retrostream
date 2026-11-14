@@ -2,6 +2,22 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+  "Resolution, frame limit, filters, shaders…": "Resolución, límite de FPS, filtros, shaders…",
+  "100% (720p) · native": "100% (720p) · nativa",
+  "Fills the whole screen, ignoring the aspect ratio": "Llena toda la pantalla, sin respetar la relación de aspecto",
+  "Frame limit": "Límite de FPS",
+  "Automatic (default)": "Automático (predeterminado)",
+  "Off (fastest)": "Sin límite (lo más rápido)",
+  "Asynchronous (recommended)": "Asíncrona (recomendado)",
+  "Asynchronous with interpreter (less stutter, slower)": "Asíncrona con intérprete (menos tirones, más lenta)",
+  "Interpreter only (slowest)": "Solo intérprete (lo más lento)",
+  "Legacy (single thread)": "Antigua (un solo hilo)",
+  "SPU block size": "Tamaño de bloque SPU",
+  "Safe (default)": "Seguro (predeterminado)",
+  "Mega (faster)": "Mega (más rápido)",
+  "Giga (fastest, some games break)": "Giga (lo más rápido, algunos juegos fallan)",
+  "Write color buffers": "Escribir búferes de color",
+  "Fixes missing effects in some games (slower)": "Corrige efectos que faltan en algunos juegos (más lento)",
   "Game settings": "Ajustes de los juegos",
   "Resolution, aspect ratio, anti-aliasing, shaders…": "Resolución, relación de aspecto, antialiasing, shaders…",
   "Docked or handheld, resolution, filters, accuracy…": "Modo TV o portátil, resolución, filtros, precisión…",

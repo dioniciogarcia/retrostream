@@ -576,6 +576,7 @@ function engines() {
     h('div', { class: 'settings' },
       card('dolphin', 'Dolphin', 'GameCube · Wii', '#5B3E9E', [srow(t('Game settings'), t('Resolution, aspect ratio, anti-aliasing, shaders…'), '#7A4DFF', () => go('emuDolphin'), 'e_dset')], t('Controller: Xbox layout set up for you. Wii: the Wii Remote is on the right stick (pointer) with the Nunchuk on the left stick. Saves go in the same backups as on the phone and TV.')),
       card('rpcs3', 'RPCS3', 'PlayStation 3', '#3A404E', [
+        srow(t('Game settings'), t('Resolution, frame limit, filters, shaders…'), '#5A6378', () => go('emuRpcs3'), 'e_rset'),
         srow(t('PS3 firmware'), st.ps3fw ? t('Installed') : t('Needed: your own PS3UPDAT.PUP'), st.ps3fw ? '#22C55E' : '#F0B455', () => act('ps3fw', null, t('PS3 firmware installed')), 'e_ps3fw')],
         t('Needs a fairly strong PC. Games: ISO, or the game folder in a .zip/.7z (split parts .7z.001, .002… are joined by themselves). Set your controller once with Open RPCS3.')),
       card('eden', 'Eden', 'Nintendo Switch', '#B23A3A', [

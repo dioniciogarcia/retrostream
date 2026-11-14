@@ -75,6 +75,8 @@ const ENGINES = {
 /** Settings > Dolphin (GameCube / Wii) and Settings > Eden (Switch): what RetroStream writes before each game. */
 const DOLPHIN_DEFAULTS = { res: 'auto', backend: 'auto', aspect: 0, widescreen: false, aa: 1, aniso: 0, vsync: false, shaders: 2, texcache: 512, fps: false, dualCore: true, cheats: true, unlimited: false };
 const EDEN_DEFAULTS = { docked: true, res: 2, backend: 1, filter: 1, aa: 0, aspect: 0, vsync: 2, accuracy: 0, asyncShaders: true, aniso: 0, fullscreen: 0, multiCore: true };
+const RPCS3_DEFAULTS = { renderer: 'Vulkan', scale: 100, aspect: '16:9', frameLimit: 'Auto', aniso: 0, msaa: 'Auto', scaling: 'Bilinear', shaders: 'Async Shader Recompiler',
+  vsync: false, stretch: false, fps: false, spuBlock: 'Safe', colorBuffers: false };
 const FOR_CONSOLE = { GC: 'dolphin', WII: 'dolphin', PS3: 'rpcs3', SWITCH: 'eden' };
 
 class External {
@@ -223,6 +225,44 @@ class External {
       ['Nunchuk/Buttons/C', '`Shoulder L`'], ['Nunchuk/Buttons/Z', '`Trigger L`'], ['Rumble/Motor', '`Motor L`']]) + '\n[Wiimote2]\nSource = 0\n[Wiimote3]\nSource = 0\n[Wiimote4]\nSource = 0\n[BalanceBoard]\nSource = 0\n');
   }
 
+  /**
+   * Changes keys in a YAML settings file like RPCS3's: [values] is { 'Video': { 'Renderer': 'Vulkan', 'Performance Overlay': { 'Enabled': 'false' } } }.
+   * Only the given keys are touched; missing ones are added to their section.
+   */
+  static yaml(p, values) {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    const lines = fs.existsSync(p) ? fs.readFileSync(p, 'utf8').replace(/\r/g, '').split('\n') : [];
+    const indentOf = (l) => l.length - l.trimStart().length;
+    const put = (from, to, depth, obj) => {   // section body is lines[from..to), keys at indent depth*2
+      for (const [k, v] of Object.entries(obj)) {
+        const pad = ' '.repeat(depth * 2); let at = -1;
+        for (let i = from; i < to; i++) { const l = lines[i]; if (indentOf(l) === depth * 2 && l.trimStart().startsWith(k + ':')) { at = i; break; } }
+        if (typeof v === 'object') {
+          if (at < 0) { lines.splice(to, 0, pad + k + ':'); at = to; to++; }
+          let end = at + 1; while (end < lines.length && (lines[end].trim() === '' || indentOf(lines[end]) > depth * 2)) end++;
+          const before = lines.length; put(at + 1, end, depth + 1, v); to += lines.length - before;
+        } else if (at >= 0) lines[at] = pad + k + ': ' + v;
+        else { lines.splice(to, 0, pad + k + ': ' + v); to++; }
+      }
+    };
+    put(0, lines.length, 0, values);
+    fs.writeFileSync(p, lines.join('\n').replace(/\n*$/, '\n'));
+  }
+  /** RPCS3's settings (config/config.yml next to the program), from Settings > RPCS3 (PS3). */
+  rpcs3Config(emu) {
+    const exe = this.exe('rpcs3'); if (!exe) return;
+    const o = Object.assign({}, RPCS3_DEFAULTS, emu || {});
+    const dir = path.dirname(exe);
+    const file = fs.existsSync(path.join(dir, 'config.yml')) && !fs.existsSync(path.join(dir, 'config', 'config.yml')) ? path.join(dir, 'config.yml') : path.join(dir, 'config', 'config.yml');
+    const b = (x) => (x ? 'true' : 'false');
+    External.yaml(file, {
+      Core: { 'SPU Block Size': o.spuBlock },
+      Video: { Renderer: o.renderer, 'Resolution Scale': String(o.scale), 'Aspect ratio': o.aspect, 'Frame limit': o.frameLimit, 'Anisotropic Filter Override': String(o.aniso),
+        MSAA: o.msaa, 'Output Scaling Mode': o.scaling, 'Shader Mode': o.shaders, VSync: b(o.vsync), 'Stretch To Display Area': b(o.stretch), 'Write Color Buffers': b(o.colorBuffers),
+        'Performance Overlay': { Enabled: b(o.fps) } }
+    });
+  }
+
   /** Eden's own settings file (user/config/qt-config.ini), from Settings > Eden (Switch). */
   edenConfig(emu) {
     const o = Object.assign({}, EDEN_DEFAULTS, emu || {});
@@ -251,6 +291,7 @@ class External {
       args = ['-b', '-u', user, '-e', rom];
     } else if (name === 'rpcs3') {
       if (!this.status().ps3fw) throw new Error(this.t('PS3 games need your own PS3 firmware. Add it in Settings > GameCube, Wii, PS3 and Switch.'));
+      this.rpcs3Config((prefs.emuSettings || {}).rpcs3);
       args = ['--no-gui', '--fullscreen', rom];
     } else {
       const s = this.status(); if (!s.switchKeys) throw new Error(this.t('Switch games need your own keys (prod.keys). Add them in Settings > GameCube, Wii, PS3 and Switch.'));
@@ -271,4 +312,4 @@ class External {
   }
 }
 
-module.exports = { External, FOR_CONSOLE, ENGINES, DOLPHIN_DEFAULTS, EDEN_DEFAULTS };
+module.exports = { External, FOR_CONSOLE, ENGINES, DOLPHIN_DEFAULTS, EDEN_DEFAULTS, RPCS3_DEFAULTS };
