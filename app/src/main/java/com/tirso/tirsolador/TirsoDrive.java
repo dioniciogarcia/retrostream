@@ -275,6 +275,22 @@ final class TirsoDrive {
         persistBindings();discovering=false;status=found+T.t(" consolas con grupo asignado");publish(false);
         if(found>0)sync();else drainRefresh();
     }
+    /** Channel assignments (console -> chat), for the library sync. */
+    JSONObject bindingsJson(){try{return new JSONObject(prefs.getString("binding_"+accountId,"{}"));}catch(Exception e){return new JSONObject();}}
+    /** Assignments made on your other devices: saved, then the channels are looked up again. */
+    void syncBindings(JSONObject merged){
+        if(accountId==0)return;
+        JSONObject cur=bindingsJson();boolean diff=false;
+        try{java.util.Iterator<String> it=merged.keys();while(it.hasNext()){String k=it.next();long v=merged.optLong(k);if(v!=0&&cur.optLong(k)!=v){cur.put(k,v);diff=true;}}}catch(Exception ignored){}
+        if(!diff)return;
+        prefs.edit().putString("binding_"+accountId,cur.toString()).apply();
+        rediscover(0);
+    }
+    private void rediscover(int tries){
+        if(!ready())return;
+        if(discovering||syncing){if(tries<20)main.postDelayed(()->rediscover(tries+1),30000);return;}
+        discover();
+    }
     private void persistBindings(){
         JSONObject value=new JSONObject();try{for(Source s:sources.values())if(s.chatId!=0)value.put(s.console.name(),s.chatId);}catch(Exception ignored){ }
         prefs.edit().putString("binding_"+accountId,value.toString()).apply();

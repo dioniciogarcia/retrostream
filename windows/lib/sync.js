@@ -5,6 +5,8 @@
 //   {rs:"sync", v:1, device, items:{ key: {v: value or null, t: time changed} }}
 // Keys: f:<game> favorite · h:<game> hidden · c:<game> completed · l:<game> play later · col:<name> collection (ids)
 //       pl:<time>:<game> one play · ur:<game> / ur:* removed from recents at · pt:<device>:<game file name> play time on that device
+// Also: gs:<game> this game's settings {res, filter} · m:<game> your fix of its name/cover/description · co:<game file name> cheats on (codes)
+//       bind:<CONSOLE> channel assigned (chat id) · vc:<CONSOLE> console hidden (false) · hs:<section> home section shown · pd:<id> (phone only)
 // The newest change wins; plays and play time only add up.
 const fs = require('fs');
 const os = require('os');
@@ -17,13 +19,24 @@ const KEEP_PLAYS = 300;
 const TOMB_MS = 60 * 86400000;
 
 const ptName = (id) => String(id).replace(/[^A-Za-z0-9._-]/g, '_');
-const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+/** Same text whatever order the fields were written in (matches the Android app). */
+function canon(v) {
+  if (v === null || v === undefined) return 'null';
+  if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+  if (typeof v === 'object') return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(v);
+  return JSON.stringify(v);
+}
+const same = (a, b) => canon(a) === canon(b);
+/** Remote wins when newer; on a tie, the same value is picked on every device. */
+const wins = (r, s) => !s || (r.t || 0) > (s.t || 0) || ((r.t || 0) === (s.t || 0) && canon(r.v) > canon(s.v));
 const numeric = (k) => k.startsWith('ur:') || k.startsWith('pt:');
-const tomb = (k) => /^(f|h|c|l|col):/.test(k);
+const tomb = (k) => /^(f|h|c|l|col|gs|m|co|vc):/.test(k);
+const SECTIONS = ['continue', 'recent', 'new', 'friends', 'consoles'];
 
 class LibrarySync {
-  constructor({ dir, drive, store, onChange }) {
-    Object.assign(this, { dir, drive, store, onChange });
+  constructor({ dir, drive, store, meta, onChange, onGames }) {
+    Object.assign(this, { dir, drive, store, meta, onChange, onGames });
     this.busy = false; this.again = false; this.timer = null;
     drive.on('td', (u) => {
       if (u._ !== 'updateNewMessage') return;
@@ -77,8 +90,29 @@ class LibrarySync {
     for (const k of Object.keys(ur)) if (ur[k] > 0) o['ur:' + k] = ur[k];
     const pt = g('playtime') || {}; const me = this.device();
     for (const id of Object.keys(pt)) if (pt[id] >= 60000) o['pt:' + me + ':' + ptName(id)] = Math.round(pt[id]);
+    // this game's settings
+    const gs = g('gameSettings') || {};
+    for (const id of Object.keys(gs)) { const v = {}; if (gs[id] && gs[id].res) v.res = gs[id].res; if (gs[id] && gs[id].filter) v.filter = gs[id].filter; if (v.res || v.filter) o['gs:' + id] = v; }
+    // your fixes of names, covers and descriptions
+    const cache = (this.meta && this.meta.cache) || {};
+    for (const id of Object.keys(cache)) { const e = cache[id]; if (id !== '_v' && e && e.manual) { const c = Object.assign({}, e); delete c.manual; o['m:' + id] = c; } }
+    // cheats that are on
+    try {
+      for (const f of fs.readdirSync(this.cheatsDir())) if (f.endsWith('.txt')) {
+        const codes = fs.readFileSync(path.join(this.cheatsDir(), f), 'utf8').split('\n').map((x) => x.trim()).filter(Boolean);
+        o['co:' + f.slice(0, -4)] = [...new Set(codes)].sort();
+      }
+    } catch (_) { /* none yet */ }
+    // channels, consoles shown, home sections
+    const b = (g('bindings') || {})[this.drive.account] || {};
+    for (const c of Object.keys(b)) if (b[c]) o['bind:' + c] = Number(b[c]);
+    const off = g('shownConsoles') || {};
+    for (const c of Object.keys(off)) if (off[c] === false) o['vc:' + c] = false;
+    const sec = g('sections') || {};
+    for (const k of SECTIONS) o['hs:' + k] = sec[k] !== false;
     return o;
   }
+  cheatsDir() { return path.join(this.dir, 'cheats', 'on'); }
   /** Writes the merged items into this PC's settings and tells the screens. */
   materialize(items) {
     const me = this.device(); const sets = { 'f:': [], 'h:': [], 'c:': [], 'l:': [] };
@@ -96,7 +130,33 @@ class LibrarySync {
     for (const n of Object.keys(cols)) if (!outCols[n]) outCols[n] = cols[n];
     plays.sort((a, b) => b.at - a.at);
     const p = { favorites: sets['f:'], hidden: sets['h:'], completed: sets['c:'], later: sets['l:'], collections: outCols, plays: plays.slice(0, KEEP_PLAYS), unrecent: ur, playtimeOthers: others };
+    // this game's settings, cheats, consoles shown, home sections
+    const gs = {}; const co = {}; const off = Object.assign({}, this.store.get('shownConsoles') || {}); const sec = Object.assign({}, this.store.get('sections') || {});
+    const man = {}; const bind = {};
+    for (const c of Object.keys(off)) if (off[c] === false) delete off[c];
+    for (const k of Object.keys(items)) {
+      const v = items[k].v; if (v === null || v === undefined) continue;
+      if (k.startsWith('gs:')) gs[k.substring(3)] = Object.assign({}, v);
+      else if (k.startsWith('m:')) man[k.substring(2)] = v;
+      else if (k.startsWith('co:')) co[k.substring(3)] = Array.isArray(v) ? v : [];
+      else if (k.startsWith('bind:')) bind[k.substring(5)] = Number(v);
+      else if (k.startsWith('vc:')) { if (v === false) off[k.substring(3)] = false; }
+      else if (k.startsWith('hs:')) sec[k.substring(3)] = v !== false;
+    }
+    Object.assign(p, { gameSettings: gs, shownConsoles: off, sections: sec });
+    try {
+      fs.mkdirSync(this.cheatsDir(), { recursive: true });
+      for (const f of fs.readdirSync(this.cheatsDir())) if (f.endsWith('.txt') && !co[f.slice(0, -4)]) fs.unlinkSync(path.join(this.cheatsDir(), f));
+      for (const n of Object.keys(co)) fs.writeFileSync(path.join(this.cheatsDir(), n + '.txt'), co[n].map((c) => c + '\n').join(''));
+    } catch (_) { /* next time */ }
     for (const k of Object.keys(p)) this.store.set(k, p[k]);
+    if (this.meta && this.meta.cache) {
+      let metaChanged = false; const cache = this.meta.cache;
+      for (const id of Object.keys(cache)) if (id !== '_v' && cache[id] && cache[id].manual && !man[id]) { delete cache[id]; metaChanged = true; }
+      for (const id of Object.keys(man)) { const e = Object.assign({}, man[id], { manual: true }); if (!same(cache[id], e)) { cache[id] = e; metaChanged = true; } }
+      if (metaChanged) { this.meta.save(); if (this.onGames) this.onGames(); }
+    }
+    this.syncBindings(bind);
     if (this.onChange) this.onChange(p);
   }
 
@@ -138,7 +198,7 @@ class LibrarySync {
       for (const k of Object.keys(remote)) {
         const r = remote[k]; const s = items[k]; if (!r) continue;
         if (numeric(k)) { if (!s || (r.v || 0) > (s.v || 0)) { items[k] = r; changed = true; } continue; }
-        if (!s || (r.t || 0) > (s.t || 0)) { if (!s || !same(s.v, r.v)) changed = true; items[k] = r; }
+        if (wins(r, s)) { if (!s || !same(s.v, r.v)) changed = true; items[k] = r; }
       }
       st.seen = newest.messageId;
     }
@@ -161,6 +221,16 @@ class LibrarySync {
       const old = docs.slice(1).map((d) => d.messageId).filter((id) => id !== m.id);
       if (old.length) this.drive.invoke({ _: 'deleteMessages', chat_id: chat, message_ids: old, revoke: true }).catch(() => {});
     } finally { try { fs.unlinkSync(file); } catch (_) { /* ok */ } }
+  }
+  /** Channel assignments made on your other devices: saved, then the channels are looked up again. */
+  syncBindings(bind) {
+    const acc = this.drive.account; if (!acc) return;
+    const all = this.store.get('bindings') || {}; const mine = Object.assign({}, all[acc] || {}); let diff = false;
+    for (const c of Object.keys(bind)) if (bind[c] && Number(mine[c]) !== bind[c]) { mine[c] = bind[c]; diff = true; }
+    if (!diff) return;
+    all[acc] = mine; this.store.set('bindings', all);
+    const again = (n) => { if (this.drive.busy) { if (n < 20) setTimeout(() => again(n + 1), 30000); return; } this.drive.discover().catch(() => {}); };
+    again(0);
   }
   sameItems(a, b) {
     const ka = Object.keys(a); if (ka.length !== Object.keys(b).length) return false;

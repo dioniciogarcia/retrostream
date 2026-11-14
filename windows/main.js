@@ -112,7 +112,7 @@ async function withParts(game, first) {
 
 const PREF_KEYS = new Set(['fullscreen', 'lang', 'theme', 'favorites', 'hidden', 'completed', 'collections', 'recent', 'plays', 'onboarded', 'skipped', 'sort', 'keep',
   'homeTheme', 'resolution', 'gameSettings', 'palette', 'dark', 'logoStyle', 'sections', 'shownConsoles', 'swapAB', 'playerWindowed', 'queue', 'later', 'unrecent']);
-const SYNCED_KEYS = new Set(['favorites', 'hidden', 'completed', 'collections', 'plays', 'later', 'unrecent']);
+const SYNCED_KEYS = new Set(['favorites', 'hidden', 'completed', 'collections', 'plays', 'later', 'unrecent', 'gameSettings', 'shownConsoles', 'sections']);
 
 /**
  * Controllers for the menus: rs-player.exe in "--pads 1" mode reads them with SDL (PS5 / PS4 over Bluetooth, Switch Pro…),
@@ -161,7 +161,7 @@ function remoteSettings(game, ext) {
   const res = own.res || (store.get('resolution') || {})[game.console] || 'medium';
   return {
     res: ['MAME', 'NDS'].includes(game.console) ? '' : res, resOptions: ['MAME', 'NDS'].includes(game.console) ? [] : ['low', 'medium', 'high'],
-    filter: own.filter || (flat ? (res === 'high' ? 'smooth' : 'sharp') : 'smooth'), filters: ['sharp', 'smooth']
+    filter: ({ sharp: 'sharp', lcd: 'sharp', crt: 'sharp', smooth: 'smooth', smooth2: 'smooth' })[own.filter] || (flat ? (res === 'high' ? 'smooth' : 'sharp') : 'smooth'), filters: ['sharp', 'smooth']
   };
 }
 function gameById(id) { return allGames().find((g) => g.id === id); }
@@ -250,7 +250,7 @@ app.whenReady().then(() => {
       const v = String(req.value || ''); const id = remote.now.game.id;
       if (a === 'filter' && !['sharp', 'smooth'].includes(v)) { done({ error: 'unknown action' }); return; }
       if (a === 'res' && !['low', 'medium', 'high'].includes(v)) { done({ error: 'unknown action' }); return; }
-      const all = store.get('gameSettings') || {}; all[id] = Object.assign({}, all[id], { [a]: v }); store.set('gameSettings', all);
+      const all = store.get('gameSettings') || {}; all[id] = Object.assign({}, all[id], { [a]: v }); store.set('gameSettings', all); if (librarySync) librarySync.soon(8000);
       if (a === 'filter') { await player.command('filter ' + v); remote.now.settings.filter = v; done({ ok: true }); return; }
       // Resolution: the engine reads it when the game starts, so the game closes (saving where it is) and opens again.
       remote.now.settings.res = v; remote.relaunch = id;
@@ -267,7 +267,7 @@ app.whenReady().then(() => {
   });
   friends = new Friends({ drive, store, t: (s) => t(s) });
   friends.on('changed', () => send('friends', friends.snapshot()));
-  librarySync = new LibrarySync({ dir: app.getPath('userData'), drive, store, onChange: (p) => send('prefs', p) });
+  librarySync = new LibrarySync({ dir: app.getPath('userData'), drive, store, meta, onChange: (p) => send('prefs', p), onGames: () => send('state', { drive: drive.snapshot(), games: shownGames() }) });
   let wasReady = false;
   drive.on('state', () => { if (drive.stage === 'ready' && !wasReady) { wasReady = true; setTimeout(() => { friends.discover().catch(() => {}).then(() => { friends.load(); friends.inMenu(); }); librarySync.soon(2000); }, 4000); } });
   drive.on('state', (changed) => { send('state', { drive: drive.snapshot(), games: changed ? shownGames() : null }); if (changed) lookUp(); });
@@ -400,6 +400,7 @@ app.whenReady().then(() => {
     } catch (e) { return { error: String(e.message || e) }; }
   });
   ipcMain.handle('meta', async (_e, action, game, arg) => {
+    if (librarySync && action !== 'get') librarySync.soon(6000);
     try {
       if (action === 'search') return { list: await meta.search(game.console, arg) };
       if (action === 'choose') await meta.choose(game, arg);

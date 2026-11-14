@@ -167,7 +167,7 @@ class Player {
     const args = ['--core', engine, '--rom', rom, '--title', game.title, '--console', game.console, '--gameid', game.id,
       '--saveroot', root, '--system', system, '--shots', path.join(this.dir, 'screenshots', 'pending'), '--pictures', pictures,
       '--options', optFile, '--lang', prefs.lang || 'en', '--fullscreen', prefs.playerWindowed ? '0' : '1',
-      '--filter', own.filter || (['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA'].includes(game.console) ? (res === 'high' ? 'smooth' : 'sharp') : 'smooth'), '--fresh', prefs.fresh ? '1' : '0',
+      '--filter', ({ sharp: 'sharp', lcd: 'sharp', crt: 'sharp', smooth: 'smooth', smooth2: 'smooth' })[own.filter] || (['NES', 'SNES', 'MD', 'GB', 'GBC', 'GBA'].includes(game.console) ? (res === 'high' ? 'smooth' : 'sharp') : 'smooth'), '--fresh', prefs.fresh ? '1' : '0',
       '--swapab', prefs.swapAB ? '1' : '0',
       '--cheats', cheats || '', '--cheatson', cheatsOn];
     const exe = path.join(this.resources, 'player', 'rs-player.exe');

@@ -189,6 +189,11 @@ open class GameActivity : AppCompatActivity() {
         val digest = if (ArchiveContent.disc(console)) GameStorage.quickHash(prepared) else GameStorage.hash(prepared)
         gameId = digest.take(16)
         intent.getStringExtra("gameid")?.let { SaveBackups.rememberSha(this, it, digest) }
+        // Cheats turned on on your other devices (library sync), when this device hasn't chosen any for the game yet.
+        intent.getStringExtra("gameid")?.let { id ->
+            val synced = prefs.getString("cheats_sync_" + id.replace(Regex("[^A-Za-z0-9._-]"), "_"), null)
+            if (synced != null && !prefs.contains("cheats_on" + digest.take(16))) prefs.edit().putString("cheats_on" + digest.take(16), synced).apply()
+        }
         romSha = digest
         val system = File(filesDir, "bios").apply { mkdirs() }
         saves = SaveManager(File(filesDir, "saves/${Presets.key(console)}/$digest"), system)
@@ -1389,7 +1394,7 @@ open class GameActivity : AppCompatActivity() {
     private var heldState: ByteArray? = null
     private fun snapshot(): ByteArray? =
         runCatching { retroView?.serializeState(useEmulationThread = true) }.getOrNull()?.takeIf { it.isNotEmpty() }
-    private val prefs get() = getSharedPreferences("tirso_player", MODE_PRIVATE)
+    @Suppress("DEPRECATION") private val prefs get() = getSharedPreferences("tirso_player", MODE_MULTI_PROCESS)
     private val pictureFix get() = prefs.getInt("picture_fix_v6", if (config.graphics == "opengl") SAFE_PICTURE else 0)
 
     /** The way the picture is scaled to the screen (the game's own resolution stays the same). */

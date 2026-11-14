@@ -339,6 +339,27 @@ internal object GameMeta {
         }
         save(app)
     }
+    /** Your own fixes (name, cover, description) for every game, for the library sync. */
+    @JvmStatic fun manual(ctx: Context): JSONObject {
+        val app = ctx.applicationContext; load(app); val out = JSONObject()
+        synchronized(this) {
+            val it = cache.keys()
+            while (it.hasNext()) { val k = it.next(); val e = cache.optJSONObject(k) ?: continue
+                if (e.optBoolean("manual")) out.put(k, JSONObject(e.toString()).apply { remove("manual") }) }
+        }
+        return out
+    }
+    /** Uses the fixes from your other devices: [all] holds every game's own fix (games missing from it go back to automatic). */
+    @JvmStatic fun setManual(ctx: Context, all: JSONObject) {
+        val app = ctx.applicationContext; load(app)
+        synchronized(this) {
+            val drop = ArrayList<String>(); val it = cache.keys()
+            while (it.hasNext()) { val k = it.next(); if (cache.optJSONObject(k)?.optBoolean("manual") == true && !all.has(k)) drop += k }
+            drop.forEach { cache.remove(it) }
+            val ks = all.keys(); while (ks.hasNext()) { val k = ks.next(); all.optJSONObject(k)?.let { cache.put(k, JSONObject(it.toString()).put("manual", true)) } }
+        }
+        save(app)
+    }
     /** Forgets what was found or chosen for a game, so the automatic lookup runs again. */
     @JvmStatic fun reset(ctx: Context, g: Game) { val app = ctx.applicationContext; load(app); synchronized(this) { cache.remove(g.id) }; save(app) }
     /** True when the game has a description. */

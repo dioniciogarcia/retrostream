@@ -9,34 +9,36 @@ import android.content.Context
  */
 object Presets {
     const val OPTIONS = "player_options"
+    /** Context.MODE_MULTI_PROCESS: the game process and the menus (with the library sync) both change these. */
+    private const val MULTI = 4
 
     @JvmStatic
     fun resolution(context: Context): String =
-        context.getSharedPreferences(OPTIONS, Context.MODE_PRIVATE).getString("resolution", "medium") ?: "medium"
+        context.getSharedPreferences(OPTIONS, MULTI).getString("resolution", "medium") ?: "medium"
 
     @JvmStatic
     fun setResolution(context: Context, value: String) {
-        context.getSharedPreferences(OPTIONS, Context.MODE_PRIVATE).edit().putString("resolution", value).apply()
+        context.getSharedPreferences(OPTIONS, MULTI).edit().putString("resolution", value).apply()
     }
 
     /** Resolution chosen for one console (falls back to the general choice). */
     @JvmStatic
     fun resolution(context: Context, console: Console): String =
-        context.getSharedPreferences(OPTIONS, Context.MODE_PRIVATE).getString("resolution_" + console.name, null) ?: resolution(context)
+        context.getSharedPreferences(OPTIONS, MULTI).getString("resolution_" + console.name, null) ?: resolution(context)
 
     @JvmStatic
     fun setResolution(context: Context, console: Console, value: String) {
-        context.getSharedPreferences(OPTIONS, Context.MODE_PRIVATE).edit().putString("resolution_" + console.name, value).apply()
+        context.getSharedPreferences(OPTIONS, MULTI).edit().putString("resolution_" + console.name, value).apply()
     }
 
     /** Resolution chosen for one game only (null = same as its console). */
     @JvmStatic
     fun gameResolution(context: Context, gameId: String): String? =
-        context.getSharedPreferences(OPTIONS, Context.MODE_PRIVATE).getString("resolution_g_$gameId", null)
+        context.getSharedPreferences(OPTIONS, MULTI).getString("resolution_g_$gameId", null)
 
     @JvmStatic
     fun setGameResolution(context: Context, gameId: String, value: String?) {
-        val e = context.getSharedPreferences(OPTIONS, Context.MODE_PRIVATE).edit()
+        val e = context.getSharedPreferences(OPTIONS, MULTI).edit()
         if (value == null) e.remove("resolution_g_$gameId") else e.putString("resolution_g_$gameId", value)
         e.apply()
     }
