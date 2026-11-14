@@ -112,7 +112,7 @@ async function withParts(game, first) {
 }
 
 const PREF_KEYS = new Set(['fullscreen', 'lang', 'theme', 'favorites', 'hidden', 'completed', 'collections', 'recent', 'plays', 'onboarded', 'skipped', 'sort', 'keep',
-  'homeTheme', 'resolution', 'gameSettings', 'palette', 'dark', 'logoStyle', 'sections', 'shownConsoles', 'swapAB', 'playerWindowed', 'queue', 'later', 'unrecent']);
+  'homeTheme', 'resolution', 'gameSettings', 'palette', 'dark', 'logoStyle', 'sections', 'shownConsoles', 'swapAB', 'playerWindowed', 'queue', 'later', 'unrecent', 'emuSettings']);
 const SYNCED_KEYS = new Set(['favorites', 'hidden', 'completed', 'collections', 'plays', 'later', 'unrecent', 'gameSettings', 'shownConsoles', 'sections']);
 
 /**

@@ -574,11 +574,12 @@ function engines() {
     h('div', { class: 'pagehead' }, h('button', { class: 'iconbtn', 'aria-label': t('Back'), 'data-key': 'back', onClick: () => go('settings') }, svg(ICON.back, 20, '#E9ECF5')), h('h1', {}, t('GameCube, Wii, PS3 and Switch'))),
     h('p', { style: 'padding:0 32px;color:#9AA3B8;max-width:980px' }, t('These consoles play in their own programs. RetroStream installs and updates them, opens your games in them and backs up their saves to Telegram. Inside the game you use the program\u2019s own menu (Esc closes the game).')),
     h('div', { class: 'settings' },
-      card('dolphin', 'Dolphin', 'GameCube · Wii', '#5B3E9E', [], t('Controller: Xbox layout set up for you. Wii: the Wii Remote is on the right stick (pointer) with the Nunchuk on the left stick. Saves go in the same backups as on the phone and TV.')),
+      card('dolphin', 'Dolphin', 'GameCube · Wii', '#5B3E9E', [srow(t('Game settings'), t('Resolution, aspect ratio, anti-aliasing, shaders…'), '#7A4DFF', () => go('emuDolphin'), 'e_dset')], t('Controller: Xbox layout set up for you. Wii: the Wii Remote is on the right stick (pointer) with the Nunchuk on the left stick. Saves go in the same backups as on the phone and TV.')),
       card('rpcs3', 'RPCS3', 'PlayStation 3', '#3A404E', [
         srow(t('PS3 firmware'), st.ps3fw ? t('Installed') : t('Needed: your own PS3UPDAT.PUP'), st.ps3fw ? '#22C55E' : '#F0B455', () => act('ps3fw', null, t('PS3 firmware installed')), 'e_ps3fw')],
         t('Needs a fairly strong PC. Games: ISO, or the game folder in a .zip/.7z (split parts .7z.001, .002… are joined by themselves). Set your controller once with Open RPCS3.')),
       card('eden', 'Eden', 'Nintendo Switch', '#B23A3A', [
+        srow(t('Game settings'), t('Docked or handheld, resolution, filters, accuracy…'), '#E4000F', () => go('emuEden'), 'e_eset'),
         srow(t('Keys (prod.keys)'), st.switchKeys ? t('Added') : t('Needed: from your own Switch'), st.switchKeys ? '#22C55E' : '#F0B455', () => act('keys', null, t('Keys added')), 'e_keys'),
         srow(t('Firmware'), st.switchFw ? t('Installed') : t('Choose the firmware .zip from your own Switch'), st.switchFw ? '#22C55E' : '#F0B455', () => act('switchfw', 'zip', t('Firmware installed')), 'e_fw'),
         srow(t('Firmware from a folder'), t('If your firmware is already unpacked'), '#8C95AA', () => act('switchfw', 'folder', t('Firmware installed')), 'e_fwdir')],
@@ -751,7 +752,7 @@ async function quickMenu() {
     { label: t('Exit RetroStream'), pick: () => window.rs.quit() }
   ]);
 }
-function goBack() { if (S.page === 'media') go('home'); else if (S.page === 'sources' || S.page === 'engines' || PAGES[S.page]) go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
+function goBack() { if (/^emu/.test(S.page)) go('engines'); else if (S.page === 'media') go('home'); else if (S.page === 'sources' || S.page === 'engines' || PAGES[S.page]) go('settings'); else if (S.page !== 'home') go('home'); else quickMenu(); }
 const pad = { last: {}, at: {}, first: {} };
 function pollPads() {
   // Every connected controller counts (a PS5 / PS4 controller is often not the first one Windows lists, e.g. next to a Steam or virtual pad).

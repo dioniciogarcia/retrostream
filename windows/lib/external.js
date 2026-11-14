@@ -72,6 +72,9 @@ const ENGINES = {
     }
   }
 };
+/** Settings > Dolphin (GameCube / Wii) and Settings > Eden (Switch): what RetroStream writes before each game. */
+const DOLPHIN_DEFAULTS = { res: 'auto', backend: 'auto', aspect: 0, widescreen: false, aa: 1, aniso: 0, vsync: false, shaders: 2, texcache: 512, fps: false, dualCore: true, cheats: true, unlimited: false };
+const EDEN_DEFAULTS = { docked: true, res: 2, backend: 1, filter: 1, aa: 0, aspect: 0, vsync: 2, accuracy: 0, asyncShaders: true, aniso: 0, fullscreen: 0, multiCore: true };
 const FOR_CONSOLE = { GC: 'dolphin', WII: 'dolphin', PS3: 'rpcs3', SWITCH: 'eden' };
 
 class External {
@@ -167,30 +170,43 @@ class External {
     return { root, sha: path.basename(root), title, console: consoleId };
   }
 
-  // ------------------------------------------------------------------ Dolphin's settings for each game's own user folder
-  dolphinConfig(userDir, wii, lang, res) {
-    const cfg = path.join(userDir, 'Config'); fs.mkdirSync(cfg, { recursive: true });
-    const ini = (file, sections) => {
-      const p = path.join(cfg, file); let text = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
-      for (const [sec, values] of Object.entries(sections)) {
-        for (const [k, v] of Object.entries(values)) {
-          const head = '[' + sec + ']'; if (!text.includes(head)) text += (text && !text.endsWith('\n') ? '\n' : '') + head + '\n';
-          const start = text.indexOf(head) + head.length; const next = text.indexOf('\n[', start); const end = next < 0 ? text.length : next;
-          let block = text.substring(start, end); const re = new RegExp('^' + k.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '\\s*=.*$', 'm');
-          block = re.test(block) ? block.replace(re, k + ' = ' + v) : block.replace(/\n*$/, '\n') + k + ' = ' + v + '\n';
-          text = text.substring(0, start) + block + text.substring(end);
-        }
+  /** Changes only the given keys of an .ini file (sections are created when missing). [sep] is ' = ' for Dolphin, '=' for Eden. */
+  static ini(p, sections, sep) {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    let text = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
+    for (const [sec, values] of Object.entries(sections)) {
+      for (const [k, v] of Object.entries(values)) {
+        const head = '[' + sec + ']'; if (!text.includes(head)) text += (text && !text.endsWith('\n') ? '\n' : '') + head + '\n';
+        const start = text.indexOf(head) + head.length; const next = text.indexOf('\n[', start); const end = next < 0 ? text.length : next;
+        let block = text.substring(start, end); const re = new RegExp('^' + k.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '\\s*=.*$', 'm');
+        block = re.test(block) ? block.replace(re, () => k + sep + v) : block.replace(/\n*$/, '\n') + k + sep + v + '\n';
+        text = text.substring(0, start) + block + text.substring(end);
       }
-      fs.writeFileSync(p, text);
-    };
+    }
+    fs.writeFileSync(p, text);
+  }
+
+  // ------------------------------------------------------------------ Dolphin's settings for each game's own user folder
+  dolphinConfig(userDir, wii, lang, res, emu) {
+    const cfg = path.join(userDir, 'Config'); fs.mkdirSync(cfg, { recursive: true });
+    const ini = (file, sections) => External.ini(path.join(cfg, file), sections, ' = ');
+    const o = Object.assign({}, DOLPHIN_DEFAULTS, emu || {});
+    const internal = o.res === 'auto' ? ({ low: '2', medium: '3', high: '4' }[res] || '3') : String(o.res);
     ini('Dolphin.ini', {
       Display: { Fullscreen: 'True', RenderToMain: 'False' },
       Interface: { ConfirmStop: 'False', UsePanicHandlers: 'False', LanguageCode: lang === 'es' ? 'es' : 'en', ShowActiveTitle: 'False' },
-      Core: { SIDevice0: '6', WiimoteControllerInterface: 'False' },
+      Core: Object.assign({ SIDevice0: '6', WiimoteControllerInterface: 'False', CPUThread: o.dualCore ? 'True' : 'False', EnableCheats: o.cheats ? 'True' : 'False', EmulationSpeed: o.unlimited ? '0.00000000' : '1.00000000' },
+        o.backend !== 'auto' ? { GFXBackend: o.backend } : {}),
       Analytics: { Enabled: 'False', PermissionAsked: 'True' },
       AutoUpdate: { UpdateTrack: '' }
     });
-    ini('GFX.ini', { Settings: { AspectRatio: '0', ShowFPS: 'False', InternalResolution: { low: '2', medium: '3', high: '4' }[res] || '3' } });
+    ini('GFX.ini', {
+      Settings: { AspectRatio: String(o.aspect), ShowFPS: o.fps ? 'True' : 'False', InternalResolution: internal, wideScreenHack: o.widescreen ? 'True' : 'False',
+        MSAA: String(o.aa), SSAA: 'False', ShaderCompilationMode: String(o.shaders), WaitForShadersBeforeStarting: o.shaders === 0 ? 'False' : 'True',
+        SafeTextureCacheColorSamples: String(o.texcache) },
+      Enhancements: { MaxAnisotropy: String(o.aniso) },
+      Hardware: { VSync: o.vsync ? 'True' : 'False' }
+    });
     const pad = (keys) => keys.map(([k, v]) => k + ' = ' + v).join('\n');
     const dev = 'XInput/0/Gamepad';
     fs.writeFileSync(path.join(cfg, 'GCPadNew.ini'), '[GCPad1]\nDevice = ' + dev + '\n' + pad([
@@ -207,6 +223,20 @@ class External {
       ['Nunchuk/Buttons/C', '`Shoulder L`'], ['Nunchuk/Buttons/Z', '`Trigger L`'], ['Rumble/Motor', '`Motor L`']]) + '\n[Wiimote2]\nSource = 0\n[Wiimote3]\nSource = 0\n[Wiimote4]\nSource = 0\n[BalanceBoard]\nSource = 0\n');
   }
 
+  /** Eden's own settings file (user/config/qt-config.ini), from Settings > Eden (Switch). */
+  edenConfig(emu) {
+    const o = Object.assign({}, EDEN_DEFAULTS, emu || {});
+    const qt = (values) => { const out = {}; for (const [k, v] of Object.entries(values)) { out[k + '\\default'] = 'false'; out[k] = v; } return out; };
+    const mode = o.docked ? '1' : '0';
+    External.ini(path.join(this.edenUser(), 'config', 'qt-config.ini'), {
+      System: qt({ use_docked_mode: mode }),
+      Renderer: qt({ backend: String(o.backend), resolution_setup: String(o.res), scaling_filter: String(o.filter), anti_aliasing: String(o.aa), aspect_ratio: String(o.aspect),
+        vsync_mode: String(o.vsync), gpu_accuracy: String(o.accuracy), use_asynchronous_shaders: o.asyncShaders ? 'true' : 'false', max_anisotropy: String(o.aniso),
+        fullscreen_mode: String(o.fullscreen), use_disk_shader_cache: 'true' }),
+      Core: qt({ use_multi_core: o.multiCore ? 'true' : 'false' })
+    }, '=');
+  }
+
   /** Starts the game in its program and calls [onExit] with the time played when it closes. */
   async launch(prep, prefs, onExit) {
     if (this.child) throw new Error(this.t('A game is already running.'));
@@ -216,13 +246,15 @@ class External {
     if (name === 'dolphin') {
       const user = path.join(prep.root, 'saves', 'User');   // the same folder the Android app's Dolphin uses, so backups match
       const own = (prefs.gameSettings || {})[game.id] || {};
-      this.dolphinConfig(user, game.console === 'WII', prefs.lang, own.res || (prefs.resolution || {})[game.console] || 'medium');
+      this.dolphinConfig(user, game.console === 'WII', prefs.lang, own.res || (prefs.resolution || {})[game.console] || 'medium',
+        Object.assign({}, (prefs.emuSettings || {}).dolphin, own.res ? { res: 'auto' } : {}));   // a game's own resolution wins
       args = ['-b', '-u', user, '-e', rom];
     } else if (name === 'rpcs3') {
       if (!this.status().ps3fw) throw new Error(this.t('PS3 games need your own PS3 firmware. Add it in Settings > GameCube, Wii, PS3 and Switch.'));
       args = ['--no-gui', '--fullscreen', rom];
     } else {
       const s = this.status(); if (!s.switchKeys) throw new Error(this.t('Switch games need your own keys (prod.keys). Add them in Settings > GameCube, Wii, PS3 and Switch.'));
+      this.edenConfig((prefs.emuSettings || {}).eden);
       args = ['-f', '-g', rom];
     }
     const started = Date.now();
@@ -239,4 +271,4 @@ class External {
   }
 }
 
-module.exports = { External, FOR_CONSOLE, ENGINES };
+module.exports = { External, FOR_CONSOLE, ENGINES, DOLPHIN_DEFAULTS, EDEN_DEFAULTS };

@@ -22,7 +22,7 @@ function onOff(v) { return v ? t('On') : t('Off'); }
 // ------------------------------------------------------------------ a page with a back button
 function page(title, ...kids) {
   return h('main', { class: 'scroll' },
-    h('div', { class: 'pagehead' }, h('button', { class: 'iconbtn', 'aria-label': t('Back'), 'data-key': 'back', onClick: () => go('settings') }, svg(ICON.back, 20, '#E9ECF5')), h('h1', {}, title)),
+    h('div', { class: 'pagehead' }, h('button', { class: 'iconbtn', 'aria-label': t('Back'), 'data-key': 'back', onClick: () => go(/^emu/.test(S.page) ? 'engines' : 'settings') }, svg(ICON.back, 20, '#E9ECF5')), h('h1', {}, title)),
     ...kids);
 }
 function note(text) { return h('p', { style: 'padding:0 32px;color:var(--muted);max-width:980px;line-height:1.5' }, text); }
@@ -468,4 +468,54 @@ function mediaPage() {
             m.list.length < m.total ? h('div', { class: 'buttons', style: 'justify-content:center;margin-top:16px' }, h('button', { class: 'btn ghost', 'data-key': 'media_more', onClick: more }, S.mediaBusy ? t('Loading…') : t('Show more'))) : null));
 }
 
-const PAGES = { resolution: resolutionPage, consoles: consolesPage, homeLayout: homePage, pc: pcPage, history: historyPage, missing: missingPage, space: spacePage, controllers: controllersPage, friends: friendsPage, remote: remotePage, media: mediaPage };
+// ------------------------------------------------------------------ Dolphin and Eden settings (written before each game)
+const EMU = {
+  dolphin: { title: 'Dolphin · GameCube / Wii', color: '#5B3E9E', defaults: { res: 'auto', backend: 'auto', aspect: 0, widescreen: false, aa: 1, aniso: 0, vsync: false, shaders: 2, texcache: 512, fps: false, dualCore: true, cheats: true, unlimited: false },
+    groups: [
+      ['Picture', [
+        ['res', 'Internal resolution', [['auto', 'Same as Settings › Resolution'], [1, 'Native (480p)'], [2, '2x (720p)'], [3, '3x (1080p)'], [4, '4x (1440p)'], [5, '5x (1800p)'], [6, '6x (4K)']]],
+        ['aspect', 'Aspect ratio', [[0, 'Auto (as the game)'], [1, 'Force 16:9'], [2, 'Force 4:3'], [3, 'Stretch to the screen']]],
+        ['widescreen', 'Widescreen hack', 'Shows more on the sides in 4:3 games (some games glitch)'],
+        ['aa', 'Anti-aliasing', [[1, 'Off'], [2, '2x MSAA'], [4, '4x MSAA'], [8, '8x MSAA']]],
+        ['aniso', 'Texture filtering', [[0, '1x (off)'], [1, '2x'], [2, '4x'], [3, '8x'], [4, '16x']]],
+        ['vsync', 'V-Sync', 'Removes tearing (may add a little delay)'],
+        ['fps', 'Show FPS', 'Frames per second in a corner']]],
+      ['Performance', [
+        ['backend', 'Graphics engine', [['auto', 'Automatic (Dolphin decides)'], ['D3D', 'Direct3D 11'], ['D3D12', 'Direct3D 12'], ['Vulkan', 'Vulkan'], ['OGL', 'OpenGL']]],
+        ['shaders', 'Shader compilation', [[0, 'Synchronous (may stutter)'], [1, 'Ubershaders (smooth, needs a strong graphics card)'], [2, 'Asynchronous ubershaders (recommended)'], [3, 'Asynchronous (fastest, objects may pop in)']]],
+        ['texcache', 'Texture cache accuracy', [[0, 'Safe (fixes glitches, slower)'], [512, 'Medium (default)'], [128, 'Fast']]],
+        ['dualCore', 'Dual core', 'Faster; turn off if a game crashes'],
+        ['unlimited', 'No speed limit', 'Runs as fast as the PC can (for loading screens)'],
+        ['cheats', 'Cheats', 'Lets Dolphin use cheat codes']]]] },
+  eden: { title: 'Eden · Nintendo Switch', color: '#E4000F', defaults: { docked: true, res: 2, backend: 1, filter: 1, aa: 0, aspect: 0, vsync: 2, accuracy: 0, asyncShaders: true, aniso: 0, fullscreen: 0, multiCore: true },
+    groups: [
+      ['Console', [
+        ['docked', 'Docked mode (TV)', 'On: like the Switch on the TV (higher quality). Off: handheld mode (lighter, some games run faster)']]],
+      ['Picture', [
+        ['res', 'Resolution', [[0, '0.5x (360p / 540p)'], [1, '0.75x (540p / 810p)'], [2, '1x (720p / 1080p) · native'], [3, '1.5x (1080p / 1620p)'], [4, '2x (1440p / 4K)'], [5, '3x'], [6, '4x']]],
+        ['filter', 'Scaling filter', [[0, 'Nearest (sharp pixels)'], [1, 'Bilinear (default)'], [2, 'Bicubic'], [3, 'Gaussian'], [4, 'ScaleForce'], [5, 'AMD FSR']]],
+        ['aa', 'Anti-aliasing', [[0, 'Off'], [1, 'FXAA'], [2, 'SMAA']]],
+        ['aspect', 'Aspect ratio', [[0, '16:9 (default)'], [1, '4:3'], [2, '21:9'], [3, '16:10'], [4, 'Stretch to the screen']]],
+        ['aniso', 'Texture filtering', [[0, 'Automatic'], [1, 'Default'], [2, '2x'], [3, '4x'], [4, '8x'], [5, '16x']]],
+        ['vsync', 'V-Sync', [[0, 'Off (fastest, may tear)'], [1, 'Mailbox'], [2, 'On (default)'], [3, 'On, relaxed']]],
+        ['fullscreen', 'Full screen', [[0, 'Borderless window'], [1, 'Exclusive']]]]],
+      ['Performance', [
+        ['backend', 'Graphics engine', [[1, 'Vulkan (recommended)'], [0, 'OpenGL']]],
+        ['accuracy', 'GPU accuracy', [[0, 'Normal (fastest)'], [1, 'High'], [2, 'Extreme (slowest)']]],
+        ['asyncShaders', 'Asynchronous shaders', 'Less stutter while new effects load'],
+        ['multiCore', 'Multi-core', 'Much faster; leave on']]]] }
+};
+function emuPage(name) {
+  const e = EMU[name]; const all = pref('emuSettings') || {}; const cur = Object.assign({}, e.defaults, all[name] || {});
+  const save = (k, v) => { all[name] = Object.assign({}, all[name] || {}, { [k]: v }); setPref('emuSettings', all); render(); };
+  const groups = e.groups.map(([gt, rows]) => h('section', { class: 'group' }, h('h2', {}, t(gt)), rows.map(([k, label, opts]) => {
+    if (!Array.isArray(opts)) return toggleRow(t(label), t(opts), !!cur[k], e.color, () => save(k, !cur[k]), 'emu_' + k);
+    const now = opts.find((o) => o[0] === cur[k]) || opts[0];
+    return srow(t(label), t(now[1]), e.color, () => choose(t(label), opts.map(([v, l]) => ({ label: t(l), on: v === cur[k], pick: () => save(k, v) }))), 'emu_' + k);
+  })));
+  return page(t(e.title),
+    note(t('RetroStream writes these settings before every game, so each game opens with them. A game\u2019s own resolution (its menu › This game\u2019s settings) still wins over the resolution here.')),
+    h('div', { class: 'settings' }, ...groups,
+      h('section', { class: 'group' }, h('h2', {}, t('Reset')), srow(t('Back to the recommended settings'), '', '#8C95AA', () => confirmBox(t('Reset'), t('All the settings on this page go back to the recommended ones.'), t('Reset'), () => { delete all[name]; setPref('emuSettings', all); render(); }), 'emu_reset'))));
+}
+const PAGES = { resolution: resolutionPage, consoles: consolesPage, homeLayout: homePage, pc: pcPage, history: historyPage, missing: missingPage, space: spacePage, controllers: controllersPage, friends: friendsPage, remote: remotePage, media: mediaPage, emuDolphin: () => emuPage('dolphin'), emuEden: () => emuPage('eden') };
