@@ -698,8 +698,8 @@ final class TirsoDrive {
             long oldest=from;
             for(TdApi.Message m:list){
                 Friend existing=m.senderId instanceof TdApi.MessageSenderUser?friends.get(((TdApi.MessageSenderUser)m.senderId).userId):null;
-                if(existing==null||page==0&&existing.ts<=0)presenceMessage(m);
-                socialMessage(m);else if(existing!=null&&((long)m.date*1000)>existing.ts-ONLINE_WINDOW*4&&false)presenceMessage(m);
+                if(existing==null||existing.ts<=0)presenceMessage(m);
+                socialMessage(m);
                 oldest=m.id;
             }
             if(page<3)pageFriends(chat,oldest,page+1);else friendsChanged();
