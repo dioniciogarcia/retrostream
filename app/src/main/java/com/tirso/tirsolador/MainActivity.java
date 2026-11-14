@@ -836,6 +836,7 @@ public class MainActivity extends Activity {
             games = new java.util.ArrayList<>(); java.util.List<String> ids = library.recent();
             for (String id : ids) for (Game g : library.games) if (g.id.equals(id) && (console == null || g.console == console) && library.visible(g.console)
                     && g.title.toLowerCase(java.util.Locale.ROOT).contains(query.toLowerCase(java.util.Locale.ROOT))) games.add(g);
+        } else if (mode == 3) { games = new java.util.ArrayList<>(); for (Game g : library.laterGames(query)) if (console == null || g.console == console) games.add(g);
         } else if (collection != null) { java.util.Set<String> ids = library.collection(collection); games = new java.util.ArrayList<>(); for (Game g : library.filtered(null, false, query)) if (ids.contains(g.id)) games.add(g); }
         else games = library.filtered(console, favorites || mode == 1, query);
         boolean gba = th.equals("gba");
@@ -857,8 +858,8 @@ public class MainActivity extends Activity {
             nameRow.addView(tv(cname, 52, text, fHead)); titles.addView(nameRow);
         } else { TextView big = tv(games.isEmpty() ? cname : games.get(0).title, 46, text, fHead); big.setSingleLine(true); big.setEllipsize(android.text.TextUtils.TruncateAt.END); titles.addView(big); libBigTitle = big; }
         titles.addView(sub); titleRow.addView(titles, new LinearLayout.LayoutParams(0, -2, 1));
-        String[] names = {T.t("Todos"), T.t("Favoritos"), T.t("Recientes")};
-        for (int i = 0; i < 3; i++) {
+        String[] names = {T.t("Todos"), T.t("Favoritos"), T.t("Recientes"), T.t("Jugar después")};
+        for (int i = 0; i < 4; i++) {
             final int m = i; boolean on = (favorites ? 1 : mode) == i;
             TextView chip = tv(names[i], 25, on ? onAccent() : text, fBody); chip.setGravity(Gravity.CENTER); chip.setPadding(px(30), px(12), px(30), px(12));
             focusableWith(chip, "mode_" + i, f -> { GradientDrawable g = round(on ? (focusRing()) : (th.equals("midnight") ? ov(0x14FFFFFF) : ov(0x22FFFFFF)), 40); if (f) g.setStroke(px(4), th.equals("midnight") ? Color.WHITE : accent); return g; },
@@ -896,7 +897,7 @@ public class MainActivity extends Activity {
             cell.setOnFocusChangeListener((v, has) -> { base.onFocusChange(v, has); if (has) showInfo(game); });
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2); p.setMargins(gap / 2, gap / 4, gap / 2, gap / 4); row.addView(cell, p); index++;
         }
-        if (index == 0) grid.addView(tv(favorites || mode == 1 ? T.t("Guarda juegos con X para verlos aquí.") : mode == 2 ? T.t("Aún no has jugado a nada.") : T.t("No hay juegos que coincidan."), 30, muted, fBody));
+        if (index == 0) grid.addView(tv(favorites || mode == 1 ? T.t("Guarda juegos con X para verlos aquí.") : mode == 2 ? T.t("Aún no has jugado a nada.") : mode == 3 ? T.t("Elige «Jugar después» en el menú de un juego para guardarlo aquí.") : T.t("No hay juegos que coincidan."), 30, muted, fBody));
         // right panel
         infoPanel = vertical(); infoPanel.setPadding(px(32), px(32), px(32), px(32));
         if (gba) { GradientDrawable g = round(surface, 26); g.setStroke(px(4), ink); infoPanel.setBackground(g); }
@@ -2051,7 +2052,8 @@ public class MainActivity extends Activity {
                     .setPositiveButton(T.t("Salir"), (d,w) -> finish()).setNegativeButton(T.t("Cancelar"), null).show();
     }
     @Override protected void onDestroy() {drive.detach(driveListener);inputManager.unregisterInputDeviceListener(inputListener);artCancel.set(true); artwork.close(); if (isFinishing() && embedded == null) { drive.releaseAll(); TemporaryRoms.purge(getApplicationContext()); } super.onDestroy(); }
-    @Override protected void onPause(){cancelPending();super.onPause();}
+    private final Runnable syncRedraw=()->{if(!isFinishing()&&root!=null&&page!=null&&!page.equals("welcome")&&!page.equals("loading")){rememberLibrary();library=new Library(this);render();}};
+    @Override protected void onPause(){Sync.unwatch(syncRedraw);cancelPending();super.onPause();}
     @Override public void onConfigurationChanged(android.content.res.Configuration c){super.onConfigurationChanged(c);if(root!=null)render();}
     @Override protected void onStart(){super.onStart();if(drive!=null)drive.appVisible(true);}
     @Override protected void onStop(){if(drive!=null)drive.appVisible(false);super.onStop();}
@@ -2060,6 +2062,7 @@ public class MainActivity extends Activity {
         if(BuildConfig.PHONE&&page!=null&&page.equals("phone")&&root!=null)render();   // back from the file access setting
         if(drive!=null)Screenshots.uploadPending(this,drive);
         if(drive!=null)drive.inMenu();
+        Sync.watch(this,syncRedraw);
         // Saves changed while playing are copied to the Telegram channel in the background.
         if(drive!=null&&drive.ready()&&page!=null&&!page.equals("welcome"))SaveBackups.uploadAll(this,drive,p->kotlin.Unit.INSTANCE,(ok,msg)->kotlin.Unit.INSTANCE);
     }

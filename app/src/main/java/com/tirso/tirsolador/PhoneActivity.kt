@@ -130,8 +130,10 @@ class PhoneActivity : Activity() {
         Screenshots.uploadPending(this, drive)
         render()
         startPolling()
+        Sync.watch(this, syncRedraw)
     }
-    override fun onPause() { stopPolling(); super.onPause() }
+    private val syncRedraw = Runnable { if (!isFinishing) { library = Library(this); render() } }
+    override fun onPause() { Sync.unwatch(syncRedraw); stopPolling(); super.onPause() }
     override fun onDestroy() {
         drive.detach(driveListener); artwork.close()
         if (isFinishing) { drive.releaseAll(); TemporaryRoms.purge(applicationContext) }
@@ -704,7 +706,7 @@ class PhoneActivity : Activity() {
     }
     private fun gamesShown(): List<Game> {
         val fav = source == "fav"
-        val all = if (source == "col") library.collection(collectionName).let { ids -> library.filtered(null, false, query).filter { it.id in ids } } else library.filtered(console, fav, query)
+        val all = if (source == "col") library.collection(collectionName).let { ids -> library.filtered(null, false, query).filter { it.id in ids } } else if (source == "later") library.laterGames(query) else library.filtered(console, fav, query)
         val shown = when (source) {
             "telegram" -> all.filter { it.telegramAccount != 0L }
             "phone" -> all.filter { it.id.startsWith("local:") }
@@ -716,19 +718,21 @@ class PhoneActivity : Activity() {
     }
     private fun libraryPage() {
         val c = console
-        val title = when { source == "fav" -> T.t("Favoritos"); source == "col" -> collectionName; c == null -> T.t("Biblioteca"); else -> shortName(c) } + if (query.isNotEmpty()) " · \"$query\"" else ""
+        val title = when { source == "fav" -> T.t("Favoritos"); source == "later" -> T.t("Jugar después"); source == "col" -> collectionName; c == null -> T.t("Biblioteca"); else -> shortName(c) } + if (query.isNotEmpty()) " · \"$query\"" else ""
         val outer = vertical()
         outer.addView(header(title, true))
         val base = if (source == "fav") library.filtered(c, true, query) else library.filtered(c, false, query)
-        if ((source == "fav" || source == "col") && library.collections().isNotEmpty()) {
-            // Favorites and your collections, one tap apart.
+        if (source == "fav" || source == "col" || source == "later") {
+            // Favorites, Play later and your collections, one tap apart.
             val chips = horizontal(); chips.setPadding(dp(16), 0, dp(16), dp(8))
             chips.addView(chip("★ " + T.t("Favoritos"), source == "fav", "chip_fav") { source = "fav"; render() })
+            chips.addView(chip("⏱ " + T.t("Jugar después") + " ${library.later().size}", source == "later", "chip_later") { source = "later"; render() },
+                LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
             for (n in library.collections()) chips.addView(chip(n, source == "col" && collectionName == n, "chip_col_${n.hashCode()}") { source = "col"; collectionName = n; render() },
                 LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
             outer.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) })
         }
-        if (source != "fav" && source != "col") {
+        if (source != "fav" && source != "col" && source != "later") {
             val chips = horizontal(); chips.setPadding(dp(16), 0, dp(16), dp(8))
             val tg = base.count { it.telegramAccount != 0L }; val ph = base.count { it.id.startsWith("local:") }
             chips.addView(chip(T.t("Todos") + " ${base.size}", source == "all", "chip_all") { source = "all"; render() })
@@ -912,7 +916,7 @@ class PhoneActivity : Activity() {
     private fun cancelLoading() {
         pending?.let { g -> drive.file(g)?.let { f -> if (f.local.isDownloadingActive) drive.cancelDownload(g) } }
         pending = null; disc = null; discJson = null
-        go(if (console != null || source == "fav") "library" else "home")
+        go(if (console != null || source == "fav" || source == "later") "library" else "home")
     }
     private fun updateLoading() {
         val g = pending ?: return

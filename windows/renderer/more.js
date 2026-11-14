@@ -131,7 +131,7 @@ function historyPage() {
     h('div', { style: 'padding:0 32px 30px;max-width:900px' }, list.length ? out : h('p', { class: 'empty' }, t('You have not played anything yet.')),
       list.length ? h('div', { class: 'buttons', style: 'margin-top:14px' }, h('button', { class: 'btn ghost', 'data-key': 'hist_clear', onClick: clearRecents }, t('Clear all recents'))) : null));
 }
-function clearRecents() { confirmBox(t('Clear all recents'), t('The "Recently played" row and the history are emptied. Play time and saves are not touched.'), t('Clear'), () => { setPref('plays', []); render(); }); }
+function clearRecents() { confirmBox(t('Clear all recents'), t('The "Recently played" row and the history are emptied. Play time and saves are not touched.'), t('Clear'), () => { setPref('unrecent', Object.assign({}, pref('unrecent') || {}, { '*': Date.now() })); render(); }); }
 function statsDialog() {
   const pt = pref('playtime') || {}; const total = Object.values(pt).reduce((a, b) => a + b, 0);
   if (!total) { toast(t('No play time recorded yet.')); return; }

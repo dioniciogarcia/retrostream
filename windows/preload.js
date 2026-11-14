@@ -20,5 +20,5 @@ contextBridge.exposeInMainWorld('rs', {
   friends: (action, arg) => ipcRenderer.invoke('friends', action, arg),
   tools: (action, arg) => ipcRenderer.invoke('tools', action, arg),
   remote: (action, arg) => ipcRenderer.invoke('remote', action, arg),
-  on: (channel, fn) => { if (['state', 'file', 'kept', 'played', 'toast', 'friends', 'launch', 'remote', 'pad'].includes(channel)) ipcRenderer.on(channel, (_e, data) => fn(data)); }
+  on: (channel, fn) => { if (['state', 'file', 'kept', 'played', 'toast', 'friends', 'launch', 'remote', 'pad', 'prefs'].includes(channel)) ipcRenderer.on(channel, (_e, data) => fn(data)); }
 });

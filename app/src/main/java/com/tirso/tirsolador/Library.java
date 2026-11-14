@@ -113,8 +113,7 @@ public final class Library {
     public List<Game> hiddenGames() { Set<String> h = hidden(); List<Game> out = new ArrayList<>(); for (Game g : games) if (h.contains(g.id)) out.add(g); return out; }
     /** Takes a game off "Recently played" (its play history stays); playing it again brings it back. */
     public void removeRecent(Game g) {
-        java.util.List<String> ids = recent(); ids.remove(g.id);
-        prefs.edit().putString("recent", android.text.TextUtils.join("\n", ids)).putLong("unrecent_" + g.id, System.currentTimeMillis()).apply();
+        prefs.edit().putLong("unrecent_" + g.id, System.currentTimeMillis()).apply();
     }
     /** "Recently played": the play history minus what you took off it. */
     public java.util.List<Object[]> recentPlays() {
@@ -123,18 +122,24 @@ public final class Library {
         return out;
     }
     public void clearRecents() { prefs.edit().remove("recent").putLong("unrecent_all", System.currentTimeMillis()).apply(); }
+    /** Ids of the recently played games, newest first (from the played history, which is shared by all your devices). */
     public java.util.List<String> recent() {
-        java.util.List<String> out = new ArrayList<>(); String raw = prefs.getString("recent", "");
-        for (String id : raw.split("\n")) if (!id.isEmpty()) out.add(id); return out;
+        java.util.List<String> out = new ArrayList<>(); Set<String> seen = new HashSet<>(); long all = prefs.getLong("unrecent_all", 0);
+        for (String l : prefs.getString("plays", "").split("\n")) {
+            int bar = l.indexOf('|'); if (bar < 0) continue;
+            try { long t = Long.parseLong(l.substring(0, bar)); String id = l.substring(bar + 1);
+                if (t > all && t > prefs.getLong("unrecent_" + id, 0) && seen.add(id)) out.add(id); } catch (NumberFormatException ignored) { }
+            if (out.size() >= 30) break;
+        }
+        if (out.isEmpty() && all == 0) { String raw = prefs.getString("recent", ""); for (String id : raw.split("\n")) if (!id.isEmpty() && seen.add(id)) out.add(id); }
+        return out;
     }
     public void addRecent(Game g) {
-        java.util.List<String> ids = recent(); ids.remove(g.id); ids.add(0, g.id);
-        while (ids.size() > 30) ids.remove(ids.size() - 1);
         // Every time a game is played: "<time>|<game id>" lines, newest first (kept for the played history).
         String log = prefs.getString("plays", ""); java.util.List<String> lines = new ArrayList<>();
         lines.add(System.currentTimeMillis() + "|" + g.id);
         for (String l : log.split("\n")) if (!l.isEmpty() && lines.size() < 300) lines.add(l);
-        prefs.edit().putString("recent", android.text.TextUtils.join("\n", ids)).putString("plays", android.text.TextUtils.join("\n", lines)).apply();
+        prefs.edit().putString("plays", android.text.TextUtils.join("\n", lines)).apply();
     }
     /** Played history, newest first: {game, time in ms}. Games no longer in the library are skipped. */
     public java.util.List<Object[]> plays() {
@@ -163,6 +168,11 @@ public final class Library {
             java.util.Iterator<String> it = all.keys(); while (it.hasNext()) { String k = it.next(); out.put(k.equals(from) ? to : k, all.get(k)); }
             prefs.edit().putString("collections", out.toString()).apply(); } catch (JSONException ignored) { }
     }
+    /** "Play later": games saved for another day (shared by all your devices). */
+    public Set<String> later() { return new HashSet<>(prefs.getStringSet("later", new HashSet<>())); }
+    public boolean later(Game g) { return later().contains(g.id); }
+    public void later(Game g, boolean on) { Set<String> s = later(); if (on) s.add(g.id); else s.remove(g.id); prefs.edit().putStringSet("later", s).apply(); }
+    public List<Game> laterGames(String query) { Set<String> s = later(); List<Game> out = new ArrayList<>(); for (Game g : filtered(null, false, query)) if (s.contains(g.id)) out.add(g); return out; }
     public boolean completed(Game g) { return prefs.getStringSet("completed", new HashSet<>()).contains(g.id); }
     public void completed(Game g, boolean done) { Set<String> s = new HashSet<>(prefs.getStringSet("completed", new HashSet<>())); if (done) s.add(g.id); else s.remove(g.id); prefs.edit().putStringSet("completed", s).apply(); }
     private JSONObject addedJson() { try { return new JSONObject(prefs.getString("added_at", "{}")); } catch (JSONException e) { return new JSONObject(); } }

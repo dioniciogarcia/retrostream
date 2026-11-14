@@ -2,6 +2,11 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+  "Play later": "Jugar despu\u00e9s",
+  "Remove from \"Play later\"": "Quitar de \u00abJugar despu\u00e9s\u00bb",
+  "Saved to \"Play later\"": "Guardado en \u00abJugar despu\u00e9s\u00bb",
+  "Removed from \"Play later\"": "Quitado de \u00abJugar despu\u00e9s\u00bb",
+  "Choose \"Play later\" in a game's menu to keep it here.": "Elige \u00abJugar despu\u00e9s\u00bb en el men\u00fa de un juego para guardarlo aqu\u00ed.",
 "Screenshots": "Capturas",
 "screenshots": "capturas",
 "Loading…": "Cargando…",

@@ -3,6 +3,11 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("Quitar de «Jugar después»","Remove from \"Play later\"");
+        m.put("Jugar después","Play later");
+        m.put("Guardado en «Jugar después»","Saved to \"Play later\"");
+        m.put("Quitado de «Jugar después»","Removed from \"Play later\"");
+        m.put("Elige «Jugar después» en el menú de un juego para guardarlo aquí.","Choose \"Play later\" in a game's menu to keep it here.");
         m.put("Tu biblioteca retro, ahora en tu TV", "Your retro library, now on your TV");
         m.put("Inicia sesión con la misma cuenta de Telegram que en tu teléfono y tu PC. Tus canales, favoritos y partidas vienen contigo.", "Sign in with the same Telegram account as your phone and PC. Your channels, favorites and saves come with you.");
         m.put("Encontrar consolas", "Find consoles");

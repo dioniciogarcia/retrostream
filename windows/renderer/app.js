@@ -43,16 +43,18 @@ function toggleIn(k, id) { const s = listPref(k); if (s.has(id)) s.delete(id); e
 
 // ------------------------------------------------------------------ the library
 function visibleGames() { const hidden = listPref('hidden'); const off = pref('shownConsoles') || {}; return S.games.filter((g) => !hidden.has(g.id) && off[g.console] !== false); }
-function playtime(g) { const m = Math.floor(((pref('playtime') || {})[g.id] || 0) / 60000); return m < 1 ? '' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; }
+function ptName(id) { return String(id).replace(/[^A-Za-z0-9._-]/g, '_'); }
+function playMs(g) { return ((pref('playtime') || {})[g.id] || 0) + ((pref('playtimeOthers') || {})[ptName(g.id)] || 0); }
+function playtime(g) { const m = Math.floor(playMs(g) / 60000); return m < 1 ? '' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; }
 function kept(g) { return !!g.local || !!(pref('kept') || {})[g.id]; }
-function plays() { return (pref('plays') || []).map((p) => ({ game: S.games.find((g) => g.id === p.id), at: p.at })).filter((p) => p.game); }
+function plays() { const ur = pref('unrecent') || {}; const all = ur['*'] || 0; return (pref('plays') || []).filter((p) => p.at > all && p.at > (ur[p.id] || 0)).map((p) => ({ game: S.games.find((g) => g.id === p.id), at: p.at })).filter((p) => p.game); }
 function recent() { const seen = new Set(); const out = []; for (const p of plays()) if (!seen.has(p.game.id)) { seen.add(p.game.id); out.push(p.game); if (out.length >= 12) break; } return out; }
 function newGames() { const added = pref('addedAt') || {}; const since = Date.now() - 14 * 86400000; return visibleGames().filter((g) => (added[g.id] || 0) > since).sort((a, b) => (added[b.id] - added[a.id]) || (b.messageId - a.messageId)); }
 function sorted(list) {
   const s = pref('sort') || 'name';
   const out = [...list];
   if (s === 'added') out.sort((a, b) => b.messageId - a.messageId);
-  else if (s === 'most') { const pt = pref('playtime') || {}; out.sort((a, b) => ((pt[b.id] || 0) - (pt[a.id] || 0)) || a.title.localeCompare(b.title)); }
+  else if (s === 'most') out.sort((a, b) => (playMs(b) - playMs(a)) || a.title.localeCompare(b.title));
   else if (s === 'recent') { const r = recent().map((g) => g.id); out.sort((a, b) => (r.indexOf(a.id) + 1 || 1e9) - (r.indexOf(b.id) + 1 || 1e9)); }
   else out.sort((a, b) => a.title.localeCompare(b.title) * (s === 'name_desc' ? -1 : 1));
   return out;
@@ -60,6 +62,7 @@ function sorted(list) {
 function shownGames() {
   let list = visibleGames();
   if (S.source === 'fav') { const f = listPref('favorites'); list = list.filter((g) => f.has(g.id)); }
+  else if (S.source === 'later') { const f = listPref('later'); list = list.filter((g) => f.has(g.id)); }
   else if (S.source === 'col') { const c = new Set((pref('collections') || {})[S.collection] || []); list = list.filter((g) => c.has(g.id)); }
   else if (S.console) list = list.filter((g) => g.console === S.console);
   if (S.query) { const q = S.query.toLowerCase(); list = list.filter((g) => g.title.toLowerCase().includes(q)); }
@@ -134,7 +137,7 @@ function hints() {
 }
 function header() {
   const d = S.drive; const nav = [['home', t('Home')], ['library', t('Library')], ['fav', t('Favorites & collections')], ['media', t('Screenshots')], ['settings', t('Settings')]];
-  const on = (k) => (k === 'fav' ? S.page === 'library' && (S.source === 'fav' || S.source === 'col') : k === 'library' ? S.page === 'library' && S.source !== 'fav' && S.source !== 'col' : S.page === k || (k === 'settings' && S.page !== 'media' && (S.page === 'sources' || S.page === 'engines' || !!PAGES[S.page])));
+  const on = (k) => (k === 'fav' ? S.page === 'library' && (S.source === 'fav' || S.source === 'col' || S.source === 'later') : k === 'library' ? S.page === 'library' && S.source !== 'fav' && S.source !== 'col' && S.source !== 'later' : S.page === k || (k === 'settings' && S.page !== 'media' && (S.page === 'sources' || S.page === 'engines' || !!PAGES[S.page])));
   // What is being typed survives the screen redrawing itself (downloads, friends and Telegram updates redraw it).
   const input = h('input', { placeholder: t('Search all games  (Ctrl+F)'), value: S.searchDraft != null ? S.searchDraft : S.query, 'aria-label': t('Search games'), 'data-key': 'search',
     onInput: (e) => { S.searchDraft = e.target.value; },
@@ -283,13 +286,14 @@ function library() {
   const wrap = h('main', { style: 'flex:1;min-height:0;display:flex;flex-direction:column' });
   const tabs = h('div', { class: 'tabs' });
   const cols = Object.keys(pref('collections') || {});
-  if (S.source === 'fav' || S.source === 'col') {
+  if (S.source === 'fav' || S.source === 'col' || S.source === 'later') {
     tabs.append(h('button', { class: 'chip' + (S.source === 'fav' ? ' on' : ''), 'data-key': 'tab_fav', onClick: () => go('library', { source: 'fav', keepFocus: true }) }, '★ ' + t('Favorites')));
+    tabs.append(h('button', { class: 'chip' + (S.source === 'later' ? ' on' : ''), 'data-key': 'tab_later', onClick: () => go('library', { source: 'later', keepFocus: true }) }, '⏱ ' + t('Play later') + ' ' + listPref('later').size));
     for (const n of cols) tabs.append(h('button', { class: 'chip' + (S.source === 'col' && S.collection === n ? ' on' : ''), 'data-key': 'tab_col_' + n, onClick: () => go('library', { source: 'col', collection: n, keepFocus: true }) }, n));
   } else for (const c of visibleConsoles()) tabs.append(h('button', { class: 'chip' + (S.console === c.id ? ' on' : ''), 'data-key': 'tab_' + c.id, onClick: () => go('library', { console: c.id, query: '', keepFocus: true }) }, c.id === 'MD' ? 'Mega Drive' : c.id === 'SWITCH' ? 'Switch' : c.id === 'WII' ? 'Wii' : c.id === 'GC' ? 'GameCube' : c.id));
   wrap.append(h('div', { class: 'libtop' }, h('button', { class: 'iconbtn', 'aria-label': t('Back to Home'), 'data-key': 'back', onClick: () => go('home') }, svg(ICON.back, 20, '#E9ECF5')), tabs));
   const games = shownGames();
-  const title = S.source === 'fav' ? t('Favorites') : S.source === 'col' ? S.collection : S.query && !S.console ? '"' + S.query + '"' : (byId[S.console] || {}).title || t('Library');
+  const title = S.source === 'fav' ? t('Favorites') : S.source === 'later' ? t('Play later') : S.source === 'col' ? S.collection : S.query && !S.console ? '"' + S.query + '"' : (byId[S.console] || {}).title || t('Library');
   const sortNames = { name: t('Name A–Z'), name_desc: t('Name Z–A'), added: t('Recently added'), recent: t('Recently played'), most: t('Most played') };
   wrap.append(h('div', { class: 'libhead' }, h('h1', {}, title), h('span', { class: 'n' }, count(games.length, 'game', 'games')),
     h('div', { class: 'filters' },
@@ -384,6 +388,7 @@ function gameMenu(g, e, recentMenu) {
   items.push([t('Rename'), '', () => ask(t('Rename'), g.title, async (v) => { await window.rs.meta('rename', g, v); toast(t('Name changed')); })]);
   items.push([t('Reset game info'), '', () => confirmBox(g.title, t('The name, cover and description you chose are removed and looked up again.'), t('Reset'), async () => { await window.rs.meta('reset', g); toast(t('Looking it up again…')); })]);
   items.push([listPref('favorites').has(g.id) ? t('Remove from favorites') : t('Add to favorites'), 'F', () => { toggleIn('favorites', g.id); render(); }]);
+  items.push([listPref('later').has(g.id) ? t('Remove from "Play later"') : t('Play later'), '', () => { toast(toggleIn('later', g.id) ? t('Saved to "Play later"') : t('Removed from "Play later"')); render(); }]);
   items.push([t('Add to a collection'), '', () => collectionPicker(g)]);
   items.push([listPref('completed').has(g.id) ? t('Remove "Completed"') : t('Mark as completed'), '', () => { toggleIn('completed', g.id); render(); }]);
   if (!kept(g) && (S.files[g.fileId] || {}).state !== 'downloading') items.push([t('Download to play offline'), '', async () => { const i = await window.rs.game('download', g); if (i) S.files[g.fileId] = i; toast(t('Downloading') + ' ' + g.title + '…'); }]);
@@ -399,7 +404,7 @@ function gameMenu(g, e, recentMenu) {
   if (kept(g) && !g.local && !(pref('pcLinked') || {})[g.id]) items.push([t('Delete downloaded file'), '', () => confirmBox(g.title, t('It is deleted from this PC to free up space. The game stays in Telegram and in your library.'), t('Delete'), async () => { const r = await window.rs.game('remove', g); toast(r && r.error ? r.error : t('File deleted')); })]);
   items.push([t('Hide game'), '', () => confirmBox(g.title, t("It won't show in your library. You can show it again in Settings > Hidden games."), t('Hide'), () => { toggleIn('hidden', g.id); render(); })]);
   if (recentMenu) {
-    items.push([t('Remove from recents'), '', () => { setPref('plays', (pref('plays') || []).filter((p) => p.id !== g.id)); render(); }]);
+    items.push([t('Remove from recents'), '', () => { setPref('unrecent', Object.assign({}, pref('unrecent') || {}, { [g.id]: Date.now() })); render(); }]);
     items.push([t('Clear all recents'), '', clearRecents]);
   }
   const layer = document.getElementById('layer'); const shade = h('div', { class: 'shade', style: 'background:transparent;display:block', onMousedown: (ev) => { if (ev.target === shade) close(); } });
@@ -711,9 +716,9 @@ function optionsForFocus() { const g = focusedGame() || (S.page === 'library' &&
 /** LB / RB: the previous / next console (or collection) in the library. */
 function switchTab(step) {
   if (S.page !== 'library') return;
-  if (S.source === 'fav' || S.source === 'col') {
-    const tabs = ['*fav', ...Object.keys(pref('collections') || {})]; const cur = S.source === 'fav' ? 0 : tabs.indexOf(S.collection);
-    const n = tabs[(cur + step + tabs.length) % tabs.length]; go('library', n === '*fav' ? { source: 'fav' } : { source: 'col', collection: n });
+  if (S.source === 'fav' || S.source === 'col' || S.source === 'later') {
+    const tabs = ['*fav', '*later', ...Object.keys(pref('collections') || {})]; const cur = S.source === 'fav' ? 0 : S.source === 'later' ? 1 : tabs.indexOf(S.collection);
+    const n = tabs[(cur + step + tabs.length) % tabs.length]; go('library', n === '*fav' ? { source: 'fav' } : n === '*later' ? { source: 'later' } : { source: 'col', collection: n });
   } else {
     const ids = visibleConsoles().map((c) => c.id); const cur = Math.max(0, ids.indexOf(S.console));
     go('library', { console: ids[(cur + step + ids.length) % ids.length], query: '', selected: null });
@@ -826,6 +831,7 @@ function pollPads() {
   });
   window.rs.on('kept', (k) => { S.prefs.kept = k; render(); });
   window.rs.on('toast', (text) => toast(text));
+  window.rs.on('prefs', (p) => { Object.assign(S.prefs, p); if (!document.querySelector('#layer .shade') && !(document.activeElement && document.activeElement.tagName === 'INPUT')) render(); });
   window.rs.on('pad', (held) => {
     let h = held || [];
     if (pref('swapAB')) h = h.map((k) => ({ a: 'b', b: 'a', x: 'y', y: 'x' }[k] || k));

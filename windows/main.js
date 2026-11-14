@@ -11,6 +11,7 @@ const { External } = require('./lib/external');
 const { Meta } = require('./lib/meta');
 const { LocalGames } = require('./lib/localscan');
 const { Friends } = require('./lib/social');
+const { LibrarySync } = require('./lib/sync');
 const { Remote, brief } = require('./lib/remote');
 const catalog = require('./lib/catalog');
 const I18N = require('./renderer/i18n');
@@ -21,7 +22,7 @@ try { config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), '
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
-let remote = null, win = null, store = null, drive = null, player = null, cloud = null, external = null, meta = null, local = null, friends = null, t = (s) => s;
+let librarySync = null, remote = null, win = null, store = null, drive = null, player = null, cloud = null, external = null, meta = null, local = null, friends = null, t = (s) => s;
 /** Telegram games plus the ones found in the PC folders the user chose. */
 function allGames() { return store.games().concat(local ? local.games() : []); }
 /** The games as the screens show them (names, covers and descriptions from the lookup). */
@@ -110,7 +111,8 @@ async function withParts(game, first) {
 }
 
 const PREF_KEYS = new Set(['fullscreen', 'lang', 'theme', 'favorites', 'hidden', 'completed', 'collections', 'recent', 'plays', 'onboarded', 'skipped', 'sort', 'keep',
-  'homeTheme', 'resolution', 'gameSettings', 'palette', 'dark', 'logoStyle', 'sections', 'shownConsoles', 'swapAB', 'playerWindowed', 'queue']);
+  'homeTheme', 'resolution', 'gameSettings', 'palette', 'dark', 'logoStyle', 'sections', 'shownConsoles', 'swapAB', 'playerWindowed', 'queue', 'later', 'unrecent']);
+const SYNCED_KEYS = new Set(['favorites', 'hidden', 'completed', 'collections', 'plays', 'later', 'unrecent']);
 
 /**
  * Controllers for the menus: rs-player.exe in "--pads 1" mode reads them with SDL (PS5 / PS4 over Bluetooth, Switch Pro…),
@@ -174,6 +176,7 @@ app.whenReady().then(() => {
   const afterGame = (info) => {
       if (info.played > 0) { const pt = store.get('playtime') || {}; pt[info.id] = (pt[info.id] || 0) + info.played; store.set('playtime', pt); }
       send('played', Object.assign(info, { playtime: store.get('playtime') || {} }));
+      if (librarySync) librarySync.soon(5000);
       if (friends) friends.inMenu();
       if (remote) {
         remote.stopped();
@@ -264,8 +267,9 @@ app.whenReady().then(() => {
   });
   friends = new Friends({ drive, store, t: (s) => t(s) });
   friends.on('changed', () => send('friends', friends.snapshot()));
+  librarySync = new LibrarySync({ dir: app.getPath('userData'), drive, store, onChange: (p) => send('prefs', p) });
   let wasReady = false;
-  drive.on('state', () => { if (drive.stage === 'ready' && !wasReady) { wasReady = true; setTimeout(() => { friends.load(); friends.inMenu(); }, 4000); } });
+  drive.on('state', () => { if (drive.stage === 'ready' && !wasReady) { wasReady = true; setTimeout(() => { friends.discover().catch(() => {}).then(() => { friends.load(); friends.inMenu(); }); librarySync.soon(2000); }, 4000); } });
   drive.on('state', (changed) => { send('state', { drive: drive.snapshot(), games: changed ? shownGames() : null }); if (changed) lookUp(); });
   drive.on('file', (info) => { noteFile(info); send('file', info); });
 
@@ -274,7 +278,7 @@ app.whenReady().then(() => {
     folders: local.folders(), unsorted: local.unsorted().length, paths: { downloads: path.join(dir, 'telegram', 'files'), pictures: path.join(app.getPath('pictures'), 'RetroStream') },
     consoles: catalog.CONSOLES.map((c) => ({ id: c.id, title: c.title, thumbs: c.thumbs, color: c.color, big: !!c.big }))
   }));
-  ipcMain.handle('prefs:set', (_e, k, v) => { if (PREF_KEYS.has(k)) { store.set(k, v); if (k === 'lang') t = drive.t = I18N.make(v); } return true; });
+  ipcMain.handle('prefs:set', (_e, k, v) => { if (PREF_KEYS.has(k)) { store.set(k, v); if (SYNCED_KEYS.has(k) && librarySync) librarySync.soon(4000); if (k === 'lang') t = drive.t = I18N.make(v); } return true; });
   ipcMain.handle('drive', async (_e, action, ...args) => {
     switch (action) {
       case 'qr': drive.requestQr(); break;

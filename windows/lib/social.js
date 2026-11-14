@@ -42,6 +42,12 @@ class Friends extends EventEmitter {
     const chat = await this.drive.invoke({ _: 'joinChatByInviteLink', invite_link: link });
     this.ready(chat.id, '');
   }
+  /** Every device of the account finds the friends group by its name (no link needed on the second device). */
+  async discover() {
+    if (this.chat() || this.drive.stage !== 'ready') return;
+    const id = await this.drive.ownChannel(FRIENDS_TITLE, '', false);
+    if (id && !this.chat()) this.ready(id, '');
+  }
   leave() { this.setMine({}); this.list.clear(); this.myMsg = 0; this.emit('changed'); }
   ready(chat, link) { this.setMine({ chat, link }); this.list.clear(); this.myMsg = 0; this.load(); this.post(); this.emit('changed'); }
   line(text, key) { for (const l of text.split('\n')) { const i = l.indexOf(':'); if (i > 0 && l.substring(0, i) === key) return l.substring(i + 1).trim(); } return ''; }

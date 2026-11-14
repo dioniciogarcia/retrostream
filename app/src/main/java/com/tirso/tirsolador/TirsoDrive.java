@@ -126,7 +126,7 @@ final class TirsoDrive {
         else if(object instanceof TdApi.UpdateNewChat){TdApi.Chat c=((TdApi.UpdateNewChat)object).chat;chats.put(c.id,c);}
         else if(object instanceof TdApi.UpdateChatTitle){TdApi.UpdateChatTitle u=(TdApi.UpdateChatTitle)object;TdApi.Chat c=chats.get(u.chatId);if(c!=null)c.title=u.title;}
         else if(object instanceof TdApi.UpdateFile)fileUpdated(((TdApi.UpdateFile)object).file);
-        else if(object instanceof TdApi.UpdateNewMessage){presenceMessage(((TdApi.UpdateNewMessage)object).message);friendsChanged();}
+        else if(object instanceof TdApi.UpdateNewMessage){TdApi.Message nm=((TdApi.UpdateNewMessage)object).message;syncMessage(nm);presenceMessage(nm);friendsChanged();}
         else if(object instanceof TdApi.UpdateMessageContent){
             TdApi.UpdateMessageContent u=(TdApi.UpdateMessageContent)object;
             if(u.chatId==friendsChat()&&u.chatId!=0)send(new TdApi.GetMessage(u.chatId,u.messageId),r->{if(r instanceof TdApi.Message){presenceMessage((TdApi.Message)r);friendsChanged();}});
@@ -171,7 +171,7 @@ final class TirsoDrive {
                 if(me instanceof TdApi.User){
                     long previous=prefs.getLong("accountId",0);accountId=((TdApi.User)me).id;
                     if(previous!=accountId){new Library(context).clearTelegram();publish(true);}
-                    prefs.edit().putLong("accountId",accountId).apply();discover();if(friendsChat()!=0){loadFriends();presenceChanged();}
+                    prefs.edit().putLong("accountId",accountId).apply();discover();if(friendsChat()!=0){loadFriends();presenceChanged();}else autoFriends();Sync.soon(6000);
                 }else if(me instanceof TdApi.Error)fail((TdApi.Error)me);
             });
         }else if(object instanceof TdApi.AuthorizationStateLoggingOut){stage=Stage.CONNECTING;status=T.t("Cerrando sesión…");
@@ -894,4 +894,79 @@ final class TirsoDrive {
         checked(new TdApi.DeleteMessages(chat,ids,true));
     }
     boolean ready(){return stage==Stage.READY&&accountId!=0;}
+
+    // ------------------------------------------------------------------ friends group found by its name
+    /** Every device of the account finds the friends group by itself (no link needed on the second device). */
+    private void autoFriends(){
+        if(friendsChat()!=0||stage!=Stage.READY)return;int token=generation;
+        loadList(new TdApi.ChatListMain(),0,token,()->loadList(new TdApi.ChatListArchive(),0,token,()->{
+            if(friendsChat()!=0||token!=generation)return;
+            TdApi.Chat c=findFriendsChat();
+            if(c!=null){friendsReady(c.id,"");return;}
+            searchExisting(FRIENDS_TITLE,e->{if(e!=null&&friendsChat()==0){chats.put(e.id,e);friendsReady(e.id,"");}});
+        }));
+    }
+
+    // ------------------------------------------------------------------ library sync (Telegram channel)
+    static final String SYNC_TITLE="TD - RetroStream - Library sync";
+    static final class SyncDoc{long messageId;int fileId,date;String device="";}
+    long accountId(){return accountId;}
+    private TdApi.Chat findSyncChat(){
+        long saved=prefs.getLong("syncChat_"+accountId,0);TdApi.Chat c=saved!=0?chats.get(saved):null;if(c!=null)return c;
+        for(TdApi.Chat chat:chats.values())if(TelegramCatalog.group(chat)&&norm(chat.title).equals(norm(SYNC_TITLE)))return chat;
+        return null;
+    }
+    /** Finds this account's library-sync channel, creating it the first time. */
+    void syncChannel(Done<Long> callback){
+        Done<Long> cb=once(callback,0L);
+        if(stage!=Stage.READY||accountId==0){cb.done(0L,T.t("Conecta TirsoDrive primero."));return;}
+        TdApi.Chat found=findSyncChat();
+        if(found!=null){prefs.edit().putLong("syncChat_"+accountId,found.id).apply();cb.done(found.id,null);return;}
+        int token=generation;
+        loadList(new TdApi.ChatListMain(),0,token,()->loadList(new TdApi.ChatListArchive(),0,token,()->{
+            TdApi.Chat again=findSyncChat();
+            if(again!=null){prefs.edit().putLong("syncChat_"+accountId,again.id).apply();cb.done(again.id,null);return;}
+            searchExisting(SYNC_TITLE,existing->{
+                if(existing!=null){chats.put(existing.id,existing);prefs.edit().putLong("syncChat_"+accountId,existing.id).apply();cb.done(existing.id,null);return;}
+                send(new TdApi.CreateNewSupergroupChat(SYNC_TITLE,false,true,"RetroStream · favoritos, colecciones e historial de todos tus dispositivos. No borres este canal.",null,0,false),r->{
+                    if(r instanceof TdApi.Chat){TdApi.Chat chat=(TdApi.Chat)r;chats.put(chat.id,chat);prefs.edit().putLong("syncChat_"+accountId,chat.id).apply();cb.done(chat.id,null);}
+                    else cb.done(0L,errorText(r));
+                });
+            });
+        }));
+    }
+    private SyncDoc parseSync(TdApi.Message m){
+        if(m==null||!(m.content instanceof TdApi.MessageDocument))return null;
+        TdApi.MessageDocument d=(TdApi.MessageDocument)m.content;
+        if(d.caption==null||d.document==null||d.document.document==null||!d.caption.text.startsWith("#RSSYNC"))return null;
+        SyncDoc s=new SyncDoc();s.messageId=m.id;s.date=m.date;s.fileId=d.document.document.id;
+        for(String line:d.caption.text.split("\n"))if(line.startsWith("device:"))s.device=line.substring(7).trim();
+        return s;
+    }
+    /** The sync files in the channel, newest first. */
+    void syncDocs(long chat,Done<List<SyncDoc>> callback){
+        Done<List<SyncDoc>> cb=once(callback,null);
+        send(new TdApi.GetChatHistory(chat,0,0,30,false),h->{
+            List<SyncDoc> out=new ArrayList<>();Set<Long> seen=new HashSet<>();
+            if(h instanceof TdApi.Messages)for(TdApi.Message m:((TdApi.Messages)h).messages){SyncDoc d=parseSync(m);if(d!=null&&seen.add(d.messageId))out.add(d);}
+            send(new TdApi.SearchChatMessages(chat,null,"",null,0,0,30,new TdApi.SearchMessagesFilterDocument()),r->{
+                if(r instanceof TdApi.FoundChatMessages)for(TdApi.Message m:((TdApi.FoundChatMessages)r).messages){SyncDoc d=parseSync(m);if(d!=null&&seen.add(d.messageId))out.add(d);}
+                else if(!(h instanceof TdApi.Messages)){cb.done(null,errorText(r));return;}
+                out.sort((a,b)->Long.compare(b.messageId,a.messageId));cb.done(out,null);
+            });
+        });
+    }
+    void downloadSync(int fileId,Done<String> callback){
+        Done<String> cb=once(callback,null);
+        send(new TdApi.DownloadFile(fileId,16,0,0,true),r->{
+            if(r instanceof TdApi.File&&((TdApi.File)r).local.isDownloadingCompleted)cb.done(((TdApi.File)r).local.path,null);
+            else cb.done(null,errorText(r));
+        });
+    }
+    void deleteMessages(long chat,long[] ids){if(ids.length>0)checked(new TdApi.DeleteMessages(chat,ids,true));}
+    /** A new sync file from another device: merge it now. */
+    private void syncMessage(TdApi.Message m){
+        if(m==null||m.chatId==0||m.chatId!=prefs.getLong("syncChat_"+accountId,-1))return;
+        SyncDoc d=parseSync(m);if(d!=null&&!d.device.equals(Sync.device(context)))Sync.soon(1500);
+    }
 }

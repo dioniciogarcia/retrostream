@@ -64,6 +64,7 @@ internal object GameMenu {
         add(T.t("Editar información")) { editInfo(a, g, host) }
         add((if (lib.favorite(g)) T.t("Quitar de favoritos") else T.t("Añadir a favoritos"))) { lib.toggleFavorite(g); host.refresh() }
         add(T.t("Añadir a una colección")) { collectionPicker(a, lib, g, host) }
+        add(if (lib.later(g)) T.t("Quitar de «Jugar después»") else T.t("Jugar después")) { val on = !lib.later(g); lib.later(g, on); toast(a, if (on) T.t("Guardado en «Jugar después»") else T.t("Quitado de «Jugar después»")); host.refresh() }
         add(if (lib.completed(g)) T.t("Quitar «Completado»") else T.t("Marcar como completado")) { lib.completed(g, !lib.completed(g)); host.refresh() }
         if (g.console != Console.MAME) add(T.t("Ajustes de este juego")) { gameSettings(a, g) }
         if (g.telegramAccount != 0L) add(T.t("Compartir con un amigo")) { share(a, drive, g) }
