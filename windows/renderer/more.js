@@ -205,11 +205,28 @@ function friendsPage() {
     h('div', { class: 'settings' }, h('section', { class: 'group' }, h('h2', {}, t('Start')),
       srow(t('Create the friends group'), t('You get an invite link to send'), '#22C55E', () => act('create', null, t('Group ready. Copy the link and send it to your friends.')), 'fr_create'),
       srow(t('Join with a link'), t('Paste the t.me link a friend sent you'), '#2F6DF6', () => ask(t('Invite link'), '', (v) => act('join', v, t('You joined the friends group'))), 'fr_join'))));
-  return page(t('Friends'), h('div', { class: 'settings' },
-    h('section', { class: 'group' }, h('h2', {}, t('Friends') + ' · ' + people.filter((x) => x.online).length + ' ' + t('online')),
-      people.length ? people.map((x) => h('div', { class: 'srow' }, h('span', { class: 'ic', style: `background:${x.playing ? '#22C55E' : x.online ? '#2F6DF6' : '#4A5168'};border-radius:15px` }),
-        h('span', { class: 'tx' }, h('b', {}, x.name || t('Friend')), h('span', {}, x.playing ? t('Playing') + ' ' + x.game + (x.console ? ' · ' + ((byId[x.console] || {}).title || x.console) : '') + ' · ' + ago(x.since)
-          : x.online ? t('Online · in the menu') : t('Last seen') + ' ' + ago(x.ts))))) : h('p', { style: 'padding:6px 10px;color:var(--muted)' }, t('Nobody else is in the group yet. Send them the invite link.'))),
+  const row = (x) => h('div', { class: 'srow' }, h('span', { class: 'ic', style: `background:${x.playing ? '#22C55E' : x.online ? '#2F6DF6' : '#4A5168'};border-radius:15px` }),
+    h('span', { class: 'tx' }, h('b', {}, x.name || t('Friend')), h('span', {}, x.playing ? t('Playing') + ' ' + x.game + (x.console ? ' · ' + ((byId[x.console] || {}).title || x.console) : '') + ' · ' + ago(x.since)
+      : x.online ? t('Online · in the menu') : x.ts ? t('Last seen') + ' ' + ago(x.ts) : t('Offline'))));
+  const online = people.filter((x) => x.online); const offline = people.filter((x) => !x.online);
+  const seen = new Set(); const recs = (f.recs || []).filter((r) => r.from !== f.me).sort((a, b) => b.ts - a.ts).filter((r) => { const k = r.console + '|' + r.title.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 20);
+  const cols = (f.cols || []).slice().sort((a, b) => ((a.owner === f.me) - (b.owner === f.me)) || a.name.localeCompare(b.name));
+  if (!friendsPage.refreshed) { friendsPage.refreshed = true; window.rs.friends('refreshShared').then((r) => { if (r && !r.error) { S.friends = r; } }).catch(() => {}); }
+  const mineCols = Object.keys(pref('collections') || {}); const notShared = mineCols.filter((n) => !cols.some((c) => c.owner === f.me && c.name === n));
+  return page(t('Friends'),
+    recs.length ? h('div', { style: 'padding:0 32px' }, h('div', { class: 'rowhead' }, h('h2', {}, t('Recommended for you'))),
+      h('div', { class: 'strip' }, recs.map((r) => { const mine = matchGame(r.gameId, r.title, r.console); const shown = mine || { id: 'rec:' + r.msgId, title: r.title, console: r.console, cover: r.cover };
+        return h('button', { class: 'mini', 'data-key': 'rec_' + r.msgId, onClick: () => mine ? openGame(mine) : toast(t('Not in your library') + ': ' + r.title) },
+          cover(shown, 150, 200), h('div', { class: 't' }, r.title), h('div', { class: 's' }, t('from') + ' ' + (r.fromName || '…') + (mine ? '' : ' · ' + t('Not in your library')))); }))) : null,
+    h('div', { class: 'settings' },
+    h('section', { class: 'group' }, h('h2', {}, t('Online now') + ' · ' + online.length),
+      online.length ? online.map(row) : h('p', { style: 'padding:6px 10px;color:var(--muted)' }, people.length ? t('Nobody is online right now.') : t('Nobody else is in the group yet. Send them the invite link.'))),
+    h('section', { class: 'group' }, h('h2', {}, t('Shared collections')),
+      cols.map((c) => { const mine = c.owner === f.me; const have = c.games.filter((g) => matchGame(g.id, g.title, g.console)).length;
+        return srow(c.name, (mine ? t('Yours') : t('from') + ' ' + (c.ownerName || '…')) + ' · ' + c.games.length + ' ' + t('games') + (mine ? '' : ' · ' + have + ' ' + t('in your library')), '#7A4DFF', () => sharedCollection(c, mine, act), 'col_' + c.msgId); }),
+      notShared.length ? srow('+ ' + t('Share a collection'), t('Your friends see it here'), '#22C55E', () => choose(t('Share a collection'), notShared.map((n) => ({ label: n, pick: () => act('shareCol', n, t('Collection shared with your friends')) }))), 'col_share')
+        : (cols.length ? null : h('p', { style: 'padding:6px 10px;color:var(--muted)' }, t('Create a collection to share it here.')))),
+    offline.length ? h('section', { class: 'group' }, h('h2', {}, t('Offline') + ' · ' + offline.length), offline.map(row)) : null,
     h('section', { class: 'group' }, h('h2', {}, t('Options')),
       toggleRow(t('Show my activity'), t('Your friends see if you are online and what you play'), f.share, '#22C55E', () => act('share', !f.share), 'fr_share'),
       f.link ? srow(t('Copy invite link'), f.link, '#2AA8FF', async () => { await window.rs.tools('copy', f.link); toast(t('Link copied')); }, 'fr_copy') : null,
@@ -259,6 +276,17 @@ function screenshots(g) {
         h('img', { src: s.url, alt: t('Screenshot') + ' ' + new Date(s.date * 1000).toLocaleString() }))));
     });
   });
+}
+function matchGame(id, title, consoleId) {
+  if (id) { const g = S.games.find((x) => x.id === id); if (g) return g; }
+  const loose = (x) => String(x || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').replace(/[^a-z0-9]/g, '');
+  const want = loose(title); if (!want) return null;
+  return S.games.find((g) => g.console === consoleId && (loose(g.title) === want || loose(g.base) === want)) || null;
+}
+function sharedCollection(c, mine, act) {
+  const opts = c.games.map((g) => { const m = matchGame(g.id, g.title, g.console); return { label: (m ? '▶ ' : '○ ') + g.title + ' · ' + ((byId[g.console] || {}).title || g.console), pick: () => m ? openGame(m) : toast(t('Not in your library') + ': ' + g.title) }; });
+  if (mine) opts.push({ label: t('Stop sharing'), pick: () => act('unshareCol', c.name, t('Stopped sharing')) });
+  choose(c.name + (mine ? '' : ' · ' + (c.ownerName || '')), opts);
 }
 async function shareGame(g) {
   const f = S.friends || {};

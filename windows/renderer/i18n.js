@@ -2,6 +2,23 @@
 // Texts are written in English; Spanish is looked up here. Shared by the window and the app.
 (function (root) {
   const ES = {
+  "Recommended for you": "Recomendado para ti",
+  "Not in your library": "No est\u00e1 en tu biblioteca",
+  "from": "de",
+  "Online now": "En l\u00ednea ahora",
+  "Nobody is online right now.": "No hay nadie conectado ahora.",
+  "Shared collections": "Colecciones compartidas",
+  "Yours": "Tuya",
+  "in your library": "en tu biblioteca",
+  "Share a collection": "Compartir una colecci\u00f3n",
+  "Your friends see it here": "Tus amigos la ven aqu\u00ed",
+  "Collection shared with your friends": "Colecci\u00f3n compartida con tus amigos",
+  "Create a collection to share it here.": "Crea una colecci\u00f3n para compartirla aqu\u00ed.",
+  "Offline": "Desconectados",
+  "Stop sharing": "Dejar de compartir",
+  "Stopped sharing": "Ya no se comparte",
+  "Recommend to friends": "Recomendar a amigos",
+  "Recommended to your friends": "Recomendado a tus amigos",
   "Play later": "Jugar despu\u00e9s",
   "Remove from \"Play later\"": "Quitar de \u00abJugar despu\u00e9s\u00bb",
   "Saved to \"Play later\"": "Guardado en \u00abJugar despu\u00e9s\u00bb",

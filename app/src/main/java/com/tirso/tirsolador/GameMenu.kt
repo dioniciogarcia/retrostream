@@ -67,6 +67,7 @@ internal object GameMenu {
         add(if (lib.later(g)) T.t("Quitar de «Jugar después»") else T.t("Jugar después")) { val on = !lib.later(g); lib.later(g, on); toast(a, if (on) T.t("Guardado en «Jugar después»") else T.t("Quitado de «Jugar después»")); host.refresh() }
         add(if (lib.completed(g)) T.t("Quitar «Completado»") else T.t("Marcar como completado")) { lib.completed(g, !lib.completed(g)); host.refresh() }
         if (g.console != Console.MAME) add(T.t("Ajustes de este juego")) { gameSettings(a, g) }
+        if (drive.friendsChat() != 0L) add(T.t("Recomendar a amigos")) { drive.recommend(g) { ok, e -> toast(a, if (ok == true) T.t("Recomendado a tus amigos") else e ?: T.t("No se pudo enviar")) } }
         if (g.telegramAccount != 0L) add(T.t("Compartir con un amigo")) { share(a, drive, g) }
         if (BuildConfig.PHONE && g.telegramAccount != 0L && !downloaded(a, drive, g) && !DownloadQueue.contains(g))
             add(T.t("Descargar para jugar sin conexión")) { val n = DownloadQueue.add(a, drive, listOf(g)); if (n > 0) toast(a, T.t("Añadido a la cola de descargas")) }

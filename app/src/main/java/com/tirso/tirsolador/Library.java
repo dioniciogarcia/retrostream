@@ -151,6 +151,14 @@ public final class Library {
         }
         return out;
     }
+    private static String loose(String s) { return s == null ? "" : s.toLowerCase(java.util.Locale.ROOT).replaceAll("\\(.*?\\)|\\[.*?\\]", "").replaceAll("[^a-z0-9]", ""); }
+    /** The game in your library that matches a friend's game: same id, or same console and name. */
+    public Game match(String id, String title, String console) {
+        if (id != null && !id.isEmpty()) for (Game g : games) if (g.id.equals(id)) return g;
+        String want = loose(title); if (want.isEmpty()) return null;
+        for (Game g : games) if (g.console.name().equals(console) && loose(g.title).equals(want)) return g;
+        return null;
+    }
     public int count(Console c) { int n = 0; for (Game g : games) if (g.console == c) n++; return n; }
     // ------------------------------------------------------------------ collections, completed, new games
     private JSONObject collectionsJson() { try { return new JSONObject(prefs.getString("collections", "{}")); } catch (JSONException e) { return new JSONObject(); } }

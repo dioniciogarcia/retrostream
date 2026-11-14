@@ -126,10 +126,14 @@ final class TirsoDrive {
         else if(object instanceof TdApi.UpdateNewChat){TdApi.Chat c=((TdApi.UpdateNewChat)object).chat;chats.put(c.id,c);}
         else if(object instanceof TdApi.UpdateChatTitle){TdApi.UpdateChatTitle u=(TdApi.UpdateChatTitle)object;TdApi.Chat c=chats.get(u.chatId);if(c!=null)c.title=u.title;}
         else if(object instanceof TdApi.UpdateFile)fileUpdated(((TdApi.UpdateFile)object).file);
-        else if(object instanceof TdApi.UpdateNewMessage){TdApi.Message nm=((TdApi.UpdateNewMessage)object).message;syncMessage(nm);presenceMessage(nm);friendsChanged();}
+        else if(object instanceof TdApi.UpdateNewMessage){TdApi.Message nm=((TdApi.UpdateNewMessage)object).message;syncMessage(nm);presenceMessage(nm);socialMessage(nm);friendsChanged();}
         else if(object instanceof TdApi.UpdateMessageContent){
             TdApi.UpdateMessageContent u=(TdApi.UpdateMessageContent)object;
-            if(u.chatId==friendsChat()&&u.chatId!=0)send(new TdApi.GetMessage(u.chatId,u.messageId),r->{if(r instanceof TdApi.Message){presenceMessage((TdApi.Message)r);friendsChanged();}});
+            if(u.chatId==friendsChat()&&u.chatId!=0)send(new TdApi.GetMessage(u.chatId,u.messageId),r->{if(r instanceof TdApi.Message){presenceMessage((TdApi.Message)r);socialMessage((TdApi.Message)r);friendsChanged();}});
+        }
+        else if(object instanceof TdApi.UpdateDeleteMessages){
+            TdApi.UpdateDeleteMessages u=(TdApi.UpdateDeleteMessages)object;
+            if(u.isPermanent&&u.chatId==friendsChat()&&u.chatId!=0){socialDeleted(u.messageIds);friendsChanged();}
         }
         else if(object instanceof TdApi.UpdateMessageSendSucceeded){
             TdApi.UpdateMessageSendSucceeded u=(TdApi.UpdateMessageSendSucceeded)object;
@@ -684,7 +688,7 @@ final class TirsoDrive {
     /** Reads every friend's status message from the group. */
     void loadFriends(){
         long chat=friendsChat();if(chat==0||stage!=Stage.READY)return;
-        pageFriends(chat,0,0);
+        pageFriends(chat,0,0);loadMembers(chat);
     }
     private void pageFriends(long chat,long from,int page){
         send(new TdApi.GetChatHistory(chat,from,0,100,false),r->{
@@ -694,12 +698,95 @@ final class TirsoDrive {
             long oldest=from;
             for(TdApi.Message m:list){
                 Friend existing=m.senderId instanceof TdApi.MessageSenderUser?friends.get(((TdApi.MessageSenderUser)m.senderId).userId):null;
-                if(existing==null||page==0&&existing.ts<=0)presenceMessage(m);else if(existing!=null&&((long)m.date*1000)>existing.ts-ONLINE_WINDOW*4&&false)presenceMessage(m);
+                if(existing==null||page==0&&existing.ts<=0)presenceMessage(m);
+                socialMessage(m);else if(existing!=null&&((long)m.date*1000)>existing.ts-ONLINE_WINDOW*4&&false)presenceMessage(m);
                 oldest=m.id;
             }
             if(page<3)pageFriends(chat,oldest,page+1);else friendsChanged();
         });
     }
+    // ------------------------------------------------------------------ recommendations and shared collections (friends group)
+    static final String REC_TAG="#RSREC",COL_TAG="#RSCOL";
+    /** A game a friend recommended (one tap, no message). */
+    static final class Rec{long msgId,from;String fromName="",gameId="",title="",console="",cover="";long ts;}
+    /** A collection a friend shared: games as {console, title, cover, id}. */
+    static final class SharedCol{long msgId,owner;String ownerName="",name="";long ts;final List<String[]> games=new ArrayList<>();}
+    final Map<Long,Rec> recs=new HashMap<>();
+    final Map<Long,SharedCol> sharedCols=new HashMap<>();
+    private String nameOf(long user){
+        String n=userNames.get(user);if(n!=null)return n;
+        userNames.put(user,"");
+        send(new TdApi.GetUser(user),r->{if(r instanceof TdApi.User){TdApi.User u=(TdApi.User)r;String full=(u.firstName+" "+u.lastName).trim();userNames.put(user,full);
+            Friend x=friends.get(user);if(x!=null)x.name=full;for(Rec c:recs.values())if(c.from==user)c.fromName=full;for(SharedCol c:sharedCols.values())if(c.owner==user)c.ownerName=full;friendsChanged();}});
+        return "";
+    }
+    private void socialMessage(TdApi.Message m){
+        if(m==null||m.chatId!=friendsChat()||!(m.content instanceof TdApi.MessageText)||!(m.senderId instanceof TdApi.MessageSenderUser))return;
+        String text=((TdApi.MessageText)m.content).text.text;long user=((TdApi.MessageSenderUser)m.senderId).userId;
+        long ts;try{ts=Long.parseLong(line(text,"ts"));}catch(NumberFormatException e){ts=(long)m.date*1000;}
+        if(text.startsWith(REC_TAG)){
+            Rec r=new Rec();r.msgId=m.id;r.from=user;r.fromName=nameOf(user);r.gameId=line(text,"id");r.title=line(text,"title");r.console=line(text,"console");r.cover=line(text,"cover");r.ts=ts;
+            if(!r.title.isEmpty())recs.put(m.id,r);
+        }else if(text.startsWith(COL_TAG)){
+            SharedCol c=new SharedCol();c.msgId=m.id;c.owner=user;c.ownerName=nameOf(user);c.name=line(text,"name");c.ts=ts;
+            for(String l:text.split("\n"))if(l.startsWith("g:")){String[] p=l.substring(2).split("\\|",-1);if(p.length>=2)c.games.add(new String[]{p[0],p[1],p.length>2?p[2]:"",p.length>3?p[3]:""});}
+            if(!c.name.isEmpty()){for(java.util.Iterator<SharedCol> it=sharedCols.values().iterator();it.hasNext();){SharedCol o=it.next();if(o.owner==user&&o.name.equals(c.name)&&o.msgId!=m.id){if(o.msgId>m.id)return;it.remove();}}sharedCols.put(m.id,c);}
+        }
+    }
+    private void socialDeleted(long[] ids){for(long id:ids){recs.remove(id);sharedCols.remove(id);}}
+    /** Everyone in the friends group (so friends who never opened RetroStream yet also show, as offline). */
+    private void loadMembers(long chat){
+        TdApi.Chat c=chats.get(chat);
+        if(c==null||!(c.type instanceof TdApi.ChatTypeSupergroup))return;
+        send(new TdApi.GetSupergroupMembers(((TdApi.ChatTypeSupergroup)c.type).supergroupId,null,0,200),r->{
+            if(!(r instanceof TdApi.ChatMembers))return;
+            for(TdApi.ChatMember m:((TdApi.ChatMembers)r).members){
+                if(!(m.memberId instanceof TdApi.MessageSenderUser))continue;long user=((TdApi.MessageSenderUser)m.memberId).userId;
+                if(friends.containsKey(user))continue;
+                Friend f=new Friend();f.userId=user;f.name=nameOf(user);friends.put(user,f);
+            }
+            friendsChanged();
+        });
+    }
+    private static String clip(String s){return s==null?"":s.replace("\n"," ").replace("|","/").trim();}
+    /** Recommends a game to the friends group: one tap. */
+    void recommend(Game g,Done<Boolean> callback){
+        Done<Boolean> cb=once(callback,false);long chat=friendsChat();
+        if(chat==0||!ready()){cb.done(false,T.t("Primero crea o únete al grupo de amigos."));return;}
+        String text=REC_TAG+"\nid:"+g.id+"\ntitle:"+clip(g.title)+"\nconsole:"+g.console.name()+"\ncover:"+clip(g.coverName)+"\nts:"+System.currentTimeMillis();
+        TdApi.InputMessageText content=new TdApi.InputMessageText(new TdApi.FormattedText(text,new TdApi.TextEntity[0]),null,false);
+        send(new TdApi.SendMessage(chat,null,null,null,null,content),r->cb.done(r instanceof TdApi.Message,r instanceof TdApi.Error?errorText(r):null));
+    }
+    /** My shared collection with this name, if any. */
+    SharedCol mySharedCol(String name){for(SharedCol c:sharedCols.values())if(c.owner==accountId&&c.name.equals(name))return c;return null;}
+    private String colText(String name,List<Game> games){
+        StringBuilder b=new StringBuilder(COL_TAG).append("\nname:").append(clip(name)).append("\nts:").append(System.currentTimeMillis());
+        for(Game g:games){String l="\ng:"+g.console.name()+"|"+clip(g.title)+"|"+clip(g.coverName)+"|"+g.id;if(b.length()+l.length()>4000)break;b.append(l);}
+        return b.toString();
+    }
+    /** Shares one of my collections with the friends group (or updates it when it's already shared). */
+    void shareCollection(String name,List<Game> games,Done<Boolean> callback){
+        Done<Boolean> cb=once(callback,false);long chat=friendsChat();
+        if(chat==0||!ready()){cb.done(false,T.t("Primero crea o únete al grupo de amigos."));return;}
+        TdApi.InputMessageText content=new TdApi.InputMessageText(new TdApi.FormattedText(colText(name,games),new TdApi.TextEntity[0]),null,false);
+        SharedCol mine=mySharedCol(name);
+        if(mine!=null)send(new TdApi.EditMessageText(chat,mine.msgId,null,content),r->{if(r instanceof TdApi.Message)socialMessage((TdApi.Message)r);friendsChanged();cb.done(r instanceof TdApi.Message||(r instanceof TdApi.Error&&((TdApi.Error)r).message.contains("NOT_MODIFIED")),r instanceof TdApi.Error?errorText(r):null);});
+        else send(new TdApi.SendMessage(chat,null,null,null,null,content),r->cb.done(r instanceof TdApi.Message,r instanceof TdApi.Error?errorText(r):null));
+    }
+    /** Keeps my shared collections up to date with what's in them now (quietly; only when something changed). */
+    void refreshSharedCollections(Library lib){
+        for(SharedCol c:new ArrayList<>(sharedCols.values())){
+            if(c.owner!=accountId)continue;
+            if(!lib.collections().contains(c.name)){unshareCollection(c.name);continue;}
+            Set<String> ids=lib.collection(c.name);Set<String> shared=new HashSet<>();for(String[] g:c.games)shared.add(g[3]);
+            if(!ids.equals(shared)){List<Game> list=new ArrayList<>();for(Game g:lib.games)if(ids.contains(g.id))list.add(g);shareCollection(c.name,list,(ok,e)->{});}
+        }
+    }
+    void unshareCollection(String name){
+        SharedCol mine=mySharedCol(name);if(mine==null)return;
+        sharedCols.remove(mine.msgId);checked(new TdApi.DeleteMessages(friendsChat(),new long[]{mine.msgId},true));friendsChanged();
+    }
+
     private String presenceText(){
         return PRESENCE_TAG+"\nstate:"+myState+(myGame.isEmpty()?"":"\ngame:"+myGame+"\nconsole:"+myConsole)+"\nsince:"+mySince+"\nts:"+System.currentTimeMillis();
     }

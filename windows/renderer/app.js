@@ -388,6 +388,7 @@ function gameMenu(g, e, recentMenu) {
   items.push([t('Rename'), '', () => ask(t('Rename'), g.title, async (v) => { await window.rs.meta('rename', g, v); toast(t('Name changed')); })]);
   items.push([t('Reset game info'), '', () => confirmBox(g.title, t('The name, cover and description you chose are removed and looked up again.'), t('Reset'), async () => { await window.rs.meta('reset', g); toast(t('Looking it up again…')); })]);
   items.push([listPref('favorites').has(g.id) ? t('Remove from favorites') : t('Add to favorites'), 'F', () => { toggleIn('favorites', g.id); render(); }]);
+  if (S.friends && S.friends.chat) items.push([t('Recommend to friends'), '', async () => { const r = await window.rs.friends('recommend', g); toast(r && r.error ? r.error : t('Recommended to your friends')); }]);
   items.push([listPref('later').has(g.id) ? t('Remove from "Play later"') : t('Play later'), '', () => { toast(toggleIn('later', g.id) ? t('Saved to "Play later"') : t('Removed from "Play later"')); render(); }]);
   items.push([t('Add to a collection'), '', () => collectionPicker(g)]);
   items.push([listPref('completed').has(g.id) ? t('Remove "Completed"') : t('Mark as completed'), '', () => { toggleIn('completed', g.id); render(); }]);

@@ -1691,19 +1691,41 @@ public class MainActivity extends Activity {
         TextView off = pill(offline.size() + " " + T.t("desconectados"), 24, text, ov(0x22FFFFFF)); LinearLayout.LayoutParams sp2 = new LinearLayout.LayoutParams(-2, -2); sp2.leftMargin = px(12); sum.addView(off, sp2);
         content.addView(sum);
         if (playing.size() + online.size() + offline.size() <= 1) { TextView t = tv(T.t("Aún no hay amigos aquí. Comparte el enlace de invitación."), 26, muted, fBody); t.setPadding(px(8), px(20), 0, 0); content.addView(t); }
-        if (!playing.isEmpty()) {
-            TextView h = tv(T.t("JUGANDO AHORA"), 21, muted, fMono); h.setLetterSpacing(.12f); h.setPadding(px(8), px(26), 0, px(10)); content.addView(h);
+        if (!playing.isEmpty() || !online.isEmpty()) {
+            TextView h = tv(T.t("EN LÍNEA AHORA"), 21, muted, fMono); h.setLetterSpacing(.12f); h.setPadding(px(8), px(26), 0, px(10)); content.addView(h);
             for (TirsoDrive.Friend f : playing) { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = px(14); content.addView(playingCard(f), lp); }
+            friendTiles(online);
         }
-        java.util.ArrayList<TirsoDrive.Friend> rest = new java.util.ArrayList<>(online); rest.addAll(offline);
-        if (!rest.isEmpty()) {
-            TextView h = tv(T.t("AMIGOS"), 21, muted, fMono); h.setLetterSpacing(.12f); h.setPadding(px(8), px(26), 0, px(10)); content.addView(h);
-            LinearLayout row = null; int i = 0;
-            for (TirsoDrive.Friend f : rest) {
-                if (i++ % 4 == 0) { row = horizontal(); row.setClipChildren(false); content.addView(row, new LinearLayout.LayoutParams(-1, -2)); }
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1); lp.setMargins(px(8), px(8), px(8), px(8)); row.addView(friendTile(f), lp);
+        // Recommended for you
+        java.util.List<TirsoDrive.Rec> recs = new java.util.ArrayList<>(); java.util.Set<String> seenRec = new java.util.HashSet<>();
+        java.util.List<TirsoDrive.Rec> allRecs = new java.util.ArrayList<>(drive.recs.values()); allRecs.sort((a, b) -> Long.compare(b.ts, a.ts));
+        for (TirsoDrive.Rec r : allRecs) if (r.from != drive.accountId && seenRec.add(r.console + "|" + r.title.toLowerCase(java.util.Locale.ROOT)) && recs.size() < 20) recs.add(r);
+        if (!recs.isEmpty()) {
+            LinearLayout rg = sGroup(T.t("Recomendado para ti"));
+            for (TirsoDrive.Rec r : recs) {
+                Game mine = library.match(r.gameId, r.title, r.console); Console c = null; try { c = Console.valueOf(r.console); } catch (Exception ignored) { }
+                sItem(rg, r.title, (c != null ? c.title : r.console) + " · " + T.t("de ") + (r.fromName.isEmpty() ? "…" : r.fromName) + (mine == null ? " · " + T.t("No está en tu biblioteca") : ""), "rec_" + r.msgId, c != null ? c.color : 0xFF475569, null,
+                    () -> { if (mine != null) openGameOnTv(mine); else Toast.makeText(this, T.t("No está en tu biblioteca") + ": " + r.title, Toast.LENGTH_SHORT).show(); });
             }
-            while (row != null && i++ % 4 != 0) row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        }
+        // Shared collections
+        drive.refreshSharedCollections(library);
+        java.util.List<TirsoDrive.SharedCol> shared = new java.util.ArrayList<>(drive.sharedCols.values());
+        shared.sort((a, b) -> a.owner == drive.accountId && b.owner != drive.accountId ? 1 : a.owner != drive.accountId && b.owner == drive.accountId ? -1 : a.name.compareToIgnoreCase(b.name));
+        LinearLayout cg = sGroup(T.t("Colecciones compartidas"));
+        for (TirsoDrive.SharedCol c : shared) {
+            boolean mineCol = c.owner == drive.accountId; int have = 0; for (String[] g : c.games) if (library.match(g[3], g[1], g[0]) != null) have++;
+            sItem(cg, c.name, (mineCol ? T.t("Tuya") : T.t("de ") + (c.ownerName.isEmpty() ? "…" : c.ownerName)) + " · " + c.games.size() + " " + T.t("juegos") + (mineCol ? "" : " · " + have + " " + T.t("en tu biblioteca")), "col_" + c.msgId, 0xFF7A4DFF, null, () -> sharedCollectionTv(c));
+        }
+        java.util.List<String> notShared = new java.util.ArrayList<>(); for (String n : library.collections()) if (drive.mySharedCol(n) == null) notShared.add(n);
+        if (!notShared.isEmpty()) sItem(cg, "+ " + T.t("Compartir una colección"), null, "col_share", 0xFF22C55E, null, () -> new AlertDialog.Builder(this).setTitle(T.t("Compartir una colección"))
+            .setItems(notShared.toArray(new String[0]), (d, w) -> { String n = notShared.get(w); java.util.Set<String> ids = library.collection(n); java.util.List<Game> list = new java.util.ArrayList<>(); for (Game g : library.games) if (ids.contains(g.id)) list.add(g);
+                drive.shareCollection(n, list, (ok, e) -> { Toast.makeText(this, Boolean.TRUE.equals(ok) ? T.t("Colección compartida con tus amigos") : e != null ? e : T.t("No se pudo compartir"), Toast.LENGTH_SHORT).show(); render(); }); })
+            .setNegativeButton(T.t("Cancelar"), null).show());
+        else if (shared.isEmpty()) sItem(cg, T.t("Crea una colección para compartirla aquí."), null, "col_none", 0xFF8C95AA, null, () -> { });
+        if (!offline.isEmpty()) {
+            TextView h = tv(T.t("DESCONECTADOS"), 21, muted, fMono); h.setLetterSpacing(.12f); h.setPadding(px(8), px(26), 0, px(10)); content.addView(h);
+            friendTiles(offline);
         }
         LinearLayout o = sGroup(T.t("Opciones"));
         boolean share = drive.shareActivity();
@@ -1716,6 +1738,24 @@ public class MainActivity extends Activity {
         sItem(o, T.t("Salir del grupo"), null, "friends_leave", 0xFFFF4D73, null, () -> new AlertDialog.Builder(this).setTitle(T.t("Salir de amigos"))
             .setMessage(T.t("Dejarás de ver y de mostrar actividad. Puedes volver a unirte con el enlace."))
             .setPositiveButton(T.t("Salir"), (d, w) -> { drive.friendsLeave(); render(); }).setNegativeButton(T.t("Cancelar"), null).show());
+    }
+    private void friendTiles(java.util.List<TirsoDrive.Friend> list) {
+        LinearLayout row = null; int i = 0;
+        for (TirsoDrive.Friend f : list) {
+            if (i++ % 4 == 0) { row = horizontal(); row.setClipChildren(false); content.addView(row, new LinearLayout.LayoutParams(-1, -2)); }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1); lp.setMargins(px(8), px(8), px(8), px(8)); row.addView(friendTile(f), lp);
+        }
+        while (row != null && i++ % 4 != 0) row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+    }
+    private void openGameOnTv(Game g) { collection = null; console = g.console; favorites = false; mode = 0; query = ""; libraryFocus = "game_" + g.id; libraryScroll = 0; route("library"); }
+    /** A shared collection: pick a game you have to open it. Your own: stop sharing. */
+    private void sharedCollectionTv(TirsoDrive.SharedCol c) {
+        boolean mine = c.owner == drive.accountId; String[] labels = new String[c.games.size()]; Game[] found = new Game[c.games.size()];
+        for (int i = 0; i < labels.length; i++) { String[] g = c.games.get(i); found[i] = library.match(g[3], g[1], g[0]); String cn = g[0]; try { cn = Console.valueOf(g[0]).title; } catch (Exception ignored) { } labels[i] = (found[i] != null ? "▶ " : "○ ") + g[1] + " · " + cn; }
+        AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle(c.name + (mine ? "" : " · " + c.ownerName))
+            .setItems(labels, (d, w) -> { if (found[w] != null) openGameOnTv(found[w]); else Toast.makeText(this, T.t("No está en tu biblioteca") + ": " + c.games.get(w)[1], Toast.LENGTH_SHORT).show(); });
+        if (mine) b.setNegativeButton(T.t("Dejar de compartir"), (d, w) -> { drive.unshareCollection(c.name); render(); }); else b.setNegativeButton(T.t("Cerrar"), null);
+        b.show();
     }
     private void friendsJoinDialog() {
         EditText input = new EditText(this); input.setSingleLine(true); input.setHint("https://t.me/+…");

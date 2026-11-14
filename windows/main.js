@@ -449,6 +449,10 @@ app.whenReady().then(() => {
         case 'share': friends.setShare(!!arg); break;
         case 'refresh': await friends.discover().catch(() => {}); await friends.load(); break;
         case 'tell': await friends.tell(arg); break;
+        case 'recommend': await friends.recommend(meta.apply(arg)); break;
+        case 'shareCol': { const ids = (store.get('collections') || {})[arg] || []; await friends.shareCollection(arg, shownGames().filter((g) => ids.includes(g.id))); break; }
+        case 'unshareCol': await friends.unshareCollection(arg); break;
+        case 'refreshShared': await friends.refreshShared(store.get('collections') || {}, shownGames()); break;
         default: break;
       }
       return friends.snapshot();

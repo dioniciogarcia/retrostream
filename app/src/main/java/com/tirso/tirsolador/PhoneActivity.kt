@@ -1853,6 +1853,33 @@ class PhoneActivity : Activity() {
             FrameLayout.LayoutParams(dp(size / 3), dp(size / 3), Gravity.BOTTOM or Gravity.END))
         return box
     }
+    private fun friendGrid(col: LinearLayout, list: List<TirsoDrive.Friend>) {
+        val cols = if (landscape) 5 else 3
+        var row: LinearLayout? = null
+        list.forEachIndexed { i, f ->
+            if (i % cols == 0) { row = horizontal(); col.addView(row, LinearLayout.LayoutParams(-1, -2)) }
+            val on = f.online()
+            val t = vertical(); t.gravity = Gravity.CENTER_HORIZONTAL; t.setPadding(dp(6), dp(12), dp(6), dp(10))
+            t.addView(avatar(f.name, if (on) 0xFF3B82F6.toInt() else 0xFF6B7280.toInt(), 52))
+            t.addView(tv(f.name.ifEmpty { "…" } + if (f.userId == drive.accountId) T.t("  (tú)") else "", 13f, if (on) p.text else p.muted, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) })
+            t.addView(tv(if (on) T.t("En el menú") else T.t("Desconectado"), 11f, if (on) 0xFF3B82F6.toInt() else p.muted).apply { gravity = Gravity.CENTER })
+            control(t, "fr_${f.userId}", p.surface, 16f) { }
+            row!!.addView(t, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+        }
+        val left = list.size % cols
+        if (left != 0) repeat(cols - left) { row!!.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(dp(4), 0, dp(4), 0) }) }
+    }
+    /** A shared collection: tap a game you have to open it. Your own: stop sharing. */
+    private fun sharedCollection(c: TirsoDrive.SharedCol) {
+        val mine = c.owner == drive.accountId
+        val matched = c.games.map { it to library.match(it[3], it[1], it[0]) }
+        val labels = matched.map { (g, m) -> (if (m != null) "▶ " else "○ ") + g[1] + " · " + (runCatching { Console.valueOf(g[0]).title }.getOrDefault(g[0])) }
+        val b = AlertDialog.Builder(this).setTitle(c.name + if (mine) "" else " · " + c.ownerName)
+            .setItems(labels.toTypedArray()) { _, w -> val m = matched[w].second; if (m != null) { selected = m; console = m.console; go("detail") } else toast(T.t("No está en tu biblioteca") + ": " + matched[w].first[1]) }
+        if (mine) b.setNegativeButton(T.t("Dejar de compartir")) { _, _ -> drive.unshareCollection(c.name); render() }
+        else b.setNegativeButton(T.t("Cerrar"), null)
+        b.show()
+    }
     private fun friendsPage() = page(T.t("Amigos")) { col ->
         drive.loadFriends()
         if (!drive.ready()) { col.addView(tv(T.t("Conecta TirsoDrive para ver a tus amigos."), 14f, p.muted)); return@page }
@@ -1886,8 +1913,8 @@ class PhoneActivity : Activity() {
         pills.addView(pill("${offline.size} " + T.t("desconectados"), p.text, p.surface2), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
         col.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(pills) })
         if (all.size <= 1) col.addView(tv(T.t("Aún no hay amigos aquí. Comparte el enlace de invitación."), 14f, p.muted).apply { setPadding(dp(4), dp(14), 0, 0) })
-        if (playing.isNotEmpty()) {
-            col.addView(section(T.t("Jugando ahora")))
+        if (playing.isNotEmpty() || online.isNotEmpty()) {
+            col.addView(section(T.t("En línea ahora")))
             for (f in playing) {
                 val c = runCatching { Console.valueOf(f.console) }.getOrNull()
                 val g = library.games.firstOrNull { it.title.equals(f.game, true) }
@@ -1909,25 +1936,57 @@ class PhoneActivity : Activity() {
                 control(card, "fr_${f.userId}", p.surface, 16f) { if (g != null) { selected = g; console = g.console; go("detail") } }
                 col.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
             }
+            friendGrid(col, online)
         }
-        val rest = online + offline
-        if (rest.isNotEmpty()) {
-            col.addView(section(T.t("Amigos")))
-            val cols = if (landscape) 5 else 3
-            var row: LinearLayout? = null
-            rest.forEachIndexed { i, f ->
-                if (i % cols == 0) { row = horizontal(); col.addView(row, LinearLayout.LayoutParams(-1, -2)) }
-                val on = f.online()
-                val t = vertical(); t.gravity = Gravity.CENTER_HORIZONTAL; t.setPadding(dp(6), dp(12), dp(6), dp(10))
-                t.addView(avatar(f.name, if (on) 0xFF3B82F6.toInt() else 0xFF6B7280.toInt(), 52))
-                t.addView(tv(f.name.ifEmpty { "…" }, 13f, if (on) p.text else p.muted, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) })
-                t.addView(tv(if (on) T.t("En el menú") else T.t("Desconectado"), 11f, if (on) 0xFF3B82F6.toInt() else p.muted).apply { gravity = Gravity.CENTER })
-                control(t, "fr_${f.userId}", p.surface, 16f) { }
-                row!!.addView(t, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+        // Recommended for you: one tap from a friend, newest first
+        val recs = drive.recs.values.filter { it.from != drive.accountId }.sortedByDescending { it.ts }.distinctBy { it.console + "|" + it.title.lowercase() }.take(20)
+        if (recs.isNotEmpty()) {
+            col.addView(section(T.t("Recomendado para ti")))
+            val row = horizontal(); row.setPadding(0, 0, 0, dp(4))
+            for (r in recs) {
+                val c = runCatching { Console.valueOf(r.console) }.getOrNull()
+                val mine = library.match(r.gameId, r.title, r.console)
+                val card = vertical(); card.setPadding(dp(8), dp(8), dp(8), dp(10))
+                val art = FrameLayout(this); art.background = round(c?.color ?: 0xFF475569.toInt(), 8f); art.clipToOutline = true
+                val ph = tv(c?.name ?: r.console, 11f, Color.WHITE, bold = true).apply { gravity = Gravity.CENTER }
+                art.addView(ph, FrameLayout.LayoutParams(-1, -1))
+                val shown = mine ?: c?.let { Game(r.gameId.ifEmpty { "rec:" + r.msgId }, r.title, it, "", r.cover.ifEmpty { r.title }) }
+                if (shown != null) { val iv = CoverImage(art, ph); art.addView(iv, FrameLayout.LayoutParams(-1, -1)); artwork.loadFirst(shown, iv, "Named_Boxarts", "Named_Titles") }
+                card.addView(art, LinearLayout.LayoutParams(dp(104), dp(132)))
+                card.addView(tv(r.title, 13f, p.text, bold = true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setPadding(0, dp(6), 0, 0) }, LinearLayout.LayoutParams(dp(104), -2))
+                card.addView(tv(T.t("de ") + r.fromName.ifEmpty { "…" }, 11f, p.muted).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(dp(104), -2))
+                if (mine == null) card.addView(tv(T.t("No está en tu biblioteca"), 10f, 0xFFF59E0B.toInt()).apply { maxLines = 1 }, LinearLayout.LayoutParams(dp(104), -2))
+                control(card, "rec_${r.msgId}", p.surface, 14f) { if (mine != null) { selected = mine; console = mine.console; go("detail") } else toast(T.t("No está en tu biblioteca") + ": " + r.title) }
+                row.addView(card, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
             }
-            val left = rest.size % cols
-            if (left != 0) repeat(cols - left) { row!!.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(dp(4), 0, dp(4), 0) }) }
+            col.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) })
         }
+        // Shared collections (friends' and mine)
+        drive.refreshSharedCollections(library)
+        val shared = drive.sharedCols.values.sortedWith(compareBy({ it.owner == drive.accountId }, { it.name.lowercase() }))
+        col.addView(section(T.t("Colecciones compartidas")))
+        for (c in shared) {
+            val mine = c.owner == drive.accountId
+            val have = c.games.count { library.match(it[3], it[1], it[0]) != null }
+            val r = horizontal(); r.setPadding(dp(14), dp(12), dp(14), dp(12)); r.gravity = Gravity.CENTER_VERTICAL
+            val tx = vertical()
+            tx.addView(tv(c.name, 15f, p.text, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
+            tx.addView(tv((if (mine) T.t("Tuya") else T.t("de ") + c.ownerName.ifEmpty { "…" }) + " · ${c.games.size} " + T.t("juegos") + if (!mine) " · $have " + T.t("en tu biblioteca") else "", 12f, p.muted))
+            r.addView(tx, LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(tv("›", 20f, p.muted))
+            control(r, "col_${c.msgId}", p.surface, 14f) { sharedCollection(c) }
+            col.addView(r, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
+        }
+        val notShared = library.collections().filter { drive.mySharedCol(it) == null }
+        if (notShared.isNotEmpty()) col.addView(button("+ " + T.t("Compartir una colección"), "col_share") {
+            AlertDialog.Builder(this).setTitle(T.t("Compartir una colección"))
+                .setItems(notShared.toTypedArray()) { _, w ->
+                    val n = notShared[w]; val ids = library.collection(n)
+                    drive.shareCollection(n, library.games.filter { it.id in ids }) { ok, e -> toast(if (ok == true) T.t("Colección compartida con tus amigos") else e ?: T.t("No se pudo compartir")); render() }
+                }.setNegativeButton(T.t("Cancelar"), null).show()
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
+        else if (shared.isEmpty()) col.addView(tv(T.t("Crea una colección para compartirla aquí."), 13f, p.muted).apply { setPadding(dp(4), 0, 0, 0) })
+        if (offline.isNotEmpty()) { col.addView(section(T.t("Desconectados"))); friendGrid(col, offline) }
         val a = group(col, T.t("Opciones"))
         val share = drive.shareActivity()
         row(a, T.t("Mostrar mi actividad"), T.t("Tus amigos ven si estás conectado y a qué juegas"), "f_share", 0xFF22C55E.toInt(), share) { drive.shareActivity(!share); render() }

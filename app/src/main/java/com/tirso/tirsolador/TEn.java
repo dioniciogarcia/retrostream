@@ -3,6 +3,21 @@ package com.tirso.tirsolador;
 /** English texts for the Spanish originals (generated list). */
 final class TEn {
     static void fill(java.util.Map<String,String> m) {
+        m.put("En línea ahora","Online now");
+        m.put("EN LÍNEA AHORA","ONLINE NOW");
+        m.put("Recomendado para ti","Recommended for you");
+        m.put("de ","from ");
+        m.put("No está en tu biblioteca","Not in your library");
+        m.put("Colecciones compartidas","Shared collections");
+        m.put("Tuya","Yours");
+        m.put("en tu biblioteca","in your library");
+        m.put("Compartir una colección","Share a collection");
+        m.put("Colección compartida con tus amigos","Collection shared with your friends");
+        m.put("No se pudo compartir","Could not share");
+        m.put("Crea una colección para compartirla aquí.","Create a collection to share it here.");
+        m.put("Dejar de compartir","Stop sharing");
+        m.put("Recomendar a amigos","Recommend to friends");
+        m.put("Recomendado a tus amigos","Recommended to your friends");
         m.put("Buscando tu grupo de amigos…","Looking for your friends group…");
         m.put("Quitar de «Jugar después»","Remove from \"Play later\"");
         m.put("Jugar después","Play later");
